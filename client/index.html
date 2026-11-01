@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Trang trại gà Hypex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Nunito:wght@600;700;800;900&display=swap&subset=vietnamese">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app"></div>
+
+<!-- Đăng nhập / đăng ký -->
+<div class="screen" id="authScreen" hidden>
+  <form class="card" id="authForm" autocomplete="on">
+    <div class="brand">
+      <div class="logo">🐔</div>
+      <div>
+        <h1>Trang trại gà Hypex</h1>
+        <p class="tagline">Một chú gà của riêng bạn. Một góc trại để trở về. Một hội bạn để quậy cùng.</p>
+      </div>
+    </div>
+    <div class="seg" role="tablist">
+      <button type="button" role="tab" id="tabLogin" aria-selected="true">Đăng nhập</button>
+      <button type="button" role="tab" id="tabRegister" aria-selected="false">Tạo tài khoản</button>
+    </div>
+    <div class="field">
+      <label class="l" for="userIn">Tên đăng nhập</label>
+      <input type="text" id="userIn" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="vd: chip_vang">
+    </div>
+    <div class="field">
+      <label class="l" for="passIn">Mật khẩu</label>
+      <input type="password" id="passIn" name="password" autocomplete="current-password" placeholder="Ít nhất 6 ký tự">
+    </div>
+    <div class="field" id="recoverFields" hidden>
+      <label class="l" for="recIn">Mã khôi phục</label>
+      <input type="text" id="recIn" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX" style="text-transform:uppercase">
+    </div>
+    <p class="err" id="authErr"></p>
+    <button class="btn block" id="authBtn" type="submit">Vào trại 🐣</button>
+    <button class="btn ghost block" type="button" id="forgotBtn">Quên mật khẩu?</button>
+    <p class="mut" style="margin-top:12px">Tài khoản, thóc và tiến độ được lưu trên máy chủ. Mỗi tài khoản chỉ điều khiển gà ở một nơi tại một thời điểm.</p>
+  </form>
+</div>
+
+<!-- Mã khôi phục: chỉ hiện một lần -->
+<div class="screen" id="recoveryScreen" hidden>
+  <div class="card">
+    <h1>Lưu mã khôi phục</h1>
+    <p class="tagline">Nếu quên mật khẩu, mã này là cách duy nhất để lấy lại tài khoản. Máy chủ chỉ lưu bản băm nên sẽ không hiện lại.</p>
+    <div class="row" style="margin-top:14px"><div class="meta"><div class="nm" id="recCode" style="font-size:1.5rem;letter-spacing:.12em;-webkit-user-select:all;user-select:all"></div></div>
+      <div class="act"><button class="mini sec" id="recCopy" type="button">Chép</button></div></div>
+    <button class="btn block" id="recDone">Tôi đã lưu mã, vào trại</button>
+  </div>
+</div>
+
+<!-- Tạo gà -->
+<div class="screen" id="charScreen" hidden>
+  <div class="card">
+    <h1>Tạo chú gà của bạn</h1>
+    <p class="tagline">Xem trước 3D — kéo để xoay.</p>
+    <div id="previewWrap" style="margin-top:12px"></div>
+    <div class="field">
+      <label class="l" for="nameIn">Tên hiển thị</label>
+      <input type="text" id="nameIn" maxlength="14" placeholder="vd: Gà Bông, Chíp Vàng" autocomplete="off">
+    </div>
+    <div class="field"><span class="l">Màu lông</span><div class="swatches" id="colorSw"></div></div>
+    <div class="field"><span class="l">Kiểu mào</span><div class="chips" id="combCh"></div></div>
+    <div class="field"><span class="l">Kiểu đuôi</span><div class="chips" id="tailCh"></div></div>
+    <div class="field"><span class="l">Kiểu mắt</span><div class="chips" id="eyeCh"></div></div>
+    <div class="field"><span class="l">Áo khởi điểm</span><div class="swatches" id="shirtSw"></div></div>
+    <div class="field"><span class="l">Giới tính hồ sơ <span class="mut">— chỉ hiển thị hồ sơ, không ảnh hưởng chỉ số hay trang phục</span></span><div class="chips" id="sexCh"></div></div>
+    <p class="err" id="charErr"></p>
+    <button class="btn block" id="createBtn">Vào sảnh chuồng gà</button>
+  </div>
+</div>
+
+<!-- Đang kết nối -->
+<div class="screen" id="loadScreen">
+  <div class="card" style="text-align:center">
+    <div class="logo" style="margin:0 auto 10px">🐔</div>
+    <h1 id="loadTitle">Đang mở cổng trại…</h1>
+    <p class="mut" id="loadSub">Kết nối máy chủ</p>
+  </div>
+</div>
+
+<!-- HUD -->
+<div id="hud" hidden>
+  <div class="topbar">
+    <div class="stat" title="Cấp"><span>⭐</span><span id="lvTxt">Cấp 1</span></div>
+    <div class="stat" title="Thóc"><span>🌾</span><span id="thocTxt">0</span></div>
+    <div class="bars">
+      <div class="bar"><div class="lab"><span>Kinh nghiệm</span><span id="xpLab">0/80</span></div><div class="track"><div class="fill xp" id="xpFill"></div></div></div>
+      <div class="bar" id="manaBar"><div class="lab"><span id="manaName">Mana · Độ no</span><span id="manaLab">100/100</span></div><div class="track"><div class="fill mana" id="manaFill" style="width:100%"></div></div></div>
+    </div>
+    <button class="stat roomchip" id="roomChip" title="Đổi chuồng"><span class="net" id="netDot"></span><span id="roomTxt">Chuồng…</span></button>
+  </div>
+  <div class="areaName" id="areaName"></div>
+
+  <div class="sidebtns">
+    <button class="iconbtn" id="btnQuest" title="Nhiệm vụ" aria-label="Nhiệm vụ">📋<span class="dot" id="questDot" hidden>!</span></button>
+    <button class="iconbtn" id="btnBag" title="Túi đồ" aria-label="Túi đồ">🎒</button>
+    <button class="iconbtn" id="btnBook" title="Sổ giun" aria-label="Sổ giun">📖</button>
+    <button class="iconbtn" id="btnWard" title="Tủ đồ" aria-label="Tủ đồ">👗</button>
+    <button class="iconbtn" id="btnChat" title="Chat chuồng" aria-label="Chat chuồng">💬<span class="dot" id="chatDot" hidden>•</span></button>
+    <button class="iconbtn" id="btnFriends" title="Bạn bè" aria-label="Bạn bè">👥<span class="dot" id="friendsDot" hidden></span></button>
+    <button class="iconbtn" id="btnMail" title="Thư Chim Chíp" aria-label="Thư Chim Chíp">📮<span class="dot" id="mailDot" hidden></span></button>
+    <button class="iconbtn" id="btnGuild" title="Hội Gà" aria-label="Hội Gà">🏰</button>
+    <button class="iconbtn" id="btnHelp" title="Hướng dẫn" aria-label="Hướng dẫn">❓</button>
+    <button class="iconbtn" id="btnPhoto" title="Chụp ảnh" aria-label="Chụp ảnh">📸</button>
+    <button class="iconbtn" id="btnSettings" title="Cài đặt" aria-label="Cài đặt">⚙️</button>
+  </div>
+  <div class="emotes" id="emotes"></div>
+
+  <div id="bubbles"></div>
+  <div id="toasts"></div>
+  <div id="inviteBar" hidden></div>
+  <div id="decorBar" hidden></div>
+  <button id="homeBtn" hidden>🏠 Về sảnh chuồng</button>
+  <div id="joy"><div id="joyNub"></div></div>
+  <button id="interact" hidden><span id="interactTxt">Tương tác</span><span class="k">phím E</span></button>
+</div>
+
+<div class="screen" id="tripOverlay" hidden style="z-index:45;background:rgba(40,26,14,.55)"></div>
+<div id="modalRoot"><div id="scrim"></div><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

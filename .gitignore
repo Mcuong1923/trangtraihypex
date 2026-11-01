@@ -1,0 +1,4 @@
+server/data/
+server/hypex
+*.tmp
+.DS_Store

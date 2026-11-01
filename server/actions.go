@@ -1,0 +1,453 @@
+package main
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
+	"math"
+	"time"
+)
+
+// act xử lý một hành động của người chơi. Hành động chạm tài sản đi qua txn():
+// kiểm tra request ID → áp dụng → lưu bền vững → mới trả kết quả; lưu lỗi thì hoàn nguyên.
+
+func (r *Room) act(p *Player, m *inMsg) {
+	now := time.Now()
+	b := r.hub.bal
+	reply := func(res ActResult) {
+		p.sess.Send(map[string]any{"t": "res", "rid": m.RID, "a": m.A, "ok": res.OK, "err": res.Err, "msg": res.Msg, "data": res.Data, "me": p.acc.View(now, b)})
+	}
+	fail := func(err error) { reply(ActResult{Err: err.Error()}) }
+	zone := r.zones[p.zone]
+
+	// Tra request ID trước mọi kiểm tra vị trí/trạng thái: gửi lại sau khi mất mạng phải nhận đúng kết quả cũ.
+	if prev, ok := p.acc.Remembered(m.RID); ok {
+		reply(prev)
+		return
+	}
+
+	// txn bọc một thay đổi tài sản nguyên tử và idempotent.
+	txn := func(apply func() (ActResult, error)) {
+		if prev, ok := p.acc.Remembered(m.RID); ok {
+			reply(prev) // retry sau timeout: trả đúng kết quả cũ, không cộng lần hai
+			return
+		}
+		snap, _ := json.Marshal(p.acc)
+		res, err := apply()
+		if err != nil {
+			restore(p.acc, snap)
+			fail(err)
+			return
+		}
+		res.OK = true
+		p.acc.Remember(m.RID, res)
+		if err := r.hub.store.Save(p.acc); err != nil {
+			log.Printf("save %s: %v", p.acc.ID, err)
+			restore(p.acc, snap)
+			fail(errors.New("Máy chủ tạm không lưu được, giao dịch chưa thực hiện. Thử lại sau."))
+			return
+		}
+		reply(res)
+	}
+
+	switch m.A {
+	case "go": // đi qua cổng sang khu khác trong cùng chuồng
+		if p.match != nil {
+			fail(errors.New("Đang trong trận PK."))
+			return
+		}
+		if r.Kind != "public" {
+			// Rời nhà riêng / Nhà Hội là chuyển phòng, do hub xử lý ngoài goroutine phòng.
+			reply(ActResult{OK: true})
+			go r.hub.LeaveHome(p.sess)
+			return
+		}
+		var ok bool
+		if m.To == ZoneLobby && m.ID == "home" {
+			ok = true // "Về sảnh chuồng" miễn phí từ bất kỳ khu nào (mục 8.5)
+		} else if g := nearKind(zone, p.pos, "gate"); g != nil && g.To == m.To {
+			ok = true
+		}
+		if p.rideOf != nil {
+			fail(errors.New("Đang ngồi xe của người khác; xuống xe trước."))
+			return
+		}
+		if m.ID == "home" && (p.ride != nil) {
+			fail(errors.New("Cất xe ở điểm đỗ trước khi về sảnh."))
+			return
+		}
+		if m.ID == "home" && r.Region != RegionHypex {
+			// "Về sảnh chuồng Hypex" miễn phí từ vùng khác (mục 8.5).
+			reply(ActResult{OK: true})
+			go r.hub.TransferRegion([]*Session{p.sess}, RegionHypex, []*arrival{{Zone: ZoneLobby}})
+			return
+		}
+		if !ok || r.zones[m.To] == nil {
+			fail(errors.New("Hãy lại gần cổng để đi."))
+			return
+		}
+		if p.ride != nil && !DriveZones[m.To] {
+			fail(errors.New("Không lái xe vào " + r.zones[m.To].Title + ". Cất xe ở điểm đỗ trước."))
+			return
+		}
+		r.moveZone(p, m.To)
+		if p.ride != nil {
+			// Cả xe đi cùng: khách sang khu mới theo người lái.
+			for _, q := range p.ride.Seats[1:] {
+				if q != nil {
+					r.moveZone(q, m.To)
+				}
+			}
+			r.broadcastRide(p)
+			r.syncRides()
+		}
+		reply(ActResult{OK: true})
+
+	case "talk":
+		it := zone.Item(m.ID)
+		if it == nil || p.pos.Dist(it.Pos()) > it.R+InteractSlack {
+			fail(errors.New("Lại gần hơn để trò chuyện."))
+			return
+		}
+		if it.Kind == "npc_elder" && !p.acc.Tutorial["met_elder"] {
+			p.acc.step("met_elder")
+			p.dirty = true
+		}
+		r.discover(p, "npc:"+it.ID)
+		reply(ActResult{OK: true, Data: map[string]any{"npc": it.ID}})
+
+	case "dig_start":
+		if p.ride != nil || p.rideOf != nil {
+			fail(errors.New("Không đào giun khi đang trên xe."))
+			return
+		}
+		it := zone.Item(m.ID)
+		if it == nil || it.Kind != "dig" || p.pos.Dist(it.Pos()) > it.R+InteractSlack {
+			fail(errors.New("Lại gần ụ đất để đào."))
+			return
+		}
+		if err := p.acc.CanDig(now, b); err != nil {
+			fail(err)
+			return
+		}
+		// Đói kéo dài: thao tác đào kéo dài 25% (con trỏ chậm hơn, cần giữ lâu hơn).
+		slow := p.acc.HungerStage(b) >= 3
+		d := &DigSession{ID: fmt.Sprintf("dig%d", now.UnixNano()), Spot: it.ID, Start: now,
+			Center: 0.22 + r.rng.Float64()*0.56, Half: 0.14, Speed: 0.8, MinDur: b.DigMinDuration}
+		if slow {
+			d.Speed /= 1.25
+			d.MinDur = time.Duration(float64(d.MinDur) * 1.25)
+		}
+		p.dig = d
+		r.broadcastZone(p.zone, p, map[string]any{"t": "fx", "pid": p.PID, "fx": "dig"})
+		reply(ActResult{OK: true, Data: map[string]any{"id": d.ID, "center": d.Center, "half": d.Half, "speed": d.Speed}})
+
+	case "dig_cancel":
+		p.dig = nil
+		reply(ActResult{OK: true})
+
+	case "dig_stop":
+		d := p.dig
+		if prev, ok := p.acc.Remembered(m.RID); ok {
+			reply(prev)
+			return
+		}
+		if d == nil || d.ID != m.ID {
+			fail(errors.New("Lượt đào đã hết hạn."))
+			return
+		}
+		p.dig = nil
+		serverEl := now.Sub(d.Start).Seconds()
+		if serverEl < d.MinDur.Seconds() {
+			fail(errors.New("Thao tác quá nhanh, hãy canh lực rồi đào."))
+			return
+		}
+		// Client chỉ được khai thời điểm trong cửa sổ độ trễ hợp lý; ngoài cửa sổ dùng đồng hồ máy chủ.
+		el := m.Elapsed
+		if el > serverEl || el < serverEl-0.6 {
+			el = serverEl
+		}
+		perfect := math.Abs(markerPos(el, d.Speed)-d.Center) <= d.Half
+		txn(func() (ActResult, error) {
+			if err := p.acc.CanDig(now, b); err != nil {
+				return ActResult{}, err
+			}
+			loot, notes := p.acc.FinishDigIn(Regions[r.Region].WormSet, p.zone, d.Spot, perfect, r.rng.Float64(), r.rng.Float64(), now, b)
+			w := wormByID(loot.Worm)
+			r.broadcastZone(p.zone, p, map[string]any{"t": "fx", "pid": p.PID, "fx": "dug", "rare": w.Rare, "color": w.Color})
+			return ActResult{Msg: "Bạn đào được " + w.Name + "!", Data: map[string]any{"loot": loot, "notes": notes, "perfect": perfect}}, nil
+		})
+
+	case "sell":
+		if nearKind(zone, p.pos, "shop_sell") == nil {
+			fail(errors.New("Bán giun ở Sạp thu mua giun tại Chợ thóc."))
+			return
+		}
+		txn(func() (ActResult, error) {
+			got, notes, err := p.acc.SellWorm(m.ID, now)
+			return ActResult{Msg: fmt.Sprintf("Bán %s: +%d thóc", wormByID(m.ID).Name, got), Data: map[string]any{"notes": notes}}, err
+		})
+
+	case "eat_worm":
+		txn(func() (ActResult, error) {
+			lv, notes, err := p.acc.EatWorm(m.ID, now)
+			if err != nil {
+				return ActResult{}, err
+			}
+			w := wormByID(m.ID)
+			r.broadcastZone(p.zone, nil, map[string]any{"t": "fx", "pid": p.PID, "fx": "eat"})
+			if lv > 0 {
+				r.broadcastZone(p.zone, nil, map[string]any{"t": "fx", "pid": p.PID, "fx": "levelup", "level": p.acc.Level})
+			}
+			return ActResult{Msg: fmt.Sprintf("Chế biến & ăn %s: −%d thóc, +%d XP, +%d mana", w.Name, w.Fee, w.XP, w.Mana),
+				Data: map[string]any{"notes": notes, "levelUp": lv}}, nil
+		})
+
+	case "buy_food":
+		if nearKind(zone, p.pos, "shop_food") == nil {
+			fail(errors.New("Mua thức ăn ở Quầy thức ăn tại Chợ thóc."))
+			return
+		}
+		txn(func() (ActResult, error) {
+			err := p.acc.BuyFood(m.ID, m.Eat, now)
+			if err != nil {
+				return ActResult{}, err
+			}
+			f := foodByID(m.ID)
+			if m.Eat {
+				r.broadcastZone(p.zone, nil, map[string]any{"t": "fx", "pid": p.PID, "fx": "eat"})
+				return ActResult{Msg: fmt.Sprintf("%s: −%d thóc, +%d mana", f.Name, f.Cost, f.Mana)}, nil
+			}
+			return ActResult{Msg: "Đã cất " + f.Name + " vào túi."}, nil
+		})
+
+	case "eat_food":
+		txn(func() (ActResult, error) {
+			if err := p.acc.EatFood(m.ID); err != nil {
+				return ActResult{}, err
+			}
+			r.broadcastZone(p.zone, nil, map[string]any{"t": "fx", "pid": p.PID, "fx": "eat"})
+			return ActResult{Msg: fmt.Sprintf("Đã ăn %s: +%d mana", foodByID(m.ID).Name, foodByID(m.ID).Mana)}, nil
+		})
+
+	case "buy_cos":
+		if nearKind(zone, p.pos, "shop_fashion") == nil {
+			fail(errors.New("Mua đồ ở Quầy thời trang tại Chợ thóc."))
+			return
+		}
+		txn(func() (ActResult, error) {
+			if err := p.acc.BuyCosmetic(m.ID, now); err != nil {
+				return ActResult{}, err
+			}
+			r.broadcastLook(p)
+			return ActResult{Msg: "Đã mua & mặc " + cosmeticByID(m.ID).Name}, nil
+		})
+
+	case "equip", "outfit_save", "outfit_load":
+		if p.match != nil {
+			fail(errors.New("Không đổi đồ trong trận PK."))
+			return
+		}
+		txn(func() (ActResult, error) {
+			var err error
+			switch m.A {
+			case "equip":
+				err = p.acc.Equip(m.Slot, m.ID)
+			case "outfit_save":
+				err = p.acc.SaveOutfit(m.I)
+			default:
+				err = p.acc.LoadOutfit(m.I)
+			}
+			if err == nil && m.A != "outfit_save" {
+				r.broadcastLook(p)
+			}
+			return ActResult{}, err
+		})
+
+	case "rescue_start":
+		if p.zone != ZoneLobby || nearKind(zone, p.pos, "npc_elder") == nil {
+			fail(errors.New("Gặp Gà Cụ Cục ở sảnh để nhận việc."))
+			return
+		}
+		txn(func() (ActResult, error) {
+			job, err := p.acc.StartRescue(now)
+			if err != nil {
+				return ActResult{}, err
+			}
+			return ActResult{Data: map[string]any{"job": job.ID, "sec": b.RescueSec, "elapsed": now.Sub(job.StartAt).Seconds()}}, nil
+		})
+
+	case "rescue_finish":
+		txn(func() (ActResult, error) {
+			if err := p.acc.FinishRescue(m.ID, now, b); err != nil {
+				return ActResult{}, err
+			}
+			return ActResult{Msg: fmt.Sprintf("Dọn xong ổ rơm: +%d thóc", b.RescueReward)}, nil
+		})
+
+	case "claim_tutorial":
+		if nearKind(zone, p.pos, "npc_elder") == nil {
+			fail(errors.New("Gặp Gà Cụ Cục ở sảnh để nhận thưởng."))
+			return
+		}
+		txn(func() (ActResult, error) {
+			if err := p.acc.ClaimTutorial(now, b); err != nil {
+				return ActResult{}, err
+			}
+			return ActResult{Msg: fmt.Sprintf("Hoàn thành hướng dẫn: +%d thóc", b.TutorialReward)}, nil
+		})
+
+	case "show":
+		txn(func() (ActResult, error) {
+			l, err := p.acc.Showcase(m.ID, now, b)
+			if err != nil {
+				return ActResult{}, err
+			}
+			w := wormByID(l.Worm)
+			// Thẻ lấy từ bản ghi máy chủ, không từ dữ liệu client gửi lên.
+			card := map[string]any{"loot": l.ID, "worm": w.ID, "name": w.Name, "rarity": w.Rarity, "color": w.Color, "size": l.SizeCM, "at": l.At, "zone": zoneTitle(l.Zone)}
+			r.broadcastZone(p.zone, nil, map[string]any{"t": "fx", "pid": p.PID, "fx": "show", "color": w.Color})
+			r.broadcastRoom(nil, map[string]any{"t": "chat", "kind": "show", "pid": p.PID, "name": p.acc.Char.Name, "tag": PlayerTag(p.acc.ID), "card": card})
+			return ActResult{Msg: "Đã khoe " + w.Name + " với chuồng!"}, nil
+		})
+
+	case "order":
+		if nearKind(zone, p.pos, "board") == nil {
+			fail(errors.New("Giao đơn ở Bảng tin trong sảnh."))
+			return
+		}
+		txn(func() (ActResult, error) {
+			o, notes, err := p.acc.DeliverOrder(m.ID, now)
+			if err != nil {
+				return ActResult{}, err
+			}
+			return ActResult{Msg: fmt.Sprintf("%s nhận hàng: +%d thóc", o.NPC, o.Reward), Data: map[string]any{"notes": notes}}, nil
+		})
+
+	case "festival_give":
+		if nearKind(zone, p.pos, "board") == nil {
+			fail(errors.New("Góp cho ngày hội ở Bảng tin trong sảnh."))
+			return
+		}
+		n := m.I
+		if !containsInt(FestivalAmounts, n) {
+			fail(errors.New("Chọn mức góp 10, 50 hoặc 100 thóc."))
+			return
+		}
+		if p.acc.Thoc < n {
+			fail(ErrNotEnough)
+			return
+		}
+		st, err := r.hub.festival.Add(n)
+		if err != nil {
+			fail(err)
+			return
+		}
+		snap, _ := json.Marshal(p.acc)
+		_ = p.acc.addThoc(-n, "festival", st.Name, now)
+		p.acc.Festival += n
+		notes := p.acc.CheckTitles()
+		res := ActResult{OK: true, Msg: fmt.Sprintf("Đã góp %d thóc cho %s. Cảm ơn bạn!", n, st.Name), Data: map[string]any{"notes": notes}}
+		p.acc.Remember(m.RID, res)
+		if err := r.hub.store.Save(p.acc); err != nil {
+			restore(p.acc, snap)
+			r.hub.festival.Undo(n)
+			fail(errors.New("Máy chủ tạm không lưu được, chưa trừ thóc."))
+			return
+		}
+		go r.hub.BroadcastAll(map[string]any{"t": "festival", "festival": st})
+		if st.Unlocked && st.Total-n < st.Goal {
+			go r.hub.Announce("🏮 Cả cộng đồng đã góp đủ cho " + st.Name + "! Sảnh mọi chuồng đã treo đèn lồng.")
+		}
+		reply(res)
+
+	case "title":
+		txn(func() (ActResult, error) {
+			if err := p.acc.SetTitle(m.ID); err != nil {
+				return ActResult{}, err
+			}
+			r.broadcastLook(p)
+			return ActResult{}, nil
+		})
+
+	case "home_buy", "home_place", "home_move", "home_pickup", "home_upgrade", "home_build", "home_access", "home_kick", "home_party", "party_cheer":
+		r.homeAct(p, m, reply, fail)
+
+	case "eggs_claim", "incubate", "hatch", "follow", "rename_pet", "care", "book", "cancel_booking",
+		"vehicle_buy", "vehicle_out", "vehicle_in", "seat_invite", "seat_accept", "seat_leave", "seat_kick", "drive_region":
+		r.v11Act(p, m, reply, fail, txn)
+
+	case "guild_create", "guild_give":
+		r.guildAct(p, m, reply, fail, txn)
+
+	case "contract_create", "contract_take", "contract_work", "contract_cancel":
+		r.contractAct(p, m, reply, fail, txn)
+
+	case "trade_invite", "trade_accept", "trade_offer", "trade_lock", "trade_confirm", "trade_cancel":
+		r.tradeAct(p, m, reply, fail)
+
+	case "pk_bot", "pk_invite", "pk_accept", "pk_decline", "pk_tap", "pk_pick":
+		r.pkAct(p, m, reply, fail)
+
+	default:
+		fail(errors.New("Hành động không hợp lệ."))
+	}
+}
+
+func containsInt(l []int, v int) bool {
+	for _, x := range l {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+func restore(a *Account, snap []byte) {
+	var fresh Account
+	if json.Unmarshal(snap, &fresh) == nil {
+		fresh.normalize()
+		fresh.seq = a.seq
+		*a = fresh
+	}
+}
+
+// Vị trí con trỏ canh lực: sóng tam giác 0→1→0 với tốc độ speed (vòng/giây).
+func markerPos(el, speed float64) float64 {
+	ph := math.Mod(el*speed, 2)
+	if ph > 1 {
+		return 2 - ph
+	}
+	return ph
+}
+
+func (r *Room) moveZone(p *Player, to string) {
+	from := p.zone
+	if p.trade != nil {
+		r.closeTrade(p.trade, "Một bên đã rời khu, giao dịch huỷ.")
+	}
+	if from == r.stationZone() && to != from {
+		r.cancelTrip(p, "Bạn đã rời bến trước giờ xe chạy.")
+	}
+	p.dig = nil
+	r.cancelInvitesFor(p)
+	r.broadcastZone(from, p, map[string]any{"t": "pleave", "pid": p.PID})
+	p.zone = to
+	r.discover(p, "zone:"+to)
+	p.pos = r.freeSpawn(r.zones[to])
+	p.ry = math.Pi
+	p.in = Vec{}
+	p.sess.Send(map[string]any{"t": "zone", "zone": to, "pos": p.pos, "ry": p.ry, "players": r.zonePlayers(to, p)})
+	r.broadcastZone(to, p, map[string]any{"t": "pjoin", "p": r.publicOf(p)})
+}
+
+func (r *Room) broadcastLook(p *Player) {
+	eq := map[string]string{}
+	for k, v := range p.acc.Equipped {
+		eq[k] = v
+	}
+	_, gname, gcolor := r.hub.store.Guilds.GuildOf(p.acc.ID)
+	r.broadcastZone(p.zone, nil, map[string]any{"t": "plook", "pid": p.PID, "equipped": eq, "title": titleName(p.acc.Title), "level": p.acc.Level,
+		"pet": petOf(p.acc), "guild": gname, "gcolor": gcolor})
+}
