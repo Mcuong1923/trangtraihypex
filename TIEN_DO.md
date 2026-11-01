@@ -30,7 +30,7 @@ Cập nhật: 31/10/2026, tối. So với [PLAN.md](PLAN.md) bản 0.3.
 | **V1.2** | ✅ Xong + có test | ✅ Xong | Xe máy/ô tô liên trại, Hội Gà + Nhà Hội, nội dung theo mùa |
 
 Kiểm thử:
-- **41/41 test pass** (01/11/2026, bản đồ liền; không bật race detector, khoảng 8,5 phút vì test đi bộ thật trên bản đồ). Trước đó 39/39 có race detector. Gồm unit test luật chơi và test end-to-end qua WebSocket thật.
+- **40/40 test pass có race detector** (01/11/2026, bản đồ liền; khoảng 9,3 phút vì test end-to-end đi bộ thật trên bản đồ rộng). Chạy với `-timeout 20m`, vì giới hạn mặc định 10 phút của `go test` sát với thời gian chạy. Gồm unit test luật chơi và test end-to-end qua WebSocket thật.
 - **Load test 1.000 bot** (khoảng 4 phút): 0 lỗi, 0 gói bị bỏ, tick p95 0,24 ms trên ngân sách 50 ms, heap khoảng 60 MB.
 - **Tăng đột biến 1.500 bot:** 0 lỗi, tick p95 0,16 ms.
 - **Soak 2 giờ với 1.000 bot** (2 giờ tính theo thời gian máy thức):

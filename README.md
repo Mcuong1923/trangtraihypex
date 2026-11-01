@@ -42,7 +42,7 @@ Giá, xác suất, XP và các giới hạn khác giống nhau ở cả hai bộ
 
 ```bash
 cd server
-go test -race ./...                                              # 37 test: luật + end-to-end qua WebSocket
+go test -race -timeout 20m ./...                                 # 40 test: luật + end-to-end qua WebSocket (~10 phút)
 go run ./cmd/loadtest -url http://localhost:8080 -n 1000 -dur 3m # load test với bot
 ```
 
