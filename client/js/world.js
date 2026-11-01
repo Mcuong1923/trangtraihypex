@@ -2,6 +2,10 @@
 // phần trang trí (ổ rơm, bao thóc, sạp…) là của client theo bộ ảnh minh hoạ.
 import { mat, buildPig, buildDog, buildElder, buildCow, buildCoop, buildDecor, buildDuck, buildBird, buildGoat, buildFrog, buildBus, buildVehicle, label } from './models.js';
 
+import {CameraController} from './camera.js';
+import {buildScenery, updateScenery, gateArch, occluder} from './scenery.js';
+import {toLocal} from './navigation.js';
+
 const T = window.THREE;
 
 export class World {
@@ -15,23 +19,28 @@ export class World {
     container.appendChild(this.renderer.domElement);
 
     this.scene = new T.Scene();
-    this.scene.background = new T.Color(0xbcd089);
-    this.scene.fog = new T.Fog(0xbcd089, 34, 72);
-    this.camera = new T.PerspectiveCamera(50, 1, 0.1, 200);
+    this.scene.background = new T.Color(0xcbdcc4);
+    // Fog hides the far plane, so distant chunks of the big map are never drawn.
+    this.scene.fog = new T.Fog(0xcbdcc4, 60, 150);
+    this.camera = new T.PerspectiveCamera(45, 1, 0.1, 160);
+ this.controls=new CameraController(this.camera);
+ this.routeGroup=new T.Group();this.scene.add(this.routeGroup);
     // yaw 0 = camera đứng phía lối vào (+z) nhìn vào trong, như góc chụp của bộ ảnh minh hoạ.
     this.camYaw = 0; this.camTargetYaw = 0; this.camDist = 15;
 
     // Tổng cường độ ~1 trên mặt hướng lên để giữ đúng tông đất nâu/cỏ xanh của ảnh minh hoạ.
     const sun = new T.DirectionalLight(0xfff2d0, 0.72);
-    sun.position.set(14, 26, 10); sun.castShadow = true;
+    sun.position.set(-18, 38, 20); sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
-    Object.assign(sun.shadow.camera, { left: -26, right: 26, top: 26, bottom: -26, near: 1, far: 80 });
-    this.scene.add(sun, new T.HemisphereLight(0xdfeaff, 0x8a6b3a, 0.38), new T.AmbientLight(0xffffff, 0.1));
+    // The shadow box travels with the chicken across the big map (see update()).
+    Object.assign(sun.shadow.camera, { left: -45, right: 45, top: 45, bottom: -45, near: 1, far: 130 });
+    this.scene.add(sun, sun.target, new T.HemisphereLight(0xdfeaff, 0x8a6b3a, 0.38), new T.AmbientLight(0xffffff, 0.1));
 
     this.sun = sun;
     this.reducedMotion = false;
-    this.zones = {};   // id → { group, data, npcs: [] }
+    this.zones = {};   // id → { group, data (world coords), local (area coords), npcs: [] }
     this.current = null;
+    this.active = [];  // zones drawn now: every area of the region on the seamless map, or one home
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -55,24 +64,34 @@ export class World {
     this.camera.updateProjectionMatrix();
   }
 
-  // Dựng các khu chưa có. Khu "home" khác nhau theo từng nhà nên dựng qua setHome().
-  build(zones, cosmetics) {
-    for (const id in zones) {
-      if (id === 'home' || id === 'guildhall' || this.zones[id]) continue;
-      const data = zones[id];
+  // Dựng các khu chưa có, mỗi khu đặt đúng chỗ trên bản đồ liền của trại.
+  // Khu "home" khác nhau theo từng nhà nên dựng qua setHome().
+  build(zones, cosmetics, world) {
+    this.worldInfo = world || null;
+    this.regionIds = world ? Object.keys(zones).filter((id) => id !== 'home' && id !== 'guildhall') : [];
+    for (const id of this.regionIds) {
+      if (this.zones[id]) continue;
+      const data = zones[id], local = localData(data, zones, world);
       const group = new T.Group();
+      group.position.set(data.cx || 0, 0, data.cz || 0); group.rotation.y = data.flip ? Math.PI : 0;
       group.visible = false;
-      const z = { group, data, npcs: [] };
+      this.scene.add(group); group.updateMatrixWorld(true);
+      const z = { group, data, local, npcs: [] };
       this.zones[id] = z;
-      this.scene.add(group);
-      decor[id]?.(group, data);
-      fence(group, data.halfX * 2 + 1.2, data.halfZ * 2 + 1.2);
-      for (const it of data.items) this.placeItem(z, it, cosmetics);
+      z.scenery = buildScenery(id, group, local, cosmetics);
+      if (!z.scenery?.handled) { ground(group, data.halfX * 2 + 1.2, data.halfZ * 2 + 1.2, 0xc9a978); fence(group, data.halfX * 2 + 1.2, data.halfZ * 2 + 1.2); }
+      local.items.forEach((it, i) => this.placeItem(z, it, cosmetics, data.items[i]));
+      // A welcome arch where the village road reaches the area (the hall has its own doorway).
+      if (local.entry && !data.outdoor && id !== 'lobby' && z.scenery.handled) {
+        const arch = gateArch(data.title, 0, 5.2), e = local.entry;
+        arch.position.set(e.x, 0, e.z - Math.sign(e.z) * 2.2); group.add(arch); occluder(z.scenery, arch);
+      }
     }
   }
 
-  placeItem(z, it, cosmetics) {
+  placeItem(z, it, cosmetics, worldItem = it) {
     const g = z.group;
+    if(it.kind==='nest'||it.kind==='npc_guide'||z.scenery?.handles?.has(it.kind)&&it.kind!=='gate')return;
     let obj;
     switch (it.kind) {
       case 'npc_elder': obj = buildElder(cosmetics); break;
@@ -87,15 +106,32 @@ export class World {
       case 'parking': obj = parkingSign(); break;
       case 'road': obj = roadSign(); break;
       case 'dig': obj = digMound(it.label); break;
-      case 'gate': case 'board': case 'shop_food': case 'shop_fashion': case 'trough': case 'home_sign': case 'home_exit': case 'home_board': case 'guild_board': obj = signpost(); break;
+      case 'gate': {
+        // Lobby door is architecture; elsewhere each exit is an arch named after where it leads.
+        if (z.data.id === 'lobby' || !z.scenery?.handled) { obj = z.scenery?.handled ? new T.Group() : signpost(); break; }
+        const side = Math.abs(it.x) / z.data.halfX > Math.abs(it.z) / z.data.halfZ;
+        const title = it.label.replace(/^(Ra|Về|Vào) /, '');
+        obj = gateArch(title[0].toUpperCase() + title.slice(1), side ? Math.PI / 2 : 0, 4.4);
+        occluder(z.scenery, obj); break;
+      }
+      case 'board': case 'home_board': obj = noticeBoard(); break;
+      case 'shop_food': case 'shop_fashion': case 'trough': case 'home_sign': case 'home_exit': case 'guild_board': obj = signpost(); break;
       default: obj = new T.Group();
     }
-    obj.position.set(it.x, 0, it.z);
+    obj.position.set(it.x, it.y||0, it.z);
+    obj.userData.baseY = it.y || 0;
+    if (it.kind === 'npc_elder' && it.y) {
+      // Seated in the big nest on the stage, facing the hall.
+      obj.scale.setScalar(1.6); obj.userData.baseY = it.y - .1; obj.position.y = obj.userData.baseY;
+      obj.userData.parts?.legs?.forEach(l => l.rotation.x = -1.2);
+    }
     if (it.kind.startsWith('npc') || it.kind === 'pk' || it.kind === 'shop_sell') { obj.rotation.y = it.kind === 'npc_cow' ? -0.6 : 0; if (it.kind !== 'npc_bird') z.npcs.push(obj); }
-    const lab = label(`${it.emo} ${it.label}`, it.kind === 'dig' ? { bg: 'rgba(92,58,31,.75)', scale: 0.62 } : {});
-    lab.position.set(0, it.kind === 'dig' ? 1.25 : (it.kind === 'npc_elder' ? 1.95 : 2.35), 0);
-    obj.add(lab);
-    obj.userData.item = it;
+    if (it.kind !== 'gate') {
+      const lab = label(`${it.emo ? it.emo + ' ' : ''}${it.label}`, it.kind === 'dig' ? { bg: 'rgba(92,58,31,.75)', scale: 0.62 } : {});
+      lab.position.set(0, it.kind === 'dig' ? 1.25 : (it.kind === 'npc_elder' ? 1.95 : 2.35), 0);
+      lab.visible = false; lab.scale.multiplyScalar(.62 / obj.scale.x); lab.material.depthTest = true; obj.userData.label = lab; obj.add(lab);
+    }
+    obj.userData.item = worldItem;
     g.add(obj);
   }
 
@@ -139,7 +175,7 @@ export class World {
       z.objects.set(o.id, m);
     }
     for (const it of data.items) this.placeItem(z, it, cosmetics);
-    if (wasCurrent) this.current = z;
+    if (wasCurrent) { this.current = z; this.active = [z]; }
   }
 
   // Nhà Hội theo ảnh "Sân họp gà mộc mạc": bàn họp trải bản vẽ, vòng ổ rơm, lán vật liệu, bảng hội.
@@ -194,13 +230,14 @@ export class World {
     if (!on) return;
     const g = new T.Group();
     const colors = [0xd64b3a, 0xe7c23a, 0x3f86c9, 0x4e9a4e];
-    for (const z of [-3.6, 3.2]) {
-      const rope = new T.Mesh(new T.BoxGeometry(22, 0.03, 0.03), mat(0x5c3a1f)); rope.position.set(0, 3.1, z); g.add(rope);
-      for (let i = 0; i < 12; i++) {
-        const f = new T.Mesh(new T.ConeGeometry(0.22, 0.4, 3), mat(colors[i % 4])); f.rotation.x = Math.PI; f.position.set(-10 + i * 1.8, 2.85, z); g.add(f);
+    // Bunting across the hall over the nest rows, lantern posts along the central aisle.
+    for (const z of [-12.4, -3.4, 5.4]) {
+      const rope = new T.Mesh(new T.BoxGeometry(32, 0.03, 0.03), mat(0x5c3a1f)); rope.position.set(0, 3.4, z); g.add(rope);
+      for (let i = 0; i < 18; i++) {
+        const f = new T.Mesh(new T.ConeGeometry(0.22, 0.4, 3), mat(colors[i % 4])); f.rotation.x = Math.PI; f.position.set(-15.3 + i * 1.8, 3.15, z); g.add(f);
       }
     }
-    for (const [x, z] of [[-6, -5], [6, -5], [-11, 5], [11, 5], [-6, 6.5], [6, 6.5]]) {
+    for (const [x, z] of [[-1.9, -12.4], [1.9, -12.4], [-1.9, -3.4], [1.9, -3.4], [-1.9, 5.4], [1.9, 5.4]]) {
       const post = new T.Mesh(new T.BoxGeometry(0.1, 2.2, 0.1), mat(0x5c3a1f)); post.position.set(x, 1.1, z); g.add(post);
       const l = new T.Mesh(new T.SphereGeometry(0.28, 10, 8), mat(0xe2452e, { emissive: 0x8a1f0a })); l.scale.y = 1.25; l.position.set(x, 2.35, z); g.add(l);
       const cap = new T.Mesh(new T.CylinderGeometry(0.12, 0.16, 0.08, 8), mat(0xe7c23a)); cap.position.set(x, 2.72, z); g.add(cap);
@@ -209,24 +246,121 @@ export class World {
     lobby.festival = g;
   }
 
-  show(id) {
-    if (this.current) this.current.group.visible = false;
+  // Region rooms draw every area of the seamless map; homes and the guild hall draw only themselves.
+  show(id, pos, ry) {
+    const ids = this.regionIds.includes(id) ? this.regionIds : [id];
+    for (const k in this.zones) this.zones[k].group.visible = ids.includes(k);
+    this.active = ids.map((k) => this.zones[k]).filter(Boolean);
     this.current = this.zones[id];
-    this.current.group.visible = true;
-    this.camTargetYaw = this.camYaw = 0;
+    const obstacles = this.worldInfo && ids.length > 1 ? this.worldInfo : this.current.data;
+    this.controls.enter(obstacles, this.profileFor(id), pos, ry);
+    this.setRoute([]);
+  }
+  // Camera presets authored in area space (the hall's view from the door) mapped onto the map.
+  profileFor(id) {
+    const z = this.zones[id], p = z?.scenery?.camera;
+    if (!p?.focus) return p ? { pitch: p.pitch, radius: p.radius } : null;
+    const [lx, ly, lz] = p.focus, f = z.data.flip ? -1 : 1;
+    return { ...p, focus: [(z.data.cx || 0) + lx * f, ly, (z.data.cz || 0) + lz * f], yaw: (p.yaw || 0) + (z.data.flip ? Math.PI : 0) };
+  }
+  // Walking into an area swaps the camera presets (the ◫ hall view only exists inside the hall).
+  setArea(id) { const p = this.profileFor(id); this.controls.profile = p?.focus ? p : { ...(p || {}), pitch: p?.pitch ?? .56, radius: p?.radius ?? 14 }; }
+
+  get camYaw(){return this.controls.yaw;}
+  set camYaw(v){if(this.controls)this.controls.yaw=v;}
+  get camTargetYaw(){return this.controls.targetYaw;}
+  set camTargetYaw(v){if(this.controls)this.controls.targetYaw=v;}
+  get camDist(){return this.controls.targetRadius;}
+  set camDist(v){if(this.controls)this.controls.targetRadius=v;}
+  setRoute(points){
+    while(this.routeGroup.children.length){const o=this.routeGroup.children.pop();o.parent=null;}
+    if(!points||points.length<1)return;
+    this.routeMat ||= new T.MeshBasicMaterial({color:0xffde82,transparent:true,opacity:.8,depthWrite:false});
+    this.routeGeo ||= new T.CircleGeometry(.17,10);
+    for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i],d=Math.hypot(a.x-b.x,a.z-b.z);for(let t=0;t<d;t+=1.1){const m=new T.Mesh(this.routeGeo,this.routeMat);m.rotation.x=-Math.PI/2;m.position.set(a.x+(b.x-a.x)*t/d,.045,a.z+(b.z-a.z)*t/d);this.routeGroup.add(m);}}
+  }
+  // Ground arrow orbiting the chicken, pointing at the next waypoint of the active route.
+  setGuide(g) {
+    if (!this.guide) {
+      const shape = new T.Shape(); shape.moveTo(0, .55); shape.lineTo(.36, -.12); shape.lineTo(0, .04); shape.lineTo(-.36, -.12); shape.closePath();
+      const m = new T.Mesh(new T.ShapeGeometry(shape), new T.MeshBasicMaterial({ color: 0xffc35a, transparent: true, opacity: .95, depthWrite: false }));
+      m.rotation.x = -Math.PI / 2; m.renderOrder = 5;
+      this.guide = new T.Group(); this.guide.add(m); this.scene.add(this.guide);
+    }
+    this.guide.visible = !!g;
+    if (!g) return;
+    const dx = g.to.x - g.from.x, dz = g.to.z - g.from.z, l = Math.hypot(dx, dz) || 1, pulse = 1 + Math.sin(performance.now() * .006) * .08;
+    this.guide.position.set(g.from.x + dx / l * 1.35, .07, g.from.z + dz / l * 1.35);
+    this.guide.rotation.y = Math.atan2(dx, dz) + Math.PI; this.guide.scale.setScalar(pulse);
+  }
+  markDestination(p){
+    if(!this.marker){this.marker=new T.Mesh(new T.RingGeometry(.3,.4,32),new T.MeshBasicMaterial({color:0xffe9a2,transparent:true,opacity:.9,side:T.DoubleSide}));this.marker.rotation.x=-Math.PI/2;this.scene.add(this.marker);}
+    this.marker.position.set(p.x,.06,p.z);this.marker.visible=true;this.markerUntil=performance.now()+1800;
+  }
+  // Architecture between the camera and the chicken (or the social focus) turns translucent.
+  fadeOccluders(dt, target, z) {
+    const list = z.scenery?.occluders;
+    if (!list?.length) return;
+    const cam = this.camera.position, ray = this._ray ||= new T.Ray(), hit = this._hit ||= new T.Vector3();
+    const goals = [this.controls.focus, this._chest ||= new T.Vector3()];
+    goals[1].set(target.x, 1, target.z);
+    for (const o of list) {
+      if (!o.userData.box) { o.updateMatrixWorld(true); o.userData.box = new T.Box3().setFromObject(o); o.userData.fade = 1; }
+      let blocked = false;
+      for (const gp of goals) {
+        const d = cam.distanceTo(gp); ray.origin.copy(cam); ray.direction.copy(gp).sub(cam).normalize();
+        if (ray.intersectBox(o.userData.box, hit) && hit.distanceTo(cam) < d - .4) { blocked = true; break; }
+      }
+      const goal = blocked ? .16 : 1, prev = o.userData.fade;
+      o.userData.fade += (goal - prev) * Math.min(1, dt * 7);
+      if (Math.abs(o.userData.fade - prev) < .002 && Math.abs(o.userData.fade - goal) < .01) continue;
+      const f = o.userData.fade;
+      o.traverse(m => { if (m.isMesh) { m.material.transparent = f < .985; m.material.opacity = f; m.material.depthWrite = f >= .985; m.castShadow = f > .5; } });
+    }
+  }
+  update(dt,target,moving=false,vehicle=null){
+    this.controls.update(dt,target,moving,this.reducedMotion,vehicle);
+    const t=performance.now()*.001;
+    this.sun.position.set(target.x - 18, 38, target.z + 20); this.sun.target.position.set(target.x, 0, target.z); this.sun.target.updateMatrixWorld();
+    for (const z of this.active) {
+      // Far areas are hidden behind the fog; only nearby ones animate.
+      let near = true;
+      if (this.active.length > 1 && !z.data.outdoor) {
+        const d = Math.hypot(Math.max(0, Math.abs(target.x - z.data.cx) - z.data.halfX), Math.max(0, Math.abs(target.z - z.data.cz) - z.data.halfZ));
+        z.group.visible = d < 90; near = d < 45;
+        if (!z.group.visible) continue;
+      }
+      if (!near) continue;
+      if (!this.reducedMotion) z.npcs.forEach((n, i) => { n.position.y = (n.userData.baseY || 0) + Math.sin(t * 1.5 + i) * .018; });
+      if (z.scenery) { z.scenery.reducedMotion = this.reducedMotion; updateScenery(z.scenery, dt, t, (this.actors || [target]).map((q) => toLocal(z.data, q.x, q.z))); }
+      for (const child of z.group.children) { const it = child.userData.item, lab = child.userData.label; if (!lab || !it) continue; lab.visible = Math.hypot(it.x - target.x, it.z - target.z) < 5; if (lab.visible) fitLabel(lab, this.camera); }
+      this.fadeOccluders(dt, target, z);
+    }
+    if(this.marker&&performance.now()>this.markerUntil)this.marker.visible=false;
+    this.renderer.render(this.scene,this.camera);
   }
 
-  update(dt, target) {
-    this.camYaw += (this.camTargetYaw - this.camYaw) * (this.reducedMotion ? 1 : Math.min(1, dt * 6));
-    const tx = target ? target.x : 0, tz = target ? target.z : 0;
-    // Góc nhìn chéo cao ~55° như bộ ảnh minh hoạ; điểm nhìn đặt trước gà một chút để thấy nhiều sân phía trước.
-    const fx = -Math.sin(this.camYaw) * 2, fz = -Math.cos(this.camYaw) * 2;
-    this.camera.position.set(tx + Math.sin(this.camYaw) * this.camDist * 0.72, 4 + this.camDist * 0.95, tz + Math.cos(this.camYaw) * this.camDist * 0.72);
-    this.camera.lookAt(tx + fx, 0.5, tz + fz);
-    const t = performance.now() * 0.002;
-    if (this.current && !this.reducedMotion) this.current.npcs.forEach((n, i) => { n.position.y = Math.abs(Math.sin(t + i)) * 0.04; });
-    this.renderer.render(this.scene, this.camera);
-  }
+}
+
+// Area copy in its own frame: centre (0,0), entrance on +z. The outdoor area also gets the other
+// areas' footprints and entries so it can lay the roads between them.
+function localData(data, zones, world) {
+  const L = (p) => ({ ...p, ...toLocal(data, p.x, p.z) });
+  const out = { ...data, items: (data.items || []).map(L), spawns: (data.spawns || []).map(L), obstacles: (data.obstacles || []).map(L), entry: data.entry ? L(data.entry) : null };
+  if (data.outdoor) out.areas = Object.values(zones).filter((a) => !a.outdoor && a.id !== 'home' && a.id !== 'guildhall').map((a) => ({ id: a.id, title: a.title, cx: a.cx - (data.cx || 0), cz: a.cz - (data.cz || 0), halfX: a.halfX, halfZ: a.halfZ, entry: a.entry && { x: a.entry.x - (data.cx || 0), z: a.entry.z - (data.cz || 0) } })), out.hub = world?.hub || { x: 0, z: 0 };
+  return out;
+}
+
+// Name plates keep a readable on-screen size (≈14 px text) instead of growing as the camera nears.
+const _lp = new T.Vector3();
+export function fitLabel(sp, camera) {
+  const aspect = sp.userData.aspect || (sp.scale.x / sp.scale.y);
+  sp.userData.aspect = aspect;
+  let parentScale = 1;
+  for (let o = sp.parent; o; o = o.parent) parentScale *= o.scale.y;
+  const d = sp.getWorldPosition(_lp).distanceTo(camera.position);
+  const h = Math.min(1.1, Math.max(.2, .021 * d * 900 / window.innerHeight)) / parentScale;
+  sp.scale.set(aspect * h, h, 1);
 }
 
 // ---------- Trang trí ----------
@@ -317,6 +451,15 @@ function roadSign() {
   return g;
 }
 
+function noticeBoard() {
+  const g = new T.Group();
+  for (const sx of [-1, 1]) box(g, 0.16, 2.2, 0.16, 0x5c3a1f, sx * 0.9, 1.1, 0);
+  box(g, 2.1, 1.2, 0.1, 0x9c6b36, 0, 1.45, 0);
+  box(g, 2.3, 0.12, 0.3, 0x6b4423, 0, 2.15, 0);
+  [[-0.55, 1.6, 0xf4ecd4], [0.1, 1.55, 0xe8d9b0], [0.6, 1.3, 0xf4ecd4], [-0.3, 1.2, 0xdfe8d4]].forEach(([x, y, c]) => { const p = box(g, 0.48, 0.38, 0.02, c, x, y, 0.06); p.rotation.z = (x * 7) % 0.2 - 0.1; });
+  return g;
+}
+
 function signpost() {
   const g = new T.Group();
   box(g, 0.16, 1.4, 0.16, 0x6b4423, 0, 0.7, 0);
@@ -327,10 +470,12 @@ function signpost() {
 function digMound(soil) {
   const g = new T.Group();
   const hex = soil === 'Đất ẩm' ? 0x4f3520 : soil === 'Gốc cây' ? 0x7a5531 : 0x6e4a28;
-  const dirt = new T.Mesh(new T.ConeGeometry(0.85, 0.5, 12), mat(hex));
-  dirt.position.y = 0.22; dirt.castShadow = true; dirt.receiveShadow = true; g.add(dirt);
-  const hole = new T.Mesh(new T.CircleGeometry(0.38, 14), mat(0x2e1f12));
-  hole.rotation.x = -Math.PI / 2; hole.position.y = 0.48; g.add(hole);
+  const dirt = new T.Mesh(new T.SphereGeometry(0.9, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), mat(hex));
+  dirt.scale.y = 0.42; dirt.castShadow = true; dirt.receiveShadow = true; g.add(dirt);
+  const hole = new T.Mesh(new T.CircleGeometry(0.32, 14), mat(0x2e1f12));
+  hole.rotation.x = -Math.PI / 2; hole.position.y = 0.385; g.add(hole);
+  if (soil === 'Gốc cây') { const st = new T.Mesh(new T.CylinderGeometry(0.32, 0.4, 0.5, 10), mat(0x7a5531)); st.position.set(0.55, 0.25, -0.35); st.castShadow = true; g.add(st); }
+  for (let i = 0; i < 3; i++) { const w = new T.Mesh(new T.TorusGeometry(0.09, 0.03, 6, 10, Math.PI), mat(0xd98a8a)); w.position.set(Math.cos(i * 2.1) * 0.7, 0.12, Math.sin(i * 2.1) * 0.7); w.rotation.y = i; g.add(w); }
   for (let i = 0; i < 6; i++) {
     const a = Math.random() * Math.PI * 2, r = 0.9 + Math.random() * 0.4;
     const c = new T.Mesh(new T.DodecahedronGeometry(0.09 + Math.random() * 0.06), mat(hex));
@@ -346,154 +491,3 @@ export function ghostDecor(kind) {
   g.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.55; o.castShadow = false; } });
   return g;
 }
-
-function road(g, x, z, w, d, ry = 0) {
-  const r = new T.Mesh(new T.BoxGeometry(w, 0.04, d), mat(0x6f6a62));
-  r.position.set(x, 0.02, z); r.rotation.y = ry; r.receiveShadow = true; g.add(r);
-  for (let i = -Math.floor(d / 2) + 1; i < d / 2; i += 2) {
-    const l = new T.Mesh(new T.BoxGeometry(0.12, 0.05, 0.8), mat(0xf4f0e6));
-    l.position.set(x, 0.03, z + i); g.add(l);
-  }
-}
-function field(g, x, z, w, d) {
-  const f = new T.Mesh(new T.BoxGeometry(w, 0.05, d), mat(0x9cbf4a)); f.position.set(x, 0.02, z); g.add(f);
-  for (let i = 0; i < w * d / 3; i++) {
-    const s = new T.Mesh(new T.ConeGeometry(0.06, 0.4, 4), mat(0xc8b64a));
-    s.position.set(x + (Math.random() - 0.5) * w, 0.2, z + (Math.random() - 0.5) * d); g.add(s);
-  }
-}
-function stream(g, x, w, d) {
-  const s = new T.Mesh(new T.BoxGeometry(w, 0.05, d), mat(0x4aa3c9, { roughness: 0.25 }));
-  s.position.set(x, 0.03, 0); s.receiveShadow = true; g.add(s);
-  for (let i = 0; i < 14; i++) {
-    const reed = new T.Mesh(new T.CylinderGeometry(0.03, 0.03, 0.8, 4), mat(0x6f8f3a));
-    reed.position.set(x + (Math.random() < 0.5 ? -1 : 1) * (w / 2 + 0.2), 0.4, (Math.random() - 0.5) * d); g.add(reed);
-  }
-}
-
-const decor = {
-  hatchery(g, z) {
-    ground(g, z.halfX * 2 + 1.2, z.halfZ * 2 + 1.2, 0xc9a978);
-    tufts(g, 8, z.halfX, z.halfZ);
-    // Dãy ổ ấp có trứng dưới đèn sưởi (ảnh "Trạm ấp trứng gà").
-    for (let i = 0; i < 4; i++) {
-      const x = -3 + i * 2.4, zz = -5;
-      nest(g, x, zz);
-      for (let k = 0; k < 3; k++) { const e = new T.Mesh(new T.SphereGeometry(0.13, 10, 8), mat(0xf6ecd6)); e.scale.y = 1.25; e.position.set(x + (k - 1) * 0.18, 0.2, zz + (k % 2) * 0.12); g.add(e); }
-      box(g, 0.06, 1.6, 0.06, 0x5c3a1f, x, 0.8, zz - 0.7);
-      const lamp = new T.Mesh(new T.ConeGeometry(0.22, 0.25, 10, 1, true), mat(0xe7a73a, { emissive: 0x7a3a0a }));
-      lamp.position.set(x, 1.55, zz - 0.35); lamp.rotation.x = Math.PI; g.add(lamp);
-    }
-    box(g, 2.4, 1.6, 0.6, 0x8a5a30, 6.4, 0.8, -6);
-    for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) { const e = new T.Mesh(new T.SphereGeometry(0.1, 8, 6), mat(0xf6ecd6)); e.position.set(5.6 + c * 0.5, 0.45 + r * 0.45, -5.65); g.add(e); }
-    hay(g, -8, -6, 0.9); barrel(g, 7.6, 3);
-  },
-  station(g, z) {
-    ground(g, z.halfX * 2 + 1.2, z.halfZ * 2 + 1.2, 0xb59a6a);
-    road(g, 0, -1.5, 3, z.halfZ * 2 + 1.2);
-    field(g, -7, -5, 5, 4); field(g, 7.5, -5.5, 4, 3);
-    const bus = buildBus(); bus.position.set(4.6, 0, -4.2); g.add(bus);
-    g.userData.bus = bus;
-    tufts(g, 10, z.halfX, z.halfZ);
-  },
-  garage(g, z) {
-    ground(g, z.halfX * 2 + 1.2, z.halfZ * 2 + 1.2, 0xa8a196);
-    box(g, 7, 2.6, 0.3, 0x8a5a30, 0, 1.3, -7.6);
-    box(g, 7.4, 0.15, 2.4, 0xd64b3a, 0, 2.7, -6.6);
-    const show = [['xe_dap', -5.5], ['xe_may', -2], ['o_to', 2.2]];
-    for (const [k, x] of show) { const v = buildVehicle(k); v.position.set(x, 0, -5.2); v.rotation.y = 0.4; g.add(v); }
-    barrel(g, 7.5, -6.5, 0x2b2b2b); barrel(g, 8.1, -5.7, 0x2b2b2b);
-    tufts(g, 6, z.halfX, z.halfZ);
-  },
-  vs_station(g, z) {
-    ground(g, z.halfX * 2 + 1.2, z.halfZ * 2 + 1.2, 0xa9a36a);
-    road(g, 0, 0, 3, z.halfZ * 2 + 1.2);
-    field(g, 7, -4, 4, 5);
-    const bus = buildBus(); bus.position.set(4.6, 0, -4.2); g.add(bus);
-    g.userData.bus = bus;
-    tufts(g, 12, z.halfX, z.halfZ);
-  },
-  vensuoi(g, z) {
-    ground(g, z.halfX * 2 + 1.2, z.halfZ * 2 + 1.2, 0x9c8a55);
-    // Dòng suối chảy dọc đồng, cầu gỗ bắc ngang (ảnh "Trang trại gà ven suối").
-    stream(g, 9.4, 2.4, z.halfZ * 2 + 1.2);
-    box(g, 3.4, 0.15, 1.4, 0x8a5a30, 9.4, 0.35, -5);
-    for (const sx of [-1, 1]) box(g, 3.4, 0.4, 0.08, 0x6b4423, 9.4, 0.6, -5 + sx * 0.66);
-    const mud = new T.Mesh(new T.CircleGeometry(4.5, 20), mat(0x5e4329)); mud.rotation.x = -Math.PI / 2; mud.position.set(-3, 0.01, -3.2); g.add(mud);
-    tufts(g, 18, z.halfX, z.halfZ);
-    for (const [x, zz] of [[-9.5, -7], [-9.5, 6], [4, -8]]) { const t = new T.Group(); box(t, 0.3, 1.2, 0.3, 0x6b4423, 0, 0.6, 0); const c = new T.Mesh(new T.IcosahedronGeometry(1.0), mat(0x3f7d3a)); c.position.y = 1.7; t.add(c); t.position.set(x, 0, zz); g.add(t); }
-  },
-  lobby(g, z) {
-    ground(g, z.halfX * 2 + 1.2, z.halfZ * 2 + 1.2, 0xcdae7a);
-    tufts(g, 16, z.halfX, z.halfZ);
-    // Sân khấu gỗ của Gà trưởng trại + cầu đậu thấp hai bên (ảnh "Sảnh nông trại gà").
-    // Chừa hành lang 2m phía sau sân khấu để đi tới cổng "Ra Chợ thóc".
-    box(g, 6, 0.3, 2, 0x8a5a30, 0, 0.15, -5.4);
-    for (const sx of [-1, 1]) box(g, 1, 0.15, 0.6, 0x7b4f2d, sx * 3.4, 0.08, -4.6);
-    for (const sx of [-1, 1]) for (let i = 0; i < 2; i++) box(g, 3.2, 0.12, 0.12, 0x6b4423, sx * 10.4, 0.55 + i * 0.5, -5 + i * 1.6);
-    // Dãy ổ rơm chung (tiện ích ngồi nghỉ, không phải nhà riêng).
-    for (let r = 0; r < 2; r++) for (let c = 0; c < 5; c++) nest(g, -5 + c * 2.5, -2.4 + r * 2.4);
-    hay(g, -10.6, -7.6, 1.1); hay(g, -9.2, -6.4, 0.8);
-    for (let i = 0; i < 3; i++) box(g, 0.55, 0.5, 0.42, 0xe8dcc0, -11.3, 0.25 + (i > 1 ? 0.45 : 0), -1.4 + (i % 2) * 0.6, 0.2);
-    barrel(g, -11.2, -3, 0xe7a73a); barrel(g, 11.3, -6.6);
-    box(g, 0.7, 0.3, 2.6, 0x6b4423, -10.6, 0.25, 2.5);
-    box(g, 0.5, 0.12, 2.4, 0xe7a73a, -10.6, 0.43, 2.5);
-    box(g, 0.7, 0.3, 3.2, 0x6b4423, 10.8, 0.25, 1.5);
-    const water = new T.Mesh(new T.BoxGeometry(0.5, 0.06, 3), mat(0x4aa3c9, { roughness: 0.3 }));
-    water.position.set(10.8, 0.42, 1.5); g.add(water);
-    // Biển hiệu Hypex.
-    const sign = label('🐔 Chuồng gà Hypex', { bg: 'rgba(224,89,43,.92)', scale: 1.2 });
-    sign.position.set(0, 2.4, -5.4); g.add(sign);
-  },
-  garden(g, z) {
-    ground(g, z.halfX * 2 + 1.2, z.halfZ * 2 + 1.2, 0xb79a63);
-    tufts(g, 14, z.halfX, z.halfZ);
-    // Vùng đất ẩm sẫm màu ở góc phải như ảnh minh hoạ.
-    const wet = new T.Mesh(new T.CircleGeometry(3.2, 20), mat(0x5e4329));
-    wet.rotation.x = -Math.PI / 2; wet.position.set(6.2, 0.01, -1.8); g.add(wet);
-    hay(g, -8.6, -7, 1);
-    const stump = new T.Mesh(new T.CylinderGeometry(0.75, 0.9, 0.9, 12), mat(0x6b4423));
-    stump.position.set(-0.5, 0.45, -6.3); stump.castShadow = true; g.add(stump);
-    const ring = new T.Mesh(new T.CylinderGeometry(0.74, 0.74, 0.02, 12), mat(0xcfa877));
-    ring.position.set(-0.5, 0.91, -6.3); g.add(ring);
-    // Giá treo xẻng.
-    box(g, 2.2, 0.12, 0.12, 0x6b4423, -9.3, 1.3, -2.5, Math.PI / 2);
-    for (let i = 0; i < 3; i++) box(g, 0.08, 1.1, 0.25, 0x9a9a9a, -9.3, 0.7, -3.3 + i * 0.7);
-    barrel(g, -9.2, 0.2, 0x8ec6d9); barrel(g, 8.6, -6.5, 0x8ec6d9);
-  },
-  market(g, z) {
-    ground(g, z.halfX * 2 + 1.2, z.halfZ * 2 + 1.2, 0xc6a976);
-    tufts(g, 12, z.halfX, z.halfZ);
-    const stall = (x, roof, goods) => {
-      box(g, 3, 0.18, 1.3, 0x8a5a30, x, 0.95, -6.2);
-      for (const sx of [-1, 1]) { box(g, 0.16, 0.95, 0.16, 0x6b4423, x + sx * 1.3, 0.47, -6.2); box(g, 0.14, 2.2, 0.14, 0x6b4423, x + sx * 1.4, 1.1, -5.6); box(g, 0.14, 2.2, 0.14, 0x6b4423, x + sx * 1.4, 1.1, -6.9); }
-      box(g, 3.3, 0.12, 1.7, roof, x, 2.25, -6.25);
-      goods(x);
-    };
-    stall(-7, 0x9c6b36, (x) => { box(g, 0.7, 0.25, 0.5, 0x7b4f2d, x - 0.7, 1.17, -6.2); box(g, 0.6, 0.12, 0.4, 0xc86f6f, x - 0.7, 1.32, -6.2); for (let i = 0; i < 2; i++) box(g, 0.5, 0.4, 0.4, 0xe8dcc0, x + 0.8, 1.25 + i * 0.4, -6.2); });
-    stall(0, 0xb5743c, (x) => {
-      const bowl = (bx, col, s) => { const b = new T.Mesh(new T.CylinderGeometry(0.28 * s, 0.2 * s, 0.16, 12), mat(0x9c6b36)); b.position.set(bx, 1.12, -6.2); g.add(b); const f = new T.Mesh(new T.CylinderGeometry(0.25 * s, 0.25 * s, 0.04, 12), mat(col)); f.position.set(bx, 1.2, -6.2); g.add(f); };
-      bowl(x - 0.9, 0xe7a73a, 1.4); bowl(x - 0.1, 0x8a6b3a, 1); bowl(x + 0.5, 0x6fa03a, 1); bowl(x + 1.05, 0xc9a35a, 1);
-    });
-    stall(7, 0x8a5a30, (x) => {
-      box(g, 2.6, 0.06, 0.06, 0x6b4423, x, 2.0, -5.9);
-      box(g, 0.6, 0.6, 0.06, 0x3f86c9, x - 0.7, 1.6, -5.9); box(g, 0.6, 0.6, 0.06, 0xd64b3a, x, 1.6, -5.9);
-      const hat1 = new T.Mesh(new T.CylinderGeometry(0.3, 0.3, 0.04, 14), mat(0xd9b65a)); hat1.position.set(x + 0.8, 1.08, -6.2); g.add(hat1);
-      const hat2 = new T.Mesh(new T.CylinderGeometry(0.3, 0.3, 0.04, 14), mat(0xd64b3a)); hat2.position.set(x + 0.3, 1.08, -6.1); g.add(hat2);
-    });
-    hay(g, -10, -7, 0.9); barrel(g, -10.2, -4.5);
-  },
-  arena(g, z) {
-    ground(g, z.halfX * 2 + 1.2, z.halfZ * 2 + 1.2, 0xb98a52);
-    tufts(g, 10, z.halfX, z.halfZ);
-    const sand = new T.Mesh(new T.CircleGeometry(4.2, 36), mat(0xcaa86a));
-    sand.rotation.x = -Math.PI / 2; sand.position.y = 0.01; sand.receiveShadow = true; g.add(sand);
-    const ring = new T.Mesh(new T.TorusGeometry(4.2, 0.22, 8, 40), mat(0xe8e0cc));
-    ring.rotation.x = Math.PI / 2; ring.position.y = 0.06; g.add(ring);
-    for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; box(g, 0.2, 0.7, 0.2, 0x5c3a1f, Math.cos(a) * 4.6, 0.35, Math.sin(a) * 4.6); }
-    // Băng ghế khán giả.
-    for (const sx of [-1, 1]) box(g, 0.7, 0.4, 5, 0x8a5a30, sx * 7.8, 0.2, 0);
-    for (let i = 0; i < 3; i++) { const f = new T.Mesh(new T.ConeGeometry(0.3, 0.5, 3), mat([0xd64b3a, 0xe7c23a, 0x3f86c9][i])); f.rotation.x = Math.PI; f.position.set(-3 + i * 3, 2.6, -8.4); g.add(f); }
-    box(g, 9, 0.04, 0.04, 0x5c3a1f, 0, 2.85, -8.4);
-  },
-};

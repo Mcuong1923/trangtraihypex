@@ -93,6 +93,9 @@ func TestSocialAndHomes(t *testing.T) {
 	c.toastHas("bạn bè")
 
 	// --- Nhà riêng: vào nhà mình, đặt đồ đúng luật ---
+	for _, x := range []*client{a, b, c} {
+		e.warp(x, "neighborhood") // nhà riêng mở từ cổng ở Xóm Rơm Vàng
+	}
 	a.send(msg{"t": "visit", "owner": "me"})
 	wh := a.expect("welcome", 2*time.Second)
 	if wh["zone"] != "home" || wh["home"] == nil || wh["room"].(map[string]any)["kind"] != "home" {
@@ -134,8 +137,8 @@ func TestSocialAndHomes(t *testing.T) {
 		}
 	}
 	a.mustOK("home_kick", msg{"target": carolPID})
-	if back := c.expect("welcome", 2*time.Second); back["zone"] != ZoneLobby || back["room"].(map[string]any)["kind"] != "public" {
-		t.Fatal("khách bị mời ra phải về sảnh chuồng công cộng")
+	if back := c.expect("welcome", 2*time.Second); back["zone"] != "neighborhood" || back["room"].(map[string]any)["kind"] != "public" {
+		t.Fatal("khách bị mời ra phải đứng ở cổng Xóm Rơm Vàng")
 	}
 
 	// --- Chặn: không vào nhà, không kết bạn, không nhận chat ---
@@ -148,8 +151,8 @@ func TestSocialAndHomes(t *testing.T) {
 
 	// --- Rời nhà về sảnh; nhà trống thì phòng đóng ---
 	b.send(msg{"t": "leave_home"})
-	if wl := b.expect("welcome", 2*time.Second); wl["zone"] != ZoneLobby {
-		t.Fatal("rời nhà phải về sảnh")
+	if wl := b.expect("welcome", 2*time.Second); wl["zone"] != "neighborhood" {
+		t.Fatal("rời nhà phải ra cổng Xóm Rơm Vàng")
 	}
 	a.mustOK("go", msg{"to": "lobby"})
 	a.expect("welcome", 2*time.Second)

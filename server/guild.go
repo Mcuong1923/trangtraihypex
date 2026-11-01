@@ -570,6 +570,10 @@ func (h *Hub) guild(s *Session, m *inMsg) {
 		h.guildPush(gd.ID, map[string]any{"t": "guild_chat", "system": true, "text": "🏗️ Hội đã hoàn thành " + p.Name + "!"})
 		ok("")
 	case "guild_hall":
+		if !h.inResidential(s) {
+			fail(errors.New("Nhà Hội nằm ở Xóm Rơm Vàng. Mở bản đồ để đặt chỉ đường."))
+			return
+		}
 		if err := h.VisitGuild(s); err != nil {
 			fail(err)
 		}
@@ -595,7 +599,7 @@ func guildHallZone(name string) *Zone {
 	return &Zone{ID: "guildhall", Title: "Nhà Hội " + name, HalfX: 10.4, HalfZ: 8.6,
 		Spawns: []Vec{{0, 6.8}, {-1.2, 6.8}, {1.2, 6.8}, {0, 5.6}, {-2, 5.8}, {2, 5.8}},
 		Items: []Item{
-			{ID: "ve_sanh", Kind: "home_exit", Label: "Về sảnh chuồng", Emo: "🏠", X: 0, Z: 8.0, R: 1.4},
+			{ID: "ve_sanh", Kind: "home_exit", Label: "Ra Xóm Rơm Vàng", Emo: "🏠", X: 0, Z: 8.0, R: 1.4},
 			{ID: "bang_hoi", Kind: "guild_board", Label: "Bảng hội", Emo: "📜", X: 7.2, Z: -4.6, R: 2.4},
 		}}
 }

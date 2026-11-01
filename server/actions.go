@@ -52,6 +52,29 @@ func (r *Room) act(p *Player, m *inMsg) {
 	}
 
 	switch m.A {
+	case "sit":
+		it := zone.Item(m.ID)
+		if it == nil || it.Kind != "nest" || p.pos.Dist(it.Pos()) > it.R+InteractSlack || p.match != nil || p.ride != nil || p.rideOf != nil {
+			fail(errors.New("Lại gần ổ trống để ngồi."))
+			return
+		}
+		for _, q := range r.players {
+			if q != p && q.zone == p.zone && q.seat == it.ID {
+				fail(errors.New("Ổ này đã có gà ngồi."))
+				return
+			}
+		}
+		p.seat = it.ID
+		p.pos = it.Pos()
+		p.ry = math.Pi
+		p.in = Vec{}
+		p.dig = nil
+		r.broadcastZone(p.zone, nil, map[string]any{"t": "nest", "pid": p.PID, "nest": p.seat, "x": p.pos.X, "z": p.pos.Z})
+		reply(ActResult{OK: true})
+	case "stand":
+		r.stand(p)
+		reply(ActResult{OK: true})
+
 	case "go": // đi qua cổng sang khu khác trong cùng chuồng
 		if p.match != nil {
 			fail(errors.New("Đang trong trận PK."))
@@ -63,12 +86,8 @@ func (r *Room) act(p *Player, m *inMsg) {
 			go r.hub.LeaveHome(p.sess)
 			return
 		}
-		var ok bool
-		if m.To == ZoneLobby && m.ID == "home" {
-			ok = true // "Về sảnh chuồng" miễn phí từ bất kỳ khu nào (mục 8.5)
-		} else if g := nearKind(zone, p.pos, "gate"); g != nil && g.To == m.To {
-			ok = true
-		}
+		// Trên bản đồ liền chỉ còn lối "Về sảnh an toàn"; mọi nơi khác đi bộ tới bằng đường làng.
+		ok := m.To == ZoneLobby && m.ID == "home"
 		if p.rideOf != nil {
 			fail(errors.New("Đang ngồi xe của người khác; xuống xe trước."))
 			return
@@ -84,24 +103,10 @@ func (r *Room) act(p *Player, m *inMsg) {
 			return
 		}
 		if !ok || r.zones[m.To] == nil {
-			fail(errors.New("Hãy lại gần cổng để đi."))
-			return
-		}
-		if p.ride != nil && !DriveZones[m.To] {
-			fail(errors.New("Không lái xe vào " + r.zones[m.To].Title + ". Cất xe ở điểm đỗ trước."))
+			fail(errors.New("Đi bộ tới nơi theo đường làng. Mở bản đồ (M) để đặt chỉ đường."))
 			return
 		}
 		r.moveZone(p, m.To)
-		if p.ride != nil {
-			// Cả xe đi cùng: khách sang khu mới theo người lái.
-			for _, q := range p.ride.Seats[1:] {
-				if q != nil {
-					r.moveZone(q, m.To)
-				}
-			}
-			r.broadcastRide(p)
-			r.syncRides()
-		}
 		reply(ActResult{OK: true})
 
 	case "talk":
@@ -424,6 +429,7 @@ func markerPos(el, speed float64) float64 {
 
 func (r *Room) moveZone(p *Player, to string) {
 	from := p.zone
+	r.stand(p)
 	if p.trade != nil {
 		r.closeTrade(p.trade, "Một bên đã rời khu, giao dịch huỷ.")
 	}
@@ -450,4 +456,30 @@ func (r *Room) broadcastLook(p *Player) {
 	_, gname, gcolor := r.hub.store.Guilds.GuildOf(p.acc.ID)
 	r.broadcastZone(p.zone, nil, map[string]any{"t": "plook", "pid": p.PID, "equipped": eq, "title": titleName(p.acc.Title), "level": p.acc.Level,
 		"pet": petOf(p.acc), "guild": gname, "gcolor": gcolor})
+}
+
+// enterArea cập nhật khu theo vị trí sau mỗi bước đi trên bản đồ liền.
+func (r *Room) enterArea(p *Player) {
+	if r.world == nil {
+		return
+	}
+	area := r.world.AreaAt(p.pos)
+	if area == p.zone {
+		return
+	}
+	if p.zone == r.stationZone() {
+		r.cancelTrip(p, "Bạn đã rời bến trước giờ xe chạy.")
+	}
+	if p.match != nil && p.zone == "arena" {
+		r.endMatchFor(p, "left") // chạy khỏi sân tỷ thí giữa trận coi như bỏ cuộc
+	}
+	p.zone = area
+	r.discover(p, "zone:"+area)
+}
+func (r *Room) stand(p *Player) {
+	if p.seat == "" {
+		return
+	}
+	p.seat = ""
+	r.broadcastZone(p.zone, nil, map[string]any{"t": "nest", "pid": p.PID, "nest": ""})
 }

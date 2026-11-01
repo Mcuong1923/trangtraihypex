@@ -274,7 +274,7 @@ func (h *Home) Zone() *Zone {
 	return &Zone{ID: "home", Title: "Chuồng của " + h.OwnerName, HalfX: t.HalfX - 0.4, HalfZ: t.HalfZ - 0.4,
 		Spawns: []Vec{{0, t.HalfZ - 2.4}, {-1, t.HalfZ - 2.4}, {1, t.HalfZ - 2.4}, {0, t.HalfZ - 3.2}},
 		Items: []Item{
-			{ID: "ve_sanh", Kind: "home_exit", Label: "Về sảnh chuồng", Emo: "🏠", X: 0, Z: t.HalfZ - 0.6, R: 1.4},
+			{ID: "ve_sanh", Kind: "home_exit", Label: "Ra Xóm Rơm Vàng", Emo: "🏠", X: 0, Z: t.HalfZ - 0.6, R: 1.4},
 			{ID: "bo_moc", Kind: "npc_cow", Label: "Bò Mộc", Emo: "🐮", X: t.HalfX - 1.6, Z: t.HalfZ - 1.8, R: 2.2},
 			{ID: "bang_nha", Kind: "home_board", Label: "Bảng nhà", Emo: "🪧", X: -t.HalfX + 1.4, Z: t.HalfZ - 1.4, R: 2},
 		}}

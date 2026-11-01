@@ -91,7 +91,7 @@ function friendMenu(id, name, online) {
     ['💬 Nhắn tin', () => openDM(id, name)],
     ...(online && G.room?.kind === 'public' ? [['🏠 Mời vào chuồng ' + esc(G.room.name), () => raw({ t: 'invite_room', id })]] : []),
     ...(online ? [['🏡 Mời về chuồng riêng của tôi', () => raw({ t: 'home_invite', id })]] : []),
-    ['🚪 Thăm chuồng riêng của ' + esc(name), () => raw({ t: 'visit', owner: id })],
+    ['🚪 Thăm chuồng riêng của ' + esc(name), () => goVisit({ t: 'visit', owner: id }, 'Chuồng của ' + name)],
     ['➖ Huỷ kết bạn', () => confirmBox(`Huỷ kết bạn với ${name}?`, '', () => raw({ t: 'friend_remove', id }))],
     ['🚫 Chặn', () => confirmBox(`Chặn ${name}?`, 'Huỷ kết bạn và chặn mọi tương tác.', () => raw({ t: 'block', id, on: true }))],
   ];
@@ -100,7 +100,7 @@ function friendMenu(id, name, online) {
 }
 
 // Hộp xác nhận ngay trong trang (viewer không hiện confirm()).
-function confirmBox(title, text, yes) {
+export function confirmBox(title, text, yes) {
   openSheet('confirm', esc(title), `${text ? `<p>${esc(text)}</p>` : ''}<div class="choices"><button class="btn" id="cYes">Đồng ý</button><button class="btn sec" id="cNo">Thôi</button></div>`);
   $('cYes').onclick = () => { closeSheet(); yes(); };
   $('cNo').onclick = closeSheet;
@@ -177,14 +177,29 @@ function inviteBar(text, ttl, yesLabel, onYes) {
   barTimer = setInterval(() => { left--; if (left <= 0) hide(); else if ($('ibLeft')) $('ibLeft').textContent = left; }, 1000);
 }
 export function onRoomInvite(m) { inviteBar(`🏠 ${m.from} mời bạn vào ${m.roomName}`, 60, 'Đến', () => raw({ t: 'switch_room', room: m.room })); }
-export function onHomeInvite(m) { inviteBar(`🏡 ${m.from} mời bạn về chuồng riêng`, m.ttl, 'Đến chơi', () => raw({ t: 'visit', owner: m.owner, token: m.token })); }
+export function onHomeInvite(m) { inviteBar(`🏡 ${m.from} mời bạn về chuồng riêng`, m.ttl, 'Đến chơi', () => goVisit({ t: 'visit', owner: m.owner, token: m.token }, `Chuồng của ${m.from}`)); }
+
+// Coop gates and the guild hall open from Xóm Rơm Vàng. Elsewhere a visit becomes a route there,
+// and the visit is offered again on arrival (the server re-checks access at the gate).
+export function goVisit(msg, label) {
+  if (G.zone === 'neighborhood' || G.room?.kind !== 'public') { raw(msg); return; }
+  G.pendingVisit = { msg, label, until: Date.now() + 110000 };
+  G.navigate?.('neighborhood', `${label} nằm ở Xóm Rơm Vàng. Đi theo chỉ đường để tới cổng.`);
+}
+export function arrivedLane() {
+  const v = G.pendingVisit;
+  if (!v || G.zone !== 'neighborhood') return;
+  G.pendingVisit = null;
+  if (Date.now() < v.until) inviteBar(`${v.label} · bạn đã tới Xóm Rơm Vàng`, 60, 'Vào ngay', () => raw(v.msg));
+}
+G.goVisit = goVisit;
 
 // ---------- Bảng chỉ đường về chuồng riêng (sảnh) ----------
 
 export function dialogHomeSign() {
   openSheet('homes', 'Chuồng riêng', `<div class="choices"><button class="btn" id="goMine">🏡 Về chuồng của tôi</button></div>
     <h2>Thăm chuồng khác</h2><div id="homeList"><p class="mut">Đang tải…</p></div>`);
-  $('goMine').onclick = () => { closeSheet(); raw({ t: 'visit', owner: 'me' }); };
+  $('goMine').onclick = () => { closeSheet(); goVisit({ t: 'visit', owner: 'me' }, 'Chuồng của bạn'); };
   raw({ t: 'homes' });
 }
 const ACCESS_NAME = { private: 'Riêng tư', friends: 'Bạn bè', public: 'Công khai' };
@@ -194,7 +209,7 @@ export function onHomes(m) {
     <div class="meta"><div class="nm">Chuồng của ${esc(h.name)}</div><div class="sub">${esc(h.why)} · ${ACCESS_NAME[h.access] || ''}</div></div>
     <div class="act"><button class="mini hot" data-visit="${h.id}">Thăm</button></div></div>`).join('') ||
     '<p class="mut">Chưa có chuồng nào mở cho bạn. Kết bạn để thăm chuồng của nhau, hoặc chờ ai đó mở cửa công khai.</p>';
-  document.querySelectorAll('[data-visit]').forEach((b) => (b.onclick = () => { closeSheet(); raw({ t: 'visit', owner: b.dataset.visit }); }));
+  document.querySelectorAll('[data-visit]').forEach((b) => (b.onclick = () => { closeSheet(); goVisit({ t: 'visit', owner: b.dataset.visit }, 'Chuồng bạn chọn'); }));
 }
 
 // ---------- Trong chuồng riêng ----------
@@ -234,7 +249,7 @@ export function openHomeBoard() {
   const guests = [...G.players.entries()];
   if (!isOwner()) {
     openSheet('homeboard', `Chuồng của ${esc(h.ownerName)}`, `<p>Đất: <b>${esc(h.tierInfo.name)}</b> · ${h.objects.length} món trang trí${h.coop?.state === 'done' ? ' · có chuồng gỗ' : ''}.</p>
-      <p class="mut">Chủ chuồng có thể mời khách ra về. Muốn về sảnh thì đi ra cổng hoặc bấm “Về sảnh chuồng”.</p>`);
+      <p class="mut">Chủ chuồng có thể mời khách ra về. Muốn ra ngoài thì đi tới cổng chuồng để ra Xóm Rơm Vàng.</p>`);
     return;
   }
   openSheet('homeboard', 'Bảng nhà', `

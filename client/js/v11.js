@@ -277,7 +277,7 @@ export function onContracts(m) {
     }).join('') || '<div class="empty">Chưa có hợp đồng nào đang mở.</div>'}`);
   document.querySelectorAll('[data-take]').forEach((b) => (b.onclick = async () => { b.disabled = true; showResult(await act('contract_take', { id: b.dataset.take })); openContracts(); }));
   document.querySelectorAll('[data-quit]').forEach((b) => (b.onclick = async () => { showResult(await act('contract_cancel', { id: b.dataset.quit })); openContracts(); }));
-  document.querySelectorAll('[data-goto]').forEach((b) => (b.onclick = () => { closeSheet(); raw({ t: 'visit', owner: b.dataset.goto }); }));
+  document.querySelectorAll('[data-goto]').forEach((b) => (b.onclick = () => { closeSheet(); G.goVisit({ t: 'visit', owner: b.dataset.goto }, 'Chuồng cần thi công'); }));
 }
 
 // Thợ đứng cạnh nền chuồng của chủ hợp đồng thì có nút thi công.
@@ -386,7 +386,7 @@ function renderGuild() {
   if ($('gTakeOwner')) $('gTakeOwner').onclick = () => raw({ t: 'guild_transfer_accept' });
   if ($('gClaim')) $('gClaim').onclick = () => raw({ t: 'guild_claim' });
   if ($('gLeave')) $('gLeave').onclick = () => raw({ t: 'guild_leave' });
-  if ($('gHall')) $('gHall').onclick = () => { closeSheet(); raw({ t: 'guild_hall' }); };
+  if ($('gHall')) $('gHall').onclick = () => { closeSheet(); G.goVisit({ t: 'guild_hall' }, 'Nhà Hội Gà'); };
   if ($('gPostF')) $('gPostF').onsubmit = (e) => { e.preventDefault(); raw({ t: 'guild_post', text: $('gPost').value }); };
   if ($('gInvF')) $('gInvF').onsubmit = (e) => { e.preventDefault(); raw({ t: 'guild_invite', id: $('gInv').value.trim() }); $('gInv').value = ''; };
   if ($('gChatF')) { $('gChatF').onsubmit = (e) => { e.preventDefault(); const t = $('gChat').value.trim(); if (t) raw({ t: 'guild_chat', text: t }); $('gChat').value = ''; }; const log = $('chatlog'); log.scrollTop = log.scrollHeight; }

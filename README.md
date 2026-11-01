@@ -2,6 +2,8 @@
 
 Thế giới nông trại 3D nhiều người chơi trên trình duyệt, làm theo [PLAN.md](PLAN.md) và bộ ảnh trong [assets/illustrations/](assets/illustrations/).
 
+**Thế giới 3D mới (01/11/2026), theo [PLAN_THE_GIOI_3D.md](PLAN_THE_GIOI_3D.md):** sảnh chuồng cộng đồng 40 ổ có Cụ Cục ngồi trên bục và NPC sinh hoạt; camera kéo xoay ngang/đứng, zoom, chạm đất để đi; ra cửa sảnh là một bản đồ lớn liền mạch, đi bộ theo đường làng (không dịch chuyển) tới vườn giun, chợ, sân PK, trạm ấp, ao, Xóm Rơm Vàng (nhà riêng, Nhà Hội) và bến xe; bản đồ làng/các trang trại có “Đặt chỉ đường”.
+
 Máy chủ Go quyết định toàn bộ luật chơi (vị trí, đào giun, thóc, mana, giao dịch, PK). Client Three.js chỉ gửi input và hiển thị.
 
 **Trạng thái từng hạng mục (đã xong / server xong nhưng chưa có giao diện / chưa làm): xem [TIEN_DO.md](TIEN_DO.md).**

@@ -206,7 +206,7 @@ const (
 	ManaMax       = 100.0
 	ManaHungryAt  = 20.0 // dưới mức này là "sắp đói"; ăn lên >= mức này gỡ phạt
 	WalkSpeed     = 4.2
-	RoomCapacity  = 25 // sảnh + sân liền kề dùng chung giới hạn (mục 6.1)
+	RoomCapacity  = 50 // public channel; zone capacities are independently enforced
 	TickRate      = 20
 	SnapEvery     = 2 // gửi snapshot mỗi 2 tick = 10 lần/giây
 	ChatMaxLen    = 120

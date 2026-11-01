@@ -1,5 +1,24 @@
 # Tiến độ dự án Trang trại gà Hypex
 
+## Làm lại thế giới 3D (01/11/2026, theo [PLAN_THE_GIOI_3D.md](PLAN_THE_GIOI_3D.md))
+
+| Hạng mục | Trạng thái | Kiểm chứng |
+| --- | --- | --- |
+| Sảnh 32 × 42, 40 ổ rơm đan, bục cao 1,2 có Cụ Cục ngồi ổ lớn, tường gỗ, máng ăn/nước, bảng tin, cửa “Chuồng gà Hypex” | ✅ | Ảnh chụp góc từ cửa, cạnh bục, khi ngồi ổ; so với ảnh mẫu 01 |
+| 8 NPC trong sảnh (chủ chuồng + đón khách, quét sân, mê ngủ, 2 hàng xóm có đi uống nước, ham đọc, chim đưa thư); NPC ngồi ổ tự đứng sang lối đi khi người chơi lại gần | ✅ | Ảnh chụp; NPC không tính vào số người chơi |
+| Camera: góc sảnh từ cửa ↔ theo gà, kéo xoay ngang + ngẩng/cúi, zoom chuột/hai ngón, đổi khu không quay 180°, vật cản (cổng, cửa, tường, nhà) mờ đi khi che gà | ✅ | Thử bằng sự kiện chuột thật trong Chromium headless; cảm ứng chưa thử trên máy thật |
+| Chạm/click đất để đi (tìm đường quanh bục, máng); kéo hoặc pinch không phát lệnh đi | ✅ | Đã thử: kéo đổi góc, không đi; click thì gà đi tới |
+| **Bản đồ liền, không dịch chuyển:** mỗi trại là một bản đồ lớn (Hypex ≈ 230 × 250 m). Ra cửa sảnh là sân làng; đường đất từ quảng trường cây đa dẫn tới 9 khu, mỗi khu có cổng vòm ghi tên. Khu hiện tại do máy chủ tính theo vị trí; bỏ toàn bộ cổng dịch chuyển (chỉ còn “Về sảnh an toàn”). Người cùng kênh thấy nhau ở mọi nơi | ✅ | `TestWorldTopology` + e2e đi bộ thật sảnh → vườn → chợ → sân PK, lái xe sang bến; ảnh chụp đi bộ sảnh → vườn, sảnh → bến xe |
+| Đổi kênh giữ nguyên chỗ đang đứng; xe không chạy vào khu cấm lái (dừng ở mép); đi bộ rời bến tự huỷ vé chưa chạy | ✅ | e2e |
+| Cảnh riêng cho vườn giun, chợ (3 sạp mái vải), sân tỷ thí, trạm ấp, ao & hội chợ, Xóm Rơm Vàng, bến xe, gara, bến và đồng Ven Suối | ✅ | Ảnh chụp từng khu |
+| Bản đồ làng/các trang trại, NPC gặp được, thời gian đi bộ ước tính, “Đặt chỉ đường”; chấm vàng dưới đất, mũi tên ở chân gà, tuyến trên minimap, bám đường đất trong làng | ✅ | Ảnh chụp sảnh → làng → vườn |
+| Vào nhà riêng / Nhà Hội chỉ từ Xóm Rơm Vàng (máy chủ kiểm tra); lời mời ở xa thành chỉ đường; rời nhà ra cổng xóm | ✅ | e2e cập nhật |
+| “Về sảnh an toàn” chuyển vào Cài đặt, có xác nhận | ✅ | |
+| Giới hạn sảnh 50, khu khác 25; kênh 50 | ✅ máy chủ | Chưa có hàng đợi khi khu đầy (hiện báo lỗi và đề xuất đổi kênh) |
+| Hiệu năng | ⚠️ một phần | Bản đồ liền: khu xa > 90 m ẩn sau sương mù, cảnh ngoài trời gộp theo ô 60 m để camera bỏ qua phần ngoài tầm nhìn. Đứng ở quảng trường ≈ 900 draw call, trong sảnh ≈ 830 (đo bằng Chromium chạy CPU). **Chưa đo FPS trên điện thoại/desktop có GPU thật** (A08/A09); máy yếu nên chọn đồ hoạ Thấp |
+
+Các mục “✅ Đã hoàn thành” bên dưới vẫn đúng về luật chơi; cách tới từng địa điểm nay theo bảng trên.
+
 Cập nhật: 31/10/2026, tối. So với [PLAN.md](PLAN.md) bản 0.3.
 
 ## Tóm tắt
@@ -11,7 +30,7 @@ Cập nhật: 31/10/2026, tối. So với [PLAN.md](PLAN.md) bản 0.3.
 | **V1.2** | ✅ Xong + có test | ✅ Xong | Xe máy/ô tô liên trại, Hội Gà + Nhà Hội, nội dung theo mùa |
 
 Kiểm thử:
-- **39/39 test pass**, chạy với race detector. Gồm unit test luật chơi và test end-to-end qua WebSocket thật.
+- **41/41 test pass** (01/11/2026, bản đồ liền; không bật race detector, khoảng 8,5 phút vì test đi bộ thật trên bản đồ). Trước đó 39/39 có race detector. Gồm unit test luật chơi và test end-to-end qua WebSocket thật.
 - **Load test 1.000 bot** (khoảng 4 phút): 0 lỗi, 0 gói bị bỏ, tick p95 0,24 ms trên ngân sách 50 ms, heap khoảng 60 MB.
 - **Tăng đột biến 1.500 bot:** 0 lỗi, tick p95 0,16 ms.
 - **Soak 2 giờ với 1.000 bot** (2 giờ tính theo thời gian máy thức):

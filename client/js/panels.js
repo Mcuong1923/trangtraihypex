@@ -35,7 +35,7 @@ export async function dialogElder(item) {
   choices.push({ t: 'Tạm biệt cụ', fn: null });
   let text;
   if (me.stage >= 2) text = 'Ối, cháu đói lả rồi! Ra Chợ thóc mua cám, hoặc chế biến con giun trong túi mà ăn. Hết sạch thóc thì phụ cụ dọn ổ rơm, cụ trả công.';
-  else if (!tutDone) text = `Chào ${esc(me.char.name)}! Đây là sảnh chuồng chung, ai vào trại cũng xuất phát ở đây. Ra <b>Vườn giun</b> đào giun, mang ra <b>Chợ thóc</b> bán lấy thóc, nhớ ăn cho no. Xong mấy việc trong bảng nhiệm vụ thì quay lại cụ thưởng cho.`;
+  else if (!tutDone) text = `Chào ${esc(me.char.name)}! Đây là sảnh chuồng chung, ai vào trại cũng xuất phát ở đây. Ra cửa chính là sân làng; đi đường đất phía tây tới <b>Vườn giun</b> đào giun, rồi mang ra <b>Chợ thóc</b> bán lấy thóc, nhớ ăn cho no. Lạc đường thì bấm <b>M</b> mở bản đồ. Xong mấy việc trong bảng nhiệm vụ thì quay lại cụ thưởng cho.`;
   else if (!me.tutorialClaimed) text = 'Giỏi lắm! Cháu đã biết đào, bán, ăn và làm quen. Đây, phần thưởng của cụ.';
   else text = 'Trại hôm nay đông vui ghê. Cứ đào, cứ khoe, cứ quậy — miễn đừng để bụng đói nhé!';
   npc('🐔', '#f0e2b0', 'Gà Cụ Cục', text, choices);
@@ -467,9 +467,9 @@ export function appendChat(m) {
 export function openHelp() {
   const b = G.catalog.balance;
   openSheet('help', 'Cách chơi', `
-    <p style="margin-top:0"><b>Di chuyển:</b> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / phím mũi tên, điện thoại dùng joystick trái. <b>Xoay camera:</b> kéo chuột/ngón tay trên cảnh, lăn chuột để zoom. <b>Tương tác:</b> lại gần rồi nhấn <kbd>E</kbd> hoặc nút Tương tác. <b>Chat:</b> <kbd>Enter</kbd>.</p>
+    <p style="margin-top:0"><b>Di chuyển:</b> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / phím mũi tên, điện thoại dùng joystick trái. <b>Đi tới chỗ chỉ định:</b> click/chạm mặt đất. <b>Camera:</b> kéo chuột/ngón tay trên cảnh để xoay ngang và ngẩng/cúi, lăn chuột hoặc hai ngón để zoom; nút ◫ đổi giữa góc sảnh và góc theo gà. <b>Bản đồ:</b> <kbd>M</kbd> hoặc bấm minimap, chọn địa điểm rồi “Đặt chỉ đường”. <b>Ngồi ổ rơm:</b> lại gần ổ trống. <b>Tương tác:</b> lại gần rồi nhấn <kbd>E</kbd> hoặc nút Tương tác. <b>Chat:</b> <kbd>Enter</kbd>.</p>
     <h2>Vòng chơi</h2>
-    <p>Vào trại ở <b>sảnh chuồng chung</b> → ra <b>Vườn giun</b> đào → mang ra <b>Chợ thóc</b> bán lấy 🌾 thóc, hoặc <b>chế biến &amp; ăn</b> để nhận XP và mana → mua thức ăn giữ no → dành thóc cho thời trang. Giun từ <b>Hiếm</b> trở lên có thể <b>khoe với chuồng</b>. Ra <b>Sân tỷ thí</b> đấu PK vui với bạn hoặc Gà Máy.</p>
+    <p>Vào trại ở <b>sảnh chuồng chung</b> → qua cửa chính ra <b>sân làng</b> → theo đường tới <b>Vườn giun</b> đào → mang ra <b>Chợ thóc</b> bán lấy 🌾 thóc, hoặc <b>chế biến &amp; ăn</b> để nhận XP và mana → mua thức ăn giữ no → dành thóc cho thời trang. Giun từ <b>Hiếm</b> trở lên có thể <b>khoe với chuồng</b>. Ra <b>Sân tỷ thí</b> đấu PK vui với bạn hoặc Gà Máy.</p>
     <h2>Mana · Độ no</h2>
     <div class="tblwrap"><table class="t"><tr><th>Trạng thái</th><th>Điều kiện</th><th>Hệ quả</th></tr>
       <tr><td>Bình thường</td><td>Mana ≥ 20</td><td>—</td></tr>

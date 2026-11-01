@@ -1,12 +1,15 @@
 // Điều phối client: đăng nhập, tạo gà, nhận trạng thái từ máy chủ Go, hiển thị 3D và gửi input.
 import { Net, api } from './net.js';
-import { World } from './world.js';
+import { World, fitLabel } from './world.js';
 import { buildChicken, dress, label, wormMesh, mat, FEATHER, SHIRT } from './models.js';
 import { G, $, esc, openSheet, closeSheet, toast, applyMe, onMe, bubble, updateBubbles, STAGE_NAME } from './ui.js';
 import * as P from './panels.js';
 import * as SO from './social.js';
 import { sfx, setAudio } from './audio.js';
 import * as V from './v11.js';
+import {bindWorldInput} from './input.js';
+import {findPath,moveSafe,walkable,areaAt} from './navigation.js';
+import * as MAP from './map.js';
 
 const T = window.THREE;
 const TOKEN_KEY = 'hypex_token';
@@ -21,6 +24,7 @@ function loading(title, sub) { $('loadTitle').textContent = title; $('loadSub').
 
 G.net = new Net();
 G.world = new World($('app'));
+MAP.initMap();
 // Hook xem trạng thái khi phát triển cục bộ; server vẫn quyết định mọi thứ nên không mở đường gian lận.
 if (['localhost', '127.0.0.1'].includes(location.hostname)) window.G_dbg = () => G;
 
@@ -153,6 +157,7 @@ function addPlayer(p) {
   setGone(mesh, p.gone);
   V.setVehicle(mesh, p.vehicle);
   mesh.userData.seated = p.rideOf || null;
+ mesh.userData.nest=p.nest||null;
   V.setPet(mesh, p.pet);
 }
 // Gà của người đang mất kết nối: mờ đi kèm biểu tượng sóng yếu, chờ nối lại.
@@ -179,20 +184,33 @@ function meshOf(pid) { return pid === G.pid ? G.self?.mesh : G.players.get(pid)?
 
 function setZone(zone, pos, ry, players) {
   G.zone = zone;
-  G.world.show(zone);
+ G.walkPath=[];G.tapAction=null;G.routeAt=0;
+  G.world.show(zone, pos, ry);
   clearPlayers();
   players.forEach(addPlayer);
   G.self.pos.set(pos.x, 0, pos.z);
   G.self.srv.copy(G.self.pos);
   G.self.mesh.rotation.y = ry;
   G.self.mesh.position.copy(G.self.pos);
-  $('homeBtn').hidden = zone === 'lobby';
+  $('homeBtn').hidden = true;
+  announceArea(zone);
+}
+// Walking across an area boundary on the seamless map: only the title, camera presets and hints change.
+function announceArea(zone) {
+  G.zone = zone;
+  G.world.setArea(zone);
+  $('currentZoneName').textContent = G.zones[zone].title;
   const el = $('areaName');
   el.textContent = G.zones[zone].title;
   el.style.opacity = '1';
   clearTimeout(el._t);
   el._t = setTimeout(() => (el.style.opacity = '0'), 2200);
+  SO.arrivedLane();
 }
+// The ground the chicken walks on: the whole region map, or the single home/guild hall.
+const walkZone = () => G.worldMap || G.zones[G.zone];
+// Interaction points of every area (all in map coordinates).
+const allItems = () => G.worldMap ? Object.values(G.zones).flatMap((z) => z.items || []) : (G.zones[G.zone]?.items || []);
 
 // ============ Tin nhắn từ máy chủ ============
 const N = G.net;
@@ -217,9 +235,10 @@ N.on('welcome', (m) => {
   const first = !G.catalog;
   G.catalog = m.catalog;
   G.zones = m.zones;
+  G.worldMap = m.world || null; // bản đồ liền của trại; null trong nhà riêng / Nhà Hội
   G.pid = m.pid;
   G.room = m.room;
-  G.world.build(m.zones, m.catalog.cosmetics);
+  G.world.build(m.zones, m.catalog.cosmetics, m.world);
   SO.stopPlacing();
   G.home = m.home || null;
   if (m.home) G.world.setHome(m.zones.home, m.home, m.catalog.cosmetics);
@@ -240,6 +259,7 @@ N.on('welcome', (m) => {
   V.clearPets();
   V.setVehicle(mesh, G.myRide);
   mesh.userData.seated = G.myRideOf;
+ mesh.userData.nest=m.self?.nest||null;
   V.setPet(mesh, m.self?.pet);
   G.festival = m.festival;
   G.world.setFestival(m.festival?.unlocked);
@@ -258,6 +278,7 @@ N.on('welcome', (m) => {
   }
 });
 
+N.on('nest',m=>{const mesh=meshOf(m.pid);if(mesh){mesh.userData.nest=m.nest||null;if(m.nest){mesh.userData.anim=null;if(m.pid===G.pid){G.walkPath=[];G.self.pos.set(m.x,0,m.z);G.self.srv.copy(G.self.pos);}}}});
 N.on('zone', (m) => { setZone(m.zone, m.pos, m.ry, m.players); sfx('door'); });
 N.on('maintenance', (m) => { N.stop(); loading('Trại đang bảo trì', `${esc(m.text || 'Quay lại sau ít phút nhé.')}<br><button class="btn" id="retryMaint" style="margin-top:14px">Thử lại</button>`); $('retryMaint').onclick = () => { loading('Đang mở cổng trại…'); N.connect(store.get(TOKEN_KEY)); }; });
 N.on('pgone', (m) => { const p = G.players.get(m.pid); if (p) { p.gone = m.gone; setGone(p.mesh, m.gone); } });
@@ -327,7 +348,7 @@ N.on('vit', (m) => {
 N.on('toast', (m) => toast(m.text, m.kind));
 N.on('chat', (m) => {
   P.appendChat(m);
-  if (m.kind === 'chat' && m.zone === G.zone) bubble(meshOf(m.pid), m.text);
+  if (m.kind === 'chat' && (G.worldMap ? meshOf(m.pid)?.position.distanceTo(G.self.pos) < 30 : m.zone === G.zone)) bubble(meshOf(m.pid), m.text);
 });
 N.on('emote', (m) => playEmote(meshOf(m.pid), m.e));
 N.on('fx', (m) => fx(m.fx, meshOf(m.pid), m));
@@ -394,14 +415,15 @@ onMe((me) => {
   lastTitle = me.title;
   lastLevel = me.level;
 });
-function updateRoom() { $('roomTxt').textContent = `${G.room.name} — ${G.room.count}/${G.room.cap}`; }
+function updateRoom() { $('roomTxt').textContent = `${G.room.name} · ${G.room.count} người trong kênh`; $('playerName').textContent=G.me?.char?.name||'Gà con'; }
 
 // ============ Input ============
 const keys = {};
 window.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT') return;
+  if (['INPUT','TEXTAREA'].includes(e.target.tagName)||e.target.isContentEditable) return;
   const k = e.key.toLowerCase();
   if (G.modal === 'dig' && (k === ' ' || k === 'e')) { e.preventDefault(); $('digGo')?.click(); return; }
+  if(k==='m'&&!e.repeat&&!$('hud').hidden){e.preventDefault();if(G.modal==='map')closeSheet();else MAP.openMap();return;}
   if (G.modal) return;
   keys[k] = true;
   if (G.placing && k === 'r') { SO.rotatePlacing(); return; }
@@ -430,13 +452,23 @@ function moveJoy(e) {
 }
 
 const canvas = G.world.renderer.domElement;
-let drag = null;
-canvas.addEventListener('pointerdown', (e) => { drag = { id: e.pointerId, x: e.clientX }; });
-canvas.addEventListener('pointermove', (e) => { if (drag && e.pointerId === drag.id) { G.world.camTargetYaw -= (e.clientX - drag.x) * 0.006; drag.x = e.clientX; } });
-const endDrag = (e) => { if (drag && e.pointerId === drag.id) drag = null; };
-canvas.addEventListener('pointerup', endDrag);
-canvas.addEventListener('pointercancel', endDrag);
-canvas.addEventListener('wheel', (e) => { G.world.camDist = Math.max(9, Math.min(22, G.world.camDist + e.deltaY * 0.01)); }, { passive: true });
+const raycaster=new T.Raycaster(), pointer=new T.Vector2();
+bindWorldInput(canvas,{camera:G.world.controls,enabled:()=>!!G.self&&!G.modal&&!G.busy&&!G.myRideOf&&!G.placing,tap:(x,y)=>{
+ pointer.set(x/window.innerWidth*2-1,-y/window.innerHeight*2+1);raycaster.setFromCamera(pointer,G.world.camera);
+ const point=new T.Vector3();if(!raycaster.ray.intersectPlane(new T.Plane(new T.Vector3(0,1,0),0),point))return;
+ const zone=walkZone();let dest={x:point.x,z:point.z};G.tapAction=null;
+ let it=allItems().filter(i=>Math.hypot(i.x-point.x,i.z-point.z)<(i.kind==='nest'?1.2:1.8)).sort((a,b)=>Math.hypot(a.x-point.x,a.z-point.z)-Math.hypot(b.x-point.x,b.z-point.z))[0];
+ if(it){if(Math.hypot(G.self.pos.x-it.x,G.self.pos.z-it.z)<it.r){nearest=it;interact();return;}
+  let best=null;for(let a=0;a<Math.PI*2;a+=Math.PI/8){const p={x:it.x+Math.cos(a)*Math.max(.6,it.r-.45),z:it.z+Math.sin(a)*Math.max(.6,it.r-.45)};if(walkable(zone,p.x,p.z)&&(!best||Math.hypot(p.x-G.self.pos.x,p.z-G.self.pos.z)<best.d)){best={...p,d:Math.hypot(p.x-G.self.pos.x,p.z-G.self.pos.z)};}}
+  if(best){dest=best;G.tapAction=it;}
+ }
+ G.walkPath=findPath(zone,G.self.pos,dest);if(G.walkPath.length)G.world.markDestination(dest);else toast('Chọn một điểm trên lối đi.');
+}});
+$('resetCamera').onclick=()=>G.world.controls.reset();
+$('socialCamera').onclick=()=>G.world.controls.toggleSocial();
+$('toggleHUD').onclick=()=>document.body.classList.toggle('quiet-hud');
+$('btnMore').onclick=()=>document.body.classList.toggle('tools-expanded');
+$('quickChat').onsubmit=e=>{e.preventDefault();const input=$('quickChatInput');if(input.value.trim()){G.net.raw({t:'chat',text:input.value.trim()});input.value='';input.blur();}};
 
 $('interact').onclick = () => interact();
 $('homeBtn').onclick = async () => { const r = await G.net.act('go', { to: 'lobby', id: 'home' }); if (!r.ok) toast(r.err, 'warn'); };
@@ -488,12 +520,15 @@ function openSettings() {
     <h2>Riêng tư</h2>
     <button class="choice" id="setPrivacy" style="width:100%">👥 Hiện vị trí với bạn bè, nhận lời mời PK, danh sách đã chặn…</button>
     <h2>Điều khiển</h2>
-    <p class="mut" style="margin:0"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>/mũi tên: đi · kéo chuột: xoay camera · lăn chuột: zoom · <kbd>E</kbd>: tương tác · <kbd>Enter</kbd>: chat · <kbd>R</kbd>: xoay đồ khi trang trí. Điện thoại: joystick trái, kéo cảnh để xoay, nút Tương tác.</p>
+    <p class="mut" style="margin:0"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>/mũi tên: đi · click mặt đất: đi tới đó · kéo chuột: xoay ngang và ngẩng/cúi camera · lăn chuột: zoom · <kbd>M</kbd>: bản đồ · <kbd>E</kbd>: tương tác · <kbd>Enter</kbd>: chat · <kbd>R</kbd>: xoay đồ khi trang trí. Điện thoại: joystick trái, chạm đất để đi, kéo cảnh để xoay, hai ngón để zoom, nút Tương tác.</p>
+    <h2>Hỗ trợ</h2>
+    <button class="choice" id="safeReturn" style="width:100%">🛟 Về sảnh an toàn — khi bị kẹt hoặc đói lả, không tốn vé</button>
     <h2>Tài khoản</h2>
     <button class="btn sec block" id="logoutBtn" style="margin-top:0">Đăng xuất</button>`);
   document.querySelectorAll('[data-q]').forEach((b) => (b.onclick = () => { settings.quality = b.dataset.q; applySettings(); openSettings(); }));
   $('setReduced').onchange = (e) => { settings.reduced = e.target.checked; document.documentElement.classList.toggle('reduce', settings.reduced); applySettings(); };
   $('setPrivacy').onclick = () => SO.openFriends('settings');
+  $('safeReturn').onclick = () => SO.confirmBox('Về sảnh an toàn?', 'Gà sẽ về cửa sảnh chuồng cộng đồng. Chỉ dùng khi bị kẹt hoặc cần cứu đói; đi lại thường ngày hãy dùng bản đồ.', async () => { const r = await G.net.act('go', { to: 'lobby', id: 'home' }); if (!r.ok) toast(r.err, 'warn'); });
   $('setVol').oninput = (e) => { settings.volume = +e.target.value; applySettings(); };
   $('setVol').onchange = () => sfx('coin');
   $('setMute').onchange = (e) => { settings.muted = e.target.checked; applySettings(); };
@@ -510,7 +545,7 @@ let nearest = null;
 function findNearest() {
   if (!G.zones || G.modal) return null;
   let best = null, bd = 1e9;
-  for (const it of G.zones[G.zone].items) {
+  for (const it of allItems()) {
     const d = Math.hypot(G.self.pos.x - it.x, G.self.pos.z - it.z);
     if (d < it.r && d < bd) { bd = d; best = it; }
   }
@@ -527,10 +562,12 @@ function promptText(it) {
     const left = (digReadyAt - performance.now()) / 1000;
     return left > 0 ? `Đất đang hồi (${Math.ceil(left)}s)` : `Đào giun · ${it.label}`;
   }
+  if (it.kind === 'nest') return G.self.mesh.userData.nest===it.id?'Đứng dậy':'Ngồi ổ rơm';
+  if (it.kind === 'npc_guide') return 'Gặp Gà Đón Khách';
   if (it.kind === 'gate') return it.label;
   if (it.kind === 'pk') return 'Đấu PK';
   if (it.kind === 'trough') return 'Máng ăn';
-  if (it.kind === 'home_exit') return 'Về sảnh chuồng';
+  if (it.kind === 'home_exit') return 'Ra Xóm Rơm Vàng';
   if (it.kind === 'home_sign') return 'Chuồng riêng & thăm bạn';
   if (it.kind === 'home_board') return 'Bảng nhà';
   if (it.kind === 'bus_stop') return 'Trạm xe buýt';
@@ -547,6 +584,8 @@ function interact() {
   if (!nearest) return;
   const it = nearest;
   switch (it.kind) {
+    case 'nest': G.net.act(G.self.mesh.userData.nest?'stand':'sit',{id:it.id}).then(r=>!r.ok&&toast(r.err,'warn'));break;
+    case 'npc_guide': openSheet('guide','Chào mừng về làng',`<p>Cụ Cục đang ở trên bục cuối sảnh. Chọn một ổ rơm để ngồi cùng mọi người.</p><p>Kéo để xoay góc nhìn, lăn chuột để zoom. Chạm xuống đất hoặc dùng WASD để đi.</p><p>Qua cửa chính là sân làng. Mở bản đồ để tìm đường tới vườn giun, chợ và bến xe.</p><button class="btn block" id="guideMap">Mở bản đồ làng ↗</button>`);$('guideMap').onclick=()=>MAP.openMap();break;
     case 'gate': G.net.act('go', { to: it.to }).then((r) => !r.ok && toast(r.err, 'warn')); break;
     case 'dig': P.startDig(it); break;
     case 'npc_elder': P.dialogElder(it); break;
@@ -663,6 +702,7 @@ function animate(mesh, dt, moving, phase, stage) {
     rig.position.y = V.rideHeight(ride);
     p.legs[0].rotation.x = p.legs[1].rotation.x = -1.1;
   }
+  if(mesh.userData.nest&&!moving){rig.position.y=-.08;p.legs[0].rotation.x=p.legs[1].rotation.x=-1.2;}
   const an = mesh.userData.anim;
   if (!an) return;
   an.t += dt;
@@ -726,7 +766,13 @@ function loop() {
     wx = (nx * cy + nz * sy) * mag;
     wz = (-nx * sy + nz * cy) * mag;
   }
-  const moving = mag > 0.12;
+  if(mag>.12){G.walkPath=[];G.tapAction=null;}
+  if(!G.modal&&!G.busy&&!G.myRideOf&&G.walkPath?.length&&mag<=.12){
+   let next=G.walkPath[0];if(Math.hypot(next.x-S.pos.x,next.z-S.pos.z)<.45){G.walkPath.shift();next=G.walkPath[0];}
+   if(next){const d=Math.hypot(next.x-S.pos.x,next.z-S.pos.z);wx=(next.x-S.pos.x)/d;wz=(next.z-S.pos.z)/d;}
+   else if(G.tapAction){const it=G.tapAction;G.tapAction=null;if(Math.hypot(it.x-S.pos.x,it.z-S.pos.z)<it.r){nearest=it;interact();}}
+  }
+  const moving = Math.hypot(wx,wz) > 0.12;
   const now = performance.now();
   // Gửi input khi đổi hướng hoặc 10 lần/giây khi đang đi; server tự dừng nếu 300ms không có input.
   if (Math.hypot(wx - lastSent.x, wz - lastSent.z) > 0.05 || (moving && now - lastSent.at > 100)) {
@@ -737,9 +783,7 @@ function loop() {
   if (moving) {
     const veh = G.myRide && G.catalog.vehicles.find((v) => v.id === G.myRide);
     const spd = 4.2 * (me.stage >= 3 ? 0.85 : 1) * (veh ? (me.stage >= 4 ? 0 : veh.speed) : 1) * dt;
-    const zd = G.zones[G.zone];
-    S.pos.x = Math.max(-zd.halfX, Math.min(zd.halfX, S.pos.x + wx * spd));
-    S.pos.z = Math.max(-zd.halfZ, Math.min(zd.halfZ, S.pos.z + wz * spd));
+    const pos=moveSafe(walkZone(),S.pos,S.pos.x+wx*spd,S.pos.z+wz*spd);S.pos.x=pos.x;S.pos.z=pos.z;
     S.mesh.rotation.y = lerpAngle(S.mesh.rotation.y, Math.atan2(wx, wz), 0.25);
     S.phase += dt * 12;
   }
@@ -748,11 +792,15 @@ function loop() {
   else if (err > 2.5) S.pos.copy(S.srv);
   else if (!moving || err > 1.2) S.pos.lerp(S.srv, Math.min(1, dt * (moving ? 5 : 10)));
   S.mesh.position.copy(S.pos);
+  if (G.worldMap) { const area = areaAt(G.zones, G.worldMap, S.pos.x, S.pos.z); if (area && area !== G.zone) announceArea(area); }
   if (G.spinSelf) S.mesh.rotation.y += dt * 1.2;
   animate(S.mesh, dt, moving, S.phase, me.stage);
 
   const k = 1 - Math.exp(-dt * 12);
+  const camPos = G.world.camera.position;
   for (const p of G.players.values()) {
+    const far = p.mesh.position.distanceToSquared(camPos) > 26 * 26;
+    if (far !== p.far) { p.far = far; p.mesh.userData.parts.detail?.forEach((o) => (o.visible = !far)); }
     p.mesh.position.lerp(p.target, k);
     p.mesh.rotation.y = lerpAngle(p.mesh.rotation.y, p.ry, 0.2);
     if (p.mv) p.phase += dt * 12;
@@ -775,7 +823,14 @@ function loop() {
   else if (work) { btn.hidden = false; $('interactTxt').textContent = `🔨 Thi công (${work.progress}/${work.need})`; }
   else if (nearest) { btn.hidden = false; $('interactTxt').textContent = promptText(nearest); } else btn.hidden = true;
 
-  G.world.update(dt, S.pos);
+  // At most 8 name plates: own (outside the social view) plus the nearest players.
+  const cam = G.world.camera;
+  if (S.mesh.userData.tag) { S.mesh.userData.tag.visible = G.world.controls.mode !== 'social'; if (S.mesh.userData.tag.visible) fitLabel(S.mesh.userData.tag, cam); }
+  const near = [...G.players.values()].sort((a, b) => a.mesh.position.distanceToSquared(S.pos) - b.mesh.position.distanceToSquared(S.pos));
+  near.forEach((p, i) => { const tag = p.mesh.userData.tag; if (!tag) return; tag.visible = i < 7 && p.mesh.position.distanceTo(S.pos) < 12; if (tag.visible) fitLabel(tag, cam); });
+  G.world.actors = [S.pos, ...near.slice(0, 20).map(p => p.mesh.position)];
+  G.world.update(dt, S.pos, moving, G.myRide);
+  MAP.updateRoute();
   updateBubbles(dt, G.world.camera);
 }
 loop();

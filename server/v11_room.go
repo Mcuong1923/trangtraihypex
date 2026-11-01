@@ -159,6 +159,7 @@ func (r *Room) syncRides() {
 			q.pos = Vec{p.pos.X + o.X*c + o.Z*s, p.pos.Z - o.X*s + o.Z*c}
 			q.ry = p.ry
 			q.moving = p.moving
+			r.enterArea(q)
 		}
 	}
 }

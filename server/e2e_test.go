@@ -211,10 +211,23 @@ func (c *client) count(field, id string) float64 {
 	return v
 }
 
-// walkTo gửi input hướng tới đích; vị trí lấy từ snapshot của máy chủ.
+// walkTo đi theo lộ trình tránh vật cản; vị trí lấy từ snapshot của máy chủ.
 func (c *client) walkTo(x, z float64) {
 	c.t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	c.mu.Lock()
+	zone := zoneByID(c.zone)
+	if reg := regionOfZone(c.zone); reg != nil {
+		zone = reg.World
+	}
+	c.mu.Unlock()
+	for _, wp := range gridRoute(zone, c.position(), Vec{x, z}) {
+		c.walkStraight(wp.X, wp.Z)
+	}
+}
+
+func (c *client) walkStraight(x, z float64) {
+	c.t.Helper()
+	deadline := time.Now().Add(time.Duration(4+c.position().Dist(Vec{x, z})/WalkSpeed*2) * time.Second)
 	for time.Now().Before(deadline) {
 		p := c.position()
 		dx, dz := x-p.X, z-p.Z
@@ -230,26 +243,197 @@ func (c *client) walkTo(x, z float64) {
 	c.t.Fatalf("%s không đi tới (%.1f, %.1f), đang ở %+v", c.name, x, z, c.position())
 }
 
-func (c *client) walkToItem(zone, id string) {
-	var it *Item
+func regionOfZone(id string) *Region {
 	for _, r := range Regions {
-		if z := r.Zones[zone]; z != nil {
-			it = z.Item(id)
+		if r.Zones[id] != nil {
+			return r
 		}
 	}
-	c.walkTo(it.X, it.Z+0.8)
+	return nil
 }
 
-func (c *client) goZone(gate, to string) {
-	c.t.Helper()
-	c.walkToItem(c.zone, gate)
-	c.mustOK("go", msg{"to": to}) // tin "zone" tới trước "res" nên c.zone đã cập nhật
-	c.mu.Lock()
-	zone := c.zone
-	c.mu.Unlock()
-	if zone != to {
-		c.t.Fatalf("%s: vẫn ở %s", c.name, zone)
+func zoneByID(id string) *Zone {
+	for _, r := range Regions {
+		if z := r.Zones[id]; z != nil {
+			return z
+		}
 	}
+	return nil
+}
+
+// gridRoute: BFS trên lưới 0,5 đơn vị qua vùng đi được, rút gọn thành các đoạn thẳng thông suốt.
+func gridRoute(z *Zone, from, to Vec) []Vec {
+	clear := func(a, b Vec) bool {
+		n := int(math.Ceil(a.Dist(b)/0.2)) + 1
+		for i := 1; i <= n; i++ {
+			if !z.Walkable(Vec{a.X + (b.X-a.X)*float64(i)/float64(n), a.Z + (b.Z-a.Z)*float64(i)/float64(n)}) {
+				return false
+			}
+		}
+		return true
+	}
+	if z == nil || clear(from, to) {
+		return []Vec{to}
+	}
+	const step = 0.5
+	type cell struct{ x, z int }
+	at := func(c cell) Vec { return Vec{float64(c.x) * step, float64(c.z) * step} }
+	start := cell{int(math.Round(from.X / step)), int(math.Round(from.Z / step))}
+	prev := map[cell]cell{start: start}
+	q := []cell{start}
+	var goal *cell
+	for len(q) > 0 && goal == nil {
+		cur := q[0]
+		q = q[1:]
+		for _, d := range []cell{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+			n := cell{cur.x + d.x, cur.z + d.z}
+			if _, seen := prev[n]; seen || !z.Walkable(at(n)) {
+				continue
+			}
+			prev[n] = cur
+			if at(n).Dist(to) < step*1.5 && clear(at(n), to) {
+				goal = &n
+				break
+			}
+			q = append(q, n)
+		}
+	}
+	if goal == nil {
+		return []Vec{to}
+	}
+	pts := []Vec{to}
+	for c := *goal; c != start; c = prev[c] {
+		pts = append([]Vec{at(c)}, pts...)
+	}
+	out, cur := []Vec{}, from
+	for i := 0; i < len(pts); {
+		j := i
+		for j+1 < len(pts) && clear(cur, pts[j+1]) {
+			j++
+		}
+		out = append(out, pts[j])
+		cur = pts[j]
+		i = j + 1
+	}
+	return out
+}
+
+// walkToItem đứng ở điểm đi được gần nhất trong tầm tương tác của vật.
+func (c *client) walkToItem(zone, id string) {
+	c.t.Helper()
+	it := zoneByID(zone).Item(id)
+	if it == nil {
+		c.t.Fatalf("không có %s ở %s", id, zone)
+	}
+	z := regionOfZone(zone).World
+	from, best, bestD := c.position(), Vec{it.X, it.Z + 0.8}, math.Inf(1)
+	for r := 0.8; r < math.Max(1, it.R-0.2); r += 0.4 {
+		for a := 0.0; a < 2*math.Pi; a += math.Pi / 12 {
+			p := Vec{it.X + math.Sin(a)*r, it.Z + math.Cos(a)*r}
+			if d := p.Dist(from) + r*2; z.Walkable(p) && d < bestD {
+				best, bestD = p, d
+			}
+		}
+	}
+	c.walkTo(best.X, best.Z)
+}
+
+// goZone đi bộ thật trên bản đồ liền: ra đầu đường của khu đang đứng → quảng trường → đường vào khu đích.
+// Không có cổng dịch chuyển; khu được máy chủ tính theo vị trí.
+func (c *client) goZone(_, to string) {
+	c.t.Helper()
+	c.mu.Lock()
+	from := c.zone
+	c.mu.Unlock()
+	reg := regionOfZone(from)
+	if reg == nil || reg.Zones[to] == nil {
+		c.t.Fatalf("%s: %s và %s không cùng một trại", c.name, from, to)
+	}
+	ring := func(e *Vec) Vec {
+		l := math.Hypot(e.X-reg.Hub.X, e.Z-reg.Hub.Z)
+		return Vec{reg.Hub.X + (e.X-reg.Hub.X)/l*8, reg.Hub.Z + (e.Z-reg.Hub.Z)/l*8}
+	}
+	var stops []Vec
+	if e := reg.Zones[from].Entry; e != nil && from != to {
+		stops = append(stops, *e, ring(e))
+	}
+	dst := reg.Zones[to]
+	if dst.Entry != nil {
+		stops = append(stops, ring(dst.Entry), *dst.Entry)
+	}
+	stops = append(stops, dst.Spawns[0])
+	for _, st := range stops {
+		c.walkTo(st.X, st.Z)
+	}
+	if got := reg.AreaAt(c.position()); got != to {
+		c.t.Fatalf("%s: đi tới %s nhưng đang ở %s %+v", c.name, to, got, c.position())
+	}
+	c.mu.Lock()
+	c.zone = to
+	c.mu.Unlock()
+}
+
+func (e *env) pidOf(c *client) string {
+	e.hub.mu.Lock()
+	rooms := append([]*Room{}, e.hub.rooms...)
+	e.hub.mu.Unlock()
+	pid := ""
+	for _, r := range rooms {
+		r.DoWait(func() {
+			for _, p := range r.players {
+				if p.acc.Username == c.name {
+					pid = p.PID
+				}
+			}
+		})
+	}
+	return pid
+}
+
+// areaOf đọc khu hiện tại của người chơi từ máy chủ (khu đổi theo vị trí, không có tin "zone").
+func (e *env) areaOf(c *client) string {
+	e.hub.mu.Lock()
+	rooms := append([]*Room{}, e.hub.rooms...)
+	e.hub.mu.Unlock()
+	area := ""
+	for _, r := range rooms {
+		r.DoWait(func() {
+			for _, p := range r.players {
+				if p.acc.Username == c.name {
+					area = p.zone
+				}
+			}
+		})
+	}
+	return area
+}
+
+// warp chỉ dùng để dựng bối cảnh cho test không kiểm tra việc đi đường (giảm thời gian chạy).
+func (e *env) warp(c *client, to string) {
+	c.t.Helper()
+	e.hub.mu.Lock()
+	rooms := append([]*Room{}, e.hub.rooms...)
+	e.hub.mu.Unlock()
+	for _, r := range rooms {
+		r.DoWait(func() {
+			for _, p := range r.players {
+				if p.acc.Username == c.name {
+					r.moveZone(p, to)
+				}
+			}
+		})
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		c.mu.Lock()
+		z := c.zone
+		c.mu.Unlock()
+		if z == to {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	c.t.Fatalf("%s: không chuyển được tới %s", c.name, to)
 }
 
 func (c *client) dig(spot string) msg {
@@ -467,14 +651,7 @@ func TestEndToEnd(t *testing.T) {
 	// --- PK giữa hai người: mời, nhận, máy chủ đếm lượt mổ có giới hạn tần suất ---
 	a.goZone("ra_san", "arena")
 	b.goZone("ra_san", "arena")
-	var bPID string
-	for {
-		m := a.expect("pjoin", 2*time.Second)
-		if p := m["p"].(map[string]any); p["name"] == "Gà Mơ" {
-			bPID = p["pid"].(string)
-			break
-		}
-	}
+	bPID := e.pidOf(b) // cùng bản đồ liền nên đã thấy nhau từ sảnh, không có pjoin mới
 	a.mustOK("pk_invite", msg{"target": bPID, "mode": "peck"})
 	inv := b.expect("pk_invite", 2*time.Second)
 	b.mustOK("pk_accept", msg{"id": inv["id"]})

@@ -1,6 +1,8 @@
 # Trang trại gà Hypex — Kế hoạch sản phẩm và triển khai
 
-Phiên bản: 0.3 — 31/10/2026. Cập nhật: mana/no và hình phạt đói; giun nhiều độ hiếm và khoe thành tích; cửa hàng thời trang; xe cá nhân chở bạn và giao thông công cộng có lượt miễn phí. Giữ điểm bắt đầu phiên tại sảnh chuồng gà công cộng. Trạng thái: bản đề xuất để thảo luận và triển khai theo giai đoạn; chưa phải cam kết thời gian, ngân sách hoặc sức chứa đã kiểm chứng.
+Phiên bản: 0.4 — 01/11/2026. Cập nhật: camera điều khiển theo nhân vật, sảnh lớn có chủ chuồng ngồi trên bục và NPC sinh hoạt; các khu nằm ngoài chuồng, có bản đồ và đường đi thực tế.
+
+**Đặc tả ưu tiên cho đợt sửa giao diện/thế giới hiện tại: [PLAN_THE_GIOI_3D.md](PLAN_THE_GIOI_3D.md).** Tài liệu đó chứa bố cục, camera, NPC, topology, bản đồ, luồng đi lại, danh sách file cần sửa và tiêu chí nghiệm thu. Các mục V1/V1.1/V1.2 bên dưới là phân kỳ sản phẩm ban đầu, không phải báo cáo tính năng đang có; xem TIEN_DO.md và code để đối chiếu. Đây là kế hoạch, chưa phải cam kết thời gian hoặc sức chứa đã kiểm chứng.
 
 ## 1. Định hướng và những điểm đã chốt
 
@@ -17,6 +19,8 @@ Người dùng đã chọn:
 - Đào nhiều loại giun thường và hiếm, giun giá trị cao bán được nhiều thóc hoặc ăn để nhận nhiều XP; có thao tác khoe giun vừa đào.
 - Cửa hàng có trang phục đa dạng gồm váy, vest, kính và phụ kiện. Có xe đạp, xe máy, ô tô với sức chứa khác nhau để chở bạn.
 - Phương tiện công cộng đi sang trang trại/vùng khác có lượt miễn phí; dùng hết lượt phải trả thóc.
+- Góc nhìn 3D có thể xoay ngang/đứng, zoom và theo gà di chuyển; tham chiếu bố cục ảnh sảnh và trải nghiệm thế giới xã hội kiểu Play Together.
+- Sảnh rộng, chủ chuồng ngồi trên bục phía cuối; có NPC thường trú. Vườn giun, bến xe, chợ và các khu đất nằm ngoài chuồng; người chơi mở bản đồ chỉ đường và di chuyển tới nơi.
 - Các ý tưởng gốc cần được giữ trong lộ trình: tạo tài khoản, thiết kế gà và giới tính, NPC động vật, chat và kết bạn, đào giun, ăn hoặc bán, lên cấp, mua đất, thuê xây dựng, PK mini-game, mời về nhà, ấp trứng ra bạn đồng hành và tạo bang phái.
 
 Giả định thiết kế cần kiểm chứng:
@@ -25,15 +29,15 @@ Giả định thiết kế cần kiểm chứng:
 | --- | --- |
 | Thiết bị | Trình duyệt máy tính và điện thoại; màn chơi ưu tiên ngang |
 | Đồ họa | 3D low-poly, gà đầu lớn, thân tròn, màu sáng, hoạt ảnh hài hước |
-| Góc nhìn | Camera góc nhìn thứ ba hơi cao, xoay và zoom có giới hạn |
-| Phòng công cộng | Các chuồng gà chung có tên riêng; tối đa 25 người/chuồng tính cả sân liền kề; nhiều bản sao cùng bố cục |
+| Góc nhìn | Camera phối cảnh: góc sinh hoạt từ cửa nhìn bục, góc theo gà khi đi; kéo ngang/đứng, zoom và chống vật cản |
+| Phòng công cộng | Mục tiêu sảnh 50 người + 6–8 NPC, khu ngoài trời 25 người/khu; nhiều kênh cùng địa lý. Cap tổng và từng khu tách riêng, phải benchmark |
 | Nhà riêng | Phòng riêng tối đa 8 người, có quyền truy cập |
 | Mốc tải công khai | Đề xuất 1.000 người online đồng thời toàn hệ thống, phải kiểm thử trước khi công bố |
 | Phiên chơi | 10–20 phút vẫn có tiến triển; ở lại lâu hơn để giao lưu |
 | Ngôn ngữ và thị trường đầu | Tiếng Việt, cộng đồng Hypex |
 | Kinh tế | Một tiền tệ chính là thóc; giun và vật liệu là vật phẩm |
 
-1.000 người đồng thời không có nghĩa là 1.000 người cùng xuất hiện trong một cảnh. Nếu tất cả ở phòng công cộng đầy 25 người thì cần ít nhất 40 phòng; nhà riêng, đấu trường và phòng chưa đầy làm số phòng thực tế lớn hơn. Đây là đơn vị quy hoạch, không phải suy luận về số máy chủ cần mua.
+1.000 người đồng thời được phân bố trên nhiều kênh và khu. Mục tiêu sảnh 50 người không đồng nghĩa toàn thế giới xuất hiện cùng một cảnh; NPC không tính vào người online. Mô hình cap room/khu và kiểm thử cụ thể xem mục 10 của PLAN_THE_GIOI_3D.md, không suy số máy chủ chỉ từ phép chia số người cho sức chứa phòng.
 
 ## 2. Học gì từ website tham khảo
 
@@ -70,8 +74,8 @@ Theo yêu cầu cập nhật, đói là cơ chế có hình phạt thực sự. 
 | Thời điểm mục tiêu | Trải nghiệm | Kết quả |
 | --- | --- | --- |
 | Phút 0–2 | Đăng ký/đăng nhập, tạo tên, chọn gà và giới tính rồi xuất hiện trong sảnh chuồng gà công cộng | Có tài khoản, avatar được lưu và thấy người chơi cùng chuồng |
-| Phút 2–4 | Gà trưởng trại đón tại sảnh, hướng dẫn đi lại, camera, tương tác | Đi tới NPC và hoàn thành thao tác đầu ngay trong chuồng |
-| Phút 4–7 | Lợn Ủn dẫn đến bãi giun dành cho người mới | Nhặt được giun đầu tiên |
+| Phút 2–4 | Gà Đón Khách dạy camera/di chuyển, giới thiệu chủ Gà Cụ Cục ngồi trên bục và bản đồ | Biết xoay/zoom, tới NPC, chọn chỉ đường |
+| Phút 4–7 | Theo chỉ đường qua cửa chính, sân làng và cổng vườn; gặp Lợn Ủn | Tự đến được bãi giun và nhặt giun đầu tiên |
 | Phút 7–9 | Bán giun, dùng thóc mua thức ăn; thử chế biến một giun khác để ăn | Hiểu thóc, mana và XP; phần thưởng hướng dẫn đủ trả món ăn/phí chế biến |
 | Phút 9–12 | Bò Mộc tặng tổ nhỏ, chỉ cách đặt vật trang trí | Sở hữu và trang trí không gian đầu tiên |
 | Phút 12–15 | Chào người khác, thử PK hoặc mời bạn | Có tương tác xã hội đầu tiên |
@@ -112,13 +116,14 @@ Gói mỹ thuật đề xuất cho bản công khai: 1 bộ khung gà dùng chun
 | Trang trại Ven Suối | Điểm đến khác với trại Hypex ban đầu, có bãi giun đặc sản và bến về | V1.1 |
 | Cửa hàng xe và điểm đỗ | Mua xe, lấy/cất xe, lên/xuống cùng bạn | V1.1–V1.2 |
 
-V1 lấy một chuồng gà công cộng lớn làm trung tâm bản đồ. Bên trong là sảnh sinh hoạt chung; cửa chuồng mở ra sân có đường tới chợ, vườn giun, sân tỷ thí và cổng về chuồng riêng. Sảnh và sân liền kề thuộc cùng một phòng công cộng, dùng chung giới hạn 25 người để tránh chuyển cảnh liên tục. Nhà riêng và trận đấu là các phòng riêng khi cần.
+Thiết kế mới tách sảnh nội thất và bản đồ sân làng ngoài trời. Sảnh chỉ có một cửa chính ra làng, không có gate trực tiếp tới vườn/chợ/bến đặt quanh vách. Ngoài làng có mạng đường dẫn tới từng khu đất riêng, mỗi khu có lối vào/ra và nội dung; bản đồ chỉ đường theo mạng nối đó. Room hiện tại vẫn có thể chứa nhiều zone ở mức kỹ thuật, nhưng cap room/khu tách riêng; không dùng một giới hạn 25 chung để mô tả sảnh lớn. Xem sơ đồ và luồng chuyển khu trong PLAN_THE_GIOI_3D.md.
 
 ### 6.2. Dàn NPC
 
 | NPC | Tính cách | Nhiệm vụ |
 | --- | --- | --- |
-| Gà Cụ Cục | Hơi lắm lời, tốt bụng | Hướng dẫn, nhiệm vụ chính, giải thích thế giới |
+| Gà Cụ Cục | Hơi lắm lời, tốt bụng | Chủ chuồng ngồi trên bục cuối sảnh, nhiệm vụ chính, giải thích thế giới |
+| Gà Đón Khách và nhóm thường trú | Thân thiện, mỗi con có thói quen | Đón tại cửa, chỉ bản đồ, quét rơm, ngồi nghỉ, uống nước; tổng NPC trong sảnh đề xuất 6–8 |
 | Lợn Ủn | Vui tính, mê đào bới | Dạy đào giun, mua giun, giao đơn hằng ngày |
 | Bò Mộc | Điềm đạm, giỏi nghề | Bán mẫu nhà, xây dựng, nâng cấp đất |
 | Chó Mực | Năng động, công bằng | Hướng dẫn PK, trọng tài mini-game |
@@ -130,9 +135,9 @@ NPC đầu tiên dùng hội thoại kịch bản và lựa chọn rõ ràng. Ch
 ### 6.3. Quy tắc nhiều phòng
 
 - Tự tìm chuồng công cộng có chỗ khi vào game, đặt nhân vật tại điểm xuất hiện an toàn trong sảnh. Ưu tiên chuồng có bạn bè nếu quyền riêng tư cho phép và còn chỗ; sau đó ưu tiên chuồng đang có người để sảnh có sinh hoạt, rồi mới mở chuồng mới.
-- Hiển thị tên và sức chứa như “Chuồng Hạt Thóc · 01 — 18/25”. Trong UI dùng “Đổi chuồng”, “Mời vào chuồng” và “Chat chuồng”; thuật ngữ phòng/room giữ trong tài liệu kỹ thuật. Mã chuồng giúp phân biệt các bản sao có cùng chủ đề.
+- Hiển thị “Sảnh chuồng · Hypex 01 — 18/50” theo cap thực tế; ngoài trời hiển thị tên khu và kênh. “Đổi kênh” thay nhóm người đang gặp, không thay địa điểm; chat khu và số người trong khu tách với số toàn kênh.
 - Tất cả chuồng công cộng đều có sảnh khởi đầu và các tiện ích tương đương. Người chơi mới và cũ có thể gặp nhau; không gom toàn bộ cộng đồng vào một cảnh vượt giới hạn.
-- Bạn bè và lời mời hoạt động xuyên phòng. Đến phòng bạn cần còn chỗ và được phép; có hàng đợi khi đầy.
+- Bạn bè và lời mời hoạt động xuyên phòng. Đổi kênh để cùng bạn cần còn chỗ và được phép, giữ khu/vị trí hợp lệ hiện tại; sau đó dùng map đi tới bạn. Khác vùng thì đi tới bến và dùng tuyến xe, không tự teleport qua lời mời.
 - Nhóm tối đa 4 người có thể yêu cầu vào cùng một phòng; giữ chỗ bằng vé có thời hạn.
 - Đổi phòng không reset nhiệm vụ, giới hạn đào, hồi chiêu hoặc phần thưởng.
 - Khi chuyển phòng, máy chủ đích nhận vé một lần; phiên cũ mất quyền hành động trước khi phiên mới hoạt động.
@@ -143,19 +148,20 @@ NPC đầu tiên dùng hội thoại kịch bản và lựa chọn rõ ràng. Ch
 
 ### 6.4. Thiết kế sảnh chuồng gà công cộng
 
-Sảnh là một chuồng gà rộng, ấm cúng và hoạt hình: khung gỗ, mái ngói hoặc mái rơm, ổ rơm ven tường, cầu đậu thấp, bao thóc, máng ăn, máng nước, cửa sổ đón nắng và bảng hiệu Hypex. Kích thước được cách điệu để 25 chú gà đi lại thoải mái và dễ nhìn thấy nhau.
+Sảnh là chuồng gà lớn có khung gỗ, mái/kèo cao, màu đất/rơm ấm và bóng mềm theo ảnh minh họa. Bố cục thử khoảng 40 × 52 đơn vị, 40 ổ theo 5 hàng × 8, lối giữa rộng, mục tiêu 50 người chơi cùng 6–8 NPC. Chủ chuồng ngồi ổ trên bục ở phía cuối; camera đầu từ cửa nhìn vào có chiều sâu và nhiều gà. Kích thước, góc và sức chứa cần đối chiếu hình/benchmark theo PLAN_THE_GIOI_3D.md.
 
 | Vị trí | Bố trí và tương tác |
 | --- | --- |
-| Cửa vào và thảm rơm đón khách | Nhiều điểm xuất hiện rải nhẹ để gà mới vào không chồng lên nhau; Gà Cụ Cục đứng gần đó |
+| Cửa vào và thảm rơm đón khách | Spawn rải không chồng; Gà Đón Khách chỉ camera và bản đồ |
+| Bục cuối sảnh | Gà Cụ Cục ngồi ổ lớn, bậc hai bên và điểm tiếp khách gần bục |
 | Khoảng sàn giữa chuồng | Đi lại, chat, biểu cảm, làm quen và mời PK; trận PK bắt đầu ở khu/phòng phù hợp sau xác nhận |
-| Dãy ổ rơm và cầu đậu hai bên | Ngồi, nghỉ, tụ tập theo nhóm; là tiện ích chung, không phải nhà sở hữu cá nhân |
+| Hàng ổ rơm và cầu đậu | Khoảng 40 ổ người chơi chia lối giữa, thêm điểm sinh hoạt NPC riêng; một người/ổ, có giữ chỗ khi tới ngồi |
 | Góc bảng tin | Nhiệm vụ, sự kiện, hướng dẫn, số người và chuyển chuồng |
 | Góc máng ăn và bao thóc | Tạo chất nông trại, biểu diễn hoạt ảnh ăn; hồi mana/XP cần thức ăn đã mua hoặc giao dịch chế biến giun có trả thóc theo mục 7 |
-| Cửa lớn phía sân | Ra sân để tới bãi giun, chợ và sân tỷ thí; có biển chỉ đường bằng biểu tượng |
-| Bảng chỉ đường về chuồng riêng | Mở lựa chọn về nhà, thăm bạn hoặc xem chuồng mở cửa |
+| Cửa lớn phía sân | Cửa chính duy nhất ra bản đồ sân làng; từ đó đi theo đường tới từng khu |
+| Bảng bản đồ nhỏ gần cửa | Xem địa điểm và đặt chỉ đường, không chuyển thẳng tới nhà/vườn/bến |
 
-Camera nhìn chéo từ trên; mái và tường phía gần camera tự ẩn hoặc mờ khi che nhân vật. Hạn chế vách cao giữa sảnh, giữ lối đi rõ, không cho avatar chặn cửa hoặc cản người khác ở điểm xuất hiện. Người chơi không được di chuyển nội thất công cộng; thay đổi trang trí sảnh do hệ thống/sự kiện quản lý.
+Camera có preset sinh hoạt, theo gà và theo xe; người chơi kéo yaw/pitch và zoom, chạm sàn để đi. Xử lý vật cản camera và mái/vách che nhân vật. Không reset góc tùy tiện khi chuyển khu. Label nhỏ theo khoảng cách/ngữ cảnh để không che cảnh; người chơi không tự di chuyển nội thất công cộng.
 
 Tên chủ đề đề xuất: Chuồng Hạt Thóc, Chuồng Rơm Vàng, Chuồng Bình Minh. Bản đầu dùng chung bố cục và luật, có thể khác màu biển hiệu; không tạo lợi thế tài nguyên theo tên chuồng.
 
@@ -164,11 +170,13 @@ flowchart TB
     A[Đăng nhập và tạo gà nếu cần] --> B[Sảnh chuồng gà công cộng]
     B --- C[Ổ rơm, cầu đậu và khu trò chuyện]
     B --- D[NPC đón tiếp và bảng nhiệm vụ]
-    B --> E[Cửa chuồng ra sân]
-    E --> F[Bãi đào giun]
-    E --> G[Chợ thóc]
-    E --> H[Sân tỷ thí]
-    E --> I[Cổng về chuồng riêng hoặc thăm bạn]
+    B --> E[Cửa chính ra sân làng]
+    E --> J[Đường đi ngoài trời và bản đồ chỉ đường]
+    J --> F[Cổng khu vườn giun]
+    J --> G[Phố chợ thóc]
+    J --> H[Sân tỷ thí]
+    J --> I[Khu dân cư và cổng chuồng riêng]
+    J --> K[Bến xe ngoài làng]
 ```
 
 ## 7. Đào giun, ăn và lên cấp
@@ -347,6 +355,7 @@ Giá thử ở bảng 8.2; tốc độ khởi điểm xe đạp/xe máy/ô tô k
 - Mỗi người có một tổ khởi đầu. Mua đất là nâng cấp quyền sở hữu hiện có, không tranh lô có hạn với người chơi khác.
 - Nhà riêng cũng được thể hiện thành chuồng gà, bắt đầu bằng chuồng nhỏ có ổ rơm rồi mở rộng chuồng và sân. Nhà nằm trong phòng riêng được tạo khi có người vào, lưu bố cục lâu dài.
 - Sở hữu chuồng riêng không đổi điểm bắt đầu phiên: người chơi vẫn vào sảnh chuồng công cộng trước, rồi chọn “Về chuồng của tôi”. Các ổ rơm tại sảnh chung không được coi là nhà riêng.
+- Trong giao diện thế giới mới, “Về chuồng của tôi” đặt chỉ đường tới khu dân cư/cổng nhà; không dịch chuyển ngay. Lời mời tới nhà cũng là quyền vào và điểm hẹn, cần đi tới cổng.
 - Đặt đồ theo lưới, xoay 90 độ, xem trước vị trí hợp lệ; không cho chặn lối vào.
 - Giới hạn đề xuất: 50 đồ trang trí và tối đa 8 người/nhà trong V1.
 - Quyền vào nhà: riêng tư, bạn bè, công khai. Lời mời có thời hạn; người bị chặn không thể dùng lại lời mời.
@@ -390,7 +399,7 @@ Mổ nhanh dễ bị auto-click. Giới hạn đầu vào hợp lệ, kiểm tra
 
 ### 10.2. Trạng thái trận và chống lặp thưởng
 
-Lời mời → chấp nhận → kiểm tra cả hai sẵn sàng → đếm ngược → thi đấu → máy chủ chốt → phát hoạt ảnh → kết thúc.
+Lời mời → chấp nhận điểm hẹn ở sân PK → hai người đi tới sân → kiểm tra cả hai sẵn sàng → đếm ngược → thi đấu → máy chủ chốt → phát hoạt ảnh → kết thúc. Thời gian hẹn đi tới sân đề xuất 120 giây, tách với 20 giây trả lời lời mời; không tự teleport khi chấp nhận.
 
 - Lời mời hết hạn sau 20 giây; tránh gửi liên tục cùng người.
 - Client gửi thao tác, không gửi kết luận “tôi thắng” hoặc điểm tổng để máy chủ tin trực tiếp.
@@ -466,7 +475,7 @@ V1 gồm chat phòng, chat riêng với bạn bè xuyên phòng, kết bạn hai
 | Cài đặt | Đồ họa, âm thanh, giảm chuyển động, riêng tư, điều khiển |
 | Quản trị | Báo cáo, người dùng, giao dịch, phòng, cấu hình và thông báo |
 
-Desktop: WASD/phím mũi tên để di chuyển, kéo chuột xoay camera, E tương tác; Enter mở chat. Mobile: joystick trái, vùng kéo camera bên phải, nút tương tác lớn. Khi mở bàn phím hoặc bảng đặt đồ, khóa điều khiển di chuyển phù hợp để tránh bấm nhầm.
+Desktop: WASD/phím mũi tên hoặc click sàn để đi, kéo camera ngang/đứng, wheel zoom, E tương tác, M mở bản đồ, Enter chat. Mobile: joystick trái, kéo cảnh bên phải, pinch zoom, tap-to-walk và nút tương tác. Tách rõ tap/drag/pinch và input UI. Bản đồ làng/vùng chỉ đường qua cổng; chọn địa điểm không teleport. Chi tiết camera/HUD/map ở mục 4, 7, 8 của PLAN_THE_GIOI_3D.md.
 
 Giao diện 2D phủ trên cảnh 3D, nền bảng rõ chữ, nút lớn, bố cục không che nhân vật. Tên và chat hiển thị tiếng Việt đầy đủ. Có tắt nhấp nháy, giảm rung và giảm âm thanh; biểu cảm không chỉ phân biệt bằng màu.
 
@@ -494,22 +503,24 @@ Các bổ sung mana, đào giun đa dạng và thời trang làm V1 lớn hơn b
 
 ## 16. Kiến trúc kỹ thuật đề xuất
 
+Cập nhật theo code hiện tại ngày 01/11/2026: đợt sửa thế giới giữ Go + gorilla/websocket và Three.js JavaScript. Kho JSON là hiện trạng, PostgreSQL/Redis là hướng production cần triển khai riêng; các sơ đồ database bên dưới mô tả mục tiêu bền vững, không khẳng định đã có trên bản local.
+
 ### 16.1. Công nghệ
 
 | Lớp | Đề xuất | Lý do chọn cho dự án |
 | --- | --- | --- |
-| Web và UI | TypeScript, React, Vite | Dùng chung kiểu dữ liệu, thuận tiện làm bảng game |
-| 3D | Three.js + React Three Fiber; GLB/glTF | Phù hợp thế giới web có UI React; benchmark cảnh trước |
-| Máy chủ game | Node.js + Colyseus | Phòng, đồng bộ trạng thái, điều phối nhiều tiến trình |
-| API nghiệp vụ | Node.js/TypeScript, mô-đun cùng codebase backend | Thống nhất luật kinh tế và quyền truy cập |
+| Web và UI | JavaScript modules, HTML/CSS hiện có | Tách module camera/input/map và chỉnh HUD trên nền code hiện tại |
+| 3D | Three.js hiện có; GLB/glTF cho asset hoàn thiện | Camera mới, scene theo zone, model/vật liệu theo ảnh |
+| Máy chủ game | Go + gorilla/websocket | Giữ logic máy chủ quyết định trạng thái, bổ sung cap zone và portal |
+| API nghiệp vụ | Mô-đun Go hiện có | Giữ luật kinh tế và quyền, thêm xác thực đường đi/ghế/chuyển khu |
 | Dữ liệu lâu dài | PostgreSQL | Giao dịch nguyên tử cho túi đồ, ví, đất, hợp đồng |
-| Auth | Đề xuất Supabase Auth, triển khai thử email và một OAuth | Giảm phần tự xây tài khoản/khôi phục |
+| Auth | Giữ tài khoản hiện có; email/OAuth là hạng mục production riêng | Không thay hệ đăng nhập chỉ để sửa thế giới và camera |
 | Phối hợp máy chủ | Redis | Presence, định tuyến phòng, rate limit và sự kiện tạm |
 | Asset | Object storage + CDN | Phân phối mô hình, texture, âm thanh |
 | Chạy nền | Worker xử lý việc có ID và lịch bền vững | Nhiệm vụ định kỳ, outbox, xây dựng và ấp trứng |
 | Vận hành | Container, CI/CD, log tập trung, metrics và cảnh báo | Triển khai nhiều bản game server và truy vết lỗi |
 
-Colyseus có hỗ trợ máy chủ quyết định trạng thái, phòng và đồng bộ; cách gắn vào kinh tế, chat và cơ sở dữ liệu ở đây là thiết kế của Hypex. Tham khảo [tài liệu Colyseus](https://docs.colyseus.io/). Supabase Auth cung cấp các luồng xác thực như email và OAuth; cấu hình nhà cung cấp, email và quyền truy cập vẫn phải triển khai cho dự án. Tham khảo [Supabase Auth](https://supabase.com/docs/guides/auth).
+Node.js/Colyseus, React và Supabase Auth là phương án từng đề xuất trước khi có code. Chúng không còn là yêu cầu của đợt làm lại thế giới này. README.md mô tả stack thực tế; PLAN_THE_GIOI_3D.md chỉ rõ các file Go/JavaScript cần sửa và điều kiện migration dữ liệu.
 
 Không pin phiên bản thư viện chỉ theo bản plan. Khi khởi tạo, chọn bộ phiên bản tương thích đã thử và khóa lockfile. Nếu nhóm có kinh nghiệm engine khác, có thể so sánh bằng cùng cảnh thử và mục tiêu tải trước khi chốt.
 
@@ -621,7 +632,7 @@ Bổ sung API cho mua thức ăn, chế biến & ăn, việc cứu đói, mua/tr
 
 ### 18.1. Asset và giới hạn cảnh
 
-- Một bản đồ chuồng gà công cộng với sảnh và sân liền kề, một chuồng riêng nhỏ, 5 NPC V1, bộ đồ trang trí dùng chung và phụ kiện gà. Bộ asset sảnh gồm khung/mái chuồng, ổ rơm, cầu đậu, máng ăn/nước, bao thóc, bảng tin và biển chỉ đường.
+- Bộ thế giới mới gồm nội thất sảnh lớn, bản đồ sân làng/đường đi và các khu đất riêng theo 11 ảnh. Sảnh có 6–8 NPC thường trú ngoài các NPC chức năng ở vườn/chợ/bến; chủ ngồi trên bục. Asset được tải theo zone; không dựng tất cả cảnh và hàng rào vuông giống nhau từ đầu.
 - Bổ sung V1: 5 mẫu/màu giun, hoạt ảnh kéo/nâng giun, đói/kiệt sức, món ăn và khoảng 24 món thời trang. Kiểm tra váy/vest không xuyên thân khi đào/ngồi. V1.1 thêm trại Ven Suối, bến, xe đạp/xe buýt và pose ghế; V1.2 thêm xe máy/ô tô và pose tương ứng.
 - Benchmark lại với gà mặc đồ và hiệu ứng khoe; trước khi phát hành xe, đo cảnh có xe/khách/đồng hành cùng lúc. Ghế ngồi chỉ thay cách biểu diễn người chơi, không cộng thêm quota người cho phương tiện.
 - Dùng mesh/material dùng lại, texture atlas, ánh sáng dựng sẵn khi phù hợp; tránh quá nhiều bóng động và hiệu ứng toàn màn hình.
@@ -636,7 +647,7 @@ Các kỹ thuật dùng lại tài nguyên, instancing, LOD và thay đổi ch�
 
 | Mục tiêu | Điều kiện đo |
 | --- | --- |
-| Mobile mức đồ họa thấp | Ít nhất 30 FPS trong ít nhất 95% thời gian phiên thử 10 phút, cảnh 25 gà |
+| Mobile mức đồ họa thấp | Ít nhất 30 FPS trong ít nhất 95% thời gian phiên thử 10 phút, sảnh mục tiêu 50 gà mặc đồ + 6–8 NPC trên thiết bị tham chiếu |
 | Desktop mức vừa | Trung bình 60 FPS trên máy tham chiếu được chốt ở prototype |
 | Tải lần đầu | Vào cảnh có thể thao tác trong 10 giây ở mạng mô phỏng 20 Mbps/RTT 100 ms, cache lạnh, sau xác thực |
 | Gói tải thiết yếu | Mục tiêu ≤15 MB truyền nén; tải phần còn lại theo nhu cầu |
@@ -650,7 +661,7 @@ Trước benchmark phải chọn và ghi rõ máy Android, iPhone/Safari và des
 ### 18.3. Mở rộng nhiều máy chủ từ V1
 
 - Ít nhất hai instance game server trong staging và production để kiểm tra định tuyến, hiện diện xuyên máy và lỗi từng máy.
-- Số phòng mỗi instance dựa trên load test. Không lấy phép chia 1.000/25 để kết luận số instance.
+- Số phòng mỗi instance dựa trên load test, cap tổng và cap khu; không suy số instance chỉ từ tổng người chia sức chứa sảnh.
 - Đo CPU, RAM, tick lag, người/phòng, băng thông, pool DB và Redis; để khoảng dự phòng 30% theo tải đo được.
 - Thêm instance để nhận phòng mới; không giả định có thể chuyển nóng phòng đang chơi sang máy khác.
 - Khi deploy: ngừng nhận phòng mới ở instance cũ, cho phòng kết thúc hoặc thông báo chuyển có kiểm soát; WebSocket đang mở không tự di chuyển nhờ load balancer.
@@ -671,6 +682,8 @@ V1 cần bảng quản trị xem người chơi/phòng, xử lý báo cáo, mute
 - Có chính sách cộng đồng, cách báo cáo và thông tin lưu dữ liệu dễ đọc trong sản phẩm.
 
 ## 20. Lộ trình triển khai và tiêu chí nghiệm thu
+
+Phần 18–28 tuần và E01–E15 dưới đây là ước lượng xây sản phẩm từ đầu ở bản 0.3. Dự án nay đã có code và báo cáo tiến độ riêng. Đợt sửa theo yêu cầu 01/11/2026 dùng R0–R5 trong PLAN_THE_GIOI_3D.md, ước lượng sơ bộ 5–9 tuần với 2 lập trình viên và 1 người làm 3D; không cộng hai lịch một cách máy móc và chưa coi các thay đổi mới là đã làm.
 
 Ước lượng định hướng sau cập nhật 0.3: **18–28 tuần cho V1 công khai**, giả định 2 lập trình viên có kinh nghiệm web/game làm toàn thời gian, 1 người phụ trách 3D/animation, có QA và người vận hành cộng đồng. Tăng từ 16–24 tuần do thêm mana/phạt, giun hiếm/khoe và tủ đồ phong phú. Đây là dự toán công sức của bản đề xuất, không phải lịch giao hàng đã xác nhận. Làm một người, thay đổi mỹ thuật hoặc nâng mục tiêu tải sẽ cần ước lượng lại. V1.1/V1.2, gồm phương tiện và vùng mới, ước lượng riêng.
 
@@ -746,11 +759,11 @@ Chưa có báo giá nhà cung cấp trong bản này. Lập ngân sách sau prot
 
 ## 22. Quyết định còn mở và bước bắt đầu
 
-Đã chốt về ý tưởng: nhiều phòng dạng chuồng gà, phiên mới bắt đầu ở sảnh chung; không nạp tiền; mana hết gây đói và đói lâu chịu phạt, kiếm thóc mua đồ ăn; giun thường/hiếm có giá và XP khác nhau, khoe giun vừa đào; quần áo đa dạng; mua xe đạp/xe máy/ô tô chở bạn theo sức chứa; giao thông công cộng có lượt miễn phí rồi thu thóc để sang vùng khác.
+Đã chốt về ý tưởng: sảnh chuồng rộng, chủ trên bục, NPC thường trú; camera điều khiển linh hoạt và theo gà; các khu ngoài chuồng nối bằng đường đi, map chỉ đường; phiên mới bắt đầu ở sảnh chung. Giữ kinh tế không nạp tiền, mana/đói, giun hiếm và khoe, thời trang, xe chở bạn, giao thông công cộng có lượt miễn phí rồi thu thóc.
 
 Các quyết định đề xuất, chưa được người dùng chốt riêng: đói chỉ tính khi online, mức phạt 5/10 phút và cách cứu đói, phí chế biến giun tự đào, xác suất/giá giun, 3 lượt xe miễn phí/ngày, sức chứa 2/2/4, hồi về trại gốc miễn phí và phân kỳ phát hành. Có thể chỉnh các thông số này sau phản hồi và playtest mà giữ nguyên yêu cầu sản phẩm.
 
 Các quyết định cần chốt trong giai đoạn 0: mục tiêu CCU và tài khoản dự kiến; ngân sách/team; thiết bị ưu tiên; hình dáng gà và bảng màu Hypex; phương thức đăng nhập; mức trang trí nhà; lịch mở V1.1/V1.2; người vận hành cộng đồng.
 
-Bước thực hiện đầu tiên khi bắt đầu xây: dựng sảnh chuồng gà công cộng với hai người xuất hiện và đi lại cùng nhau, một NPC đón tiếp, cửa ra sân có bãi giun, giao dịch bán rồi mua thức ăn hồi mana có lưu thật; đồng thời kiểm tra định tuyến trên hai tiến trình. Qua được lát cắt này mới mở rộng độ hiếm, thời trang, nhà, PK và phương tiện. Không tạo các nút chức năng không có xử lý thật rồi coi đó là bản game hoàn chỉnh.
+Bước tiếp theo trên bản hiện có: camera + sảnh đúng ảnh với chủ ngồi bục, NPC và ổ ngồi, rồi nối tuyến sảnh → cửa chính → sân làng → vườn giun → chợ → trở về, có bản đồ chỉ đường và giao dịch thật. Sau khi đối chiếu hình/di chuyển mới mở rộng các khu và đo sảnh đông. Các công việc hạ tầng production theo dõi riêng; không viết lại toàn bộ game chỉ để đổi bố cục.
 

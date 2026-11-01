@@ -88,18 +88,24 @@
 
 <!-- HUD -->
 <div id="hud" hidden>
-  <div class="topbar">
-    <div class="stat" title="Cấp"><span>⭐</span><span id="lvTxt">Cấp 1</span></div>
-    <div class="stat" title="Thóc"><span>🌾</span><span id="thocTxt">0</span></div>
-    <div class="bars">
-      <div class="bar"><div class="lab"><span>Kinh nghiệm</span><span id="xpLab">0/80</span></div><div class="track"><div class="fill xp" id="xpFill"></div></div></div>
-      <div class="bar" id="manaBar"><div class="lab"><span id="manaName">Mana · Độ no</span><span id="manaLab">100/100</span></div><div class="track"><div class="fill mana" id="manaFill" style="width:100%"></div></div></div>
+  <div class="player-panel">
+    <div class="player-portrait">🐥<span id="lvTxt">Cấp 1</span></div>
+    <div class="player-copy"><small>TRANG TRẠI HYPEX</small><strong id="playerName">Gà con</strong>
+      <div class="bar" id="manaBar"><div class="lab"><span id="manaName">Độ no</span><span id="manaLab">100/100</span></div><div class="track"><div class="fill mana" id="manaFill" style="width:100%"></div></div></div>
+      <div class="bar xp-mini"><span id="xpLab">0/80</span><div class="track"><div class="fill xp" id="xpFill"></div></div></div>
     </div>
-    <button class="stat roomchip" id="roomChip" title="Đổi chuồng"><span class="net" id="netDot"></span><span id="roomTxt">Chuồng…</span></button>
   </div>
+  <button class="location-pill" id="roomChip"><span class="net" id="netDot"></span><span><strong id="currentZoneName">Sảnh chuồng gà</strong><small id="roomTxt">Đang vào làng…</small></span><span class="chevron">⌄</span></button>
+  <div class="map-corner"><div class="wallet"><span>🌾</span><strong id="thocTxt">0</strong><small>THÓC</small></div>
+    <button id="miniMapButton" aria-label="Mở bản đồ làng"><canvas id="minimapCanvas" width="280" height="240"></canvas><span class="map-compass">N ↑</span><span class="mini-label"><span id="miniLocation">Làng Hypex</span><kbd>M</kbd></span></button>
+    <small id="localPopulation">Một ngôi làng để trở về</small>
+  </div>
+  <div id="routeCard" hidden><span class="route-symbol">↗</span><div><small>ĐANG CHỈ ĐƯỜNG</small><strong id="routeName"></strong><span id="routeStep"></span></div><b id="routeDistance"></b><button id="cancelRoute" aria-label="Hủy chỉ đường">×</button></div>
   <div class="areaName" id="areaName"></div>
+  <div id="routeArrow" hidden aria-hidden="true"><span>➤</span></div>
 
   <div class="sidebtns">
+    <button class="iconbtn" id="btnMap" title="Bản đồ" aria-label="Bản đồ">⌖<span>Bản đồ</span></button>
     <button class="iconbtn" id="btnQuest" title="Nhiệm vụ" aria-label="Nhiệm vụ">📋<span class="dot" id="questDot" hidden>!</span></button>
     <button class="iconbtn" id="btnBag" title="Túi đồ" aria-label="Túi đồ">🎒</button>
     <button class="iconbtn" id="btnBook" title="Sổ giun" aria-label="Sổ giun">📖</button>
@@ -112,7 +118,11 @@
     <button class="iconbtn" id="btnPhoto" title="Chụp ảnh" aria-label="Chụp ảnh">📸</button>
     <button class="iconbtn" id="btnSettings" title="Cài đặt" aria-label="Cài đặt">⚙️</button>
   </div>
+  <button id="btnMore" class="more-button" aria-label="Mở thêm công cụ">•••</button>
   <div class="emotes" id="emotes"></div>
+  <div class="camera-tools"><button id="resetCamera" title="Đặt lại góc nhìn">◉</button><button id="socialCamera" title="Góc sảnh / theo gà">◫</button><button id="toggleHUD" title="Ẩn giao diện">▣</button></div>
+  <form id="quickChat"><span>◌</span><input id="quickChatInput" maxlength="160" autocomplete="off" placeholder="Nói gì đó với mọi người…"><button type="submit" aria-label="Gửi tin nhắn">↗</button></form>
+  <div class="control-hint">W A S D / chạm đất <span>đi</span> · Kéo <span>xoay góc nhìn</span> · Lăn <span>zoom</span> · M <span>bản đồ</span></div>
 
   <div id="bubbles"></div>
   <div id="toasts"></div>
@@ -126,7 +136,7 @@
 <div class="screen" id="tripOverlay" hidden style="z-index:45;background:rgba(40,26,14,.55)"></div>
 <div id="modalRoot"><div id="scrim"></div><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="vendor/three.min.js"></script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

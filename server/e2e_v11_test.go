@@ -40,7 +40,7 @@ func TestBusToVenSuoi(t *testing.T) {
 	if !strings.Contains(r["msg"].(string), "miễn phí") {
 		t.Fatalf("lượt đầu dùng miễn phí: %v", r["msg"])
 	}
-	newbie.goZone("ra_ben", "station")
+	e.warp(newbie, "station")
 	newbie.walkToItem("station", "tram_bus")
 	if r := newbie.act("book", nil); r["ok"] == true {
 		t.Fatal("cấp 1 chưa tới được Ven Suối")
@@ -74,8 +74,7 @@ func TestCarCarriesFriendAcrossRegions(t *testing.T) {
 	e := newEnv(t, t.TempDir())
 	d, _ := e.seeded(t, "lai", "Gà Lái", func(a *Account) { a.Level = 7; a.Thoc = 20000 })
 	p, _ := e.seeded(t, "khach", "Gà Khách", func(a *Account) { a.Level = 3 })
-	d.goZone("ra_ben", "station")
-	d.goZone("ra_xe", "garage")
+	e.warp(d, "garage")
 	d.walkToItem("garage", "de_tho")
 	d.mustOK("vehicle_buy", msg{"id": "o_to"})
 	d.mustOK("vehicle_buy", msg{"id": "xe_dap"})
@@ -85,8 +84,7 @@ func TestCarCarriesFriendAcrossRegions(t *testing.T) {
 		t.Fatal("mỗi người tối đa một xe đang ra")
 	}
 
-	p.goZone("ra_ben", "station")
-	p.goZone("ra_xe", "garage")
+	e.warp(p, "garage")
 	pos := d.position()
 	p.walkTo(pos.X+1, pos.Z+0.5)
 	var pPID string
@@ -108,21 +106,34 @@ func TestCarCarriesFriendAcrossRegions(t *testing.T) {
 	}
 
 	// Lái xe: khách đi theo ghế, không tự dịch chuyển.
-	d.walkTo(0, 3)
+	gz := Zones["garage"]
+	d.walkTo(gz.CX, gz.CZ-3)
 	time.Sleep(200 * time.Millisecond)
 	if p.position().Dist(d.position()) > 1.5 {
 		t.Fatalf("khách phải ngồi cạnh người lái: %v vs %v", p.position(), d.position())
 	}
-	// Cả xe sang khu khác; khu cấm lái thì từ chối.
-	d.goZone("ve_ben", "station")
+	// Cả xe chạy trên đường làng sang bến; khách ngồi theo.
+	d.goZone("", "station")
 	time.Sleep(200 * time.Millisecond)
-	if p.region() != "station" {
+	if e.areaOf(p) != "station" {
 		t.Fatal("khách đi cùng xe sang khu mới")
 	}
-	d.walkToItem("station", "ve_sanh")
-	if r := d.act("go", msg{"to": "lobby"}); r["ok"] == true {
-		t.Fatal("không lái xe vào sảnh chuồng")
+	// Khu cấm lái (trạm ấp): xe dừng ở mép khu, không chạy vào được.
+	hz := Zones["hatchery"]
+	d.goZone("", "village")
+	d.walkTo(hz.Entry.X, hz.Entry.Z)
+	for i := 0; i < 20; i++ {
+		d.send(msg{"t": "in", "x": 0, "z": 1})
+		time.Sleep(50 * time.Millisecond)
 	}
+	d.send(msg{"t": "in", "x": 0, "z": 0})
+	if e.areaOf(d) == "hatchery" {
+		t.Fatal("không lái xe vào trạm ấp")
+	}
+	if r := d.act("go", msg{"to": "hatchery"}); r["ok"] == true {
+		t.Fatal("không còn cổng dịch chuyển giữa các khu")
+	}
+	d.goZone("", "station")
 	// Đường liên trại: cả nhóm sang Ven Suối cùng một bản sao, vẫn ngồi đúng ghế.
 	d.walkToItem("station", "duong_lien_trai")
 	d.mustOK("drive_region", nil)
@@ -207,6 +218,8 @@ func TestContractBuildFlow(t *testing.T) {
 	e.store.Homes.Save(home)
 	w, _ := e.seeded(t, "tho", "Gà Thợ", func(a *Account) { a.Level = 7 })
 
+	e.warp(o, "neighborhood")
+	e.warp(w, "neighborhood")
 	o.send(msg{"t": "visit", "owner": "me"})
 	o.expect("welcome", 2*time.Second)
 	if r := o.act("contract_create", msg{"id": "luc", "i": 300}); r["ok"] == true {
@@ -263,6 +276,7 @@ func TestGuildFlow(t *testing.T) {
 	o.send(msg{"t": "guild_approve", "id": mid})
 	o.expect("guild", 2*time.Second)
 	// Chat hội xuyên phòng: thành viên ở chuồng riêng vẫn nhận.
+	e.warp(m, "neighborhood")
 	m.send(msg{"t": "visit", "owner": "me"})
 	m.expect("welcome", 2*time.Second)
 	o.send(msg{"t": "guild_chat", "text": "họp hội tối nay"})
@@ -298,7 +312,7 @@ func TestLeaveStationCancelsBooking(t *testing.T) {
 		t.Fatal("giữ một lượt miễn phí")
 	}
 	// Rời bến trước giờ xe chạy: vé tự huỷ, lượt trả lại đúng một lần.
-	a.goZone("ve_sanh", "lobby")
+	a.goZone("", "village") // đi bộ ra khỏi bến
 	a.toastHas("rời bến")
 	r := a.mustOK("title", msg{"id": ""})
 	if r["me"].(map[string]any)["tripsLeft"].(float64) != FreeTrips || r["me"].(map[string]any)["booking"] != nil {
@@ -311,6 +325,10 @@ func TestGuildHall(t *testing.T) {
 	o, _ := e.seeded(t, "chuhoi", "Gà Hội", func(a *Account) { a.Level = 10; a.Thoc = 2000 })
 	x, _ := e.seeded(t, "nguoila", "Gà Lạ", func(a *Account) {})
 	o.mustOK("guild_create", msg{"text": "Hội Rơm"})
+	o.send(msg{"t": "guild_hall"})
+	o.toastHas("Xóm Rơm Vàng")
+	e.warp(o, "neighborhood")
+	e.warp(x, "neighborhood")
 	x.send(msg{"t": "guild_hall"})
 	x.toastHas("chưa ở trong hội")
 	o.send(msg{"t": "guild_hall"})
@@ -319,8 +337,8 @@ func TestGuildHall(t *testing.T) {
 		t.Fatalf("vào Nhà Hội: %v", w["room"])
 	}
 	o.mustOK("go", msg{"to": "lobby"})
-	if w := o.expect("welcome", 2*time.Second); w["zone"] != ZoneLobby {
-		t.Fatal("rời Nhà Hội về sảnh")
+	if w := o.expect("welcome", 2*time.Second); w["zone"] != "neighborhood" {
+		t.Fatal("rời Nhà Hội ra Xóm Rơm Vàng")
 	}
 	time.Sleep(100 * time.Millisecond)
 	e.hub.mu.Lock()

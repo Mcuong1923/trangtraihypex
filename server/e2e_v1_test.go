@@ -59,8 +59,8 @@ func TestReconnectDuringPK(t *testing.T) {
 	e := newEnvBal(t, t.TempDir(), func(b *Balance) { b.ReconnectGrace = 2 * time.Second })
 	a, _ := e.playerTok(t, "alice", "Gà Bông")
 	b, tokB := e.playerTok(t, "bob", "Gà Mơ")
-	a.goZone("ra_san", "arena")
-	b.goZone("ra_san", "arena")
+	e.warp(a, "arena")
+	e.warp(b, "arena")
 	var bPID string
 	for {
 		m := a.expect("pjoin", 2*time.Second)
@@ -112,7 +112,7 @@ func TestReconnectGraceAndResume(t *testing.T) {
 	a.expect("pjoin", 2*time.Second)
 
 	// Tự nối lại (resume) ngoài trận: về đúng khu và vị trí cũ.
-	c.goZone("ra_cho", "market")
+	e.warp(c, "market")
 	posBefore := c.position()
 	c.conn.Close()
 	time.Sleep(200 * time.Millisecond)
@@ -318,6 +318,7 @@ func TestMailOnVisitAndFestivalE2E(t *testing.T) {
 	bobID := a.social()["reqIn"].([]any)[0].(map[string]any)["id"].(string)
 	a.send(msg{"t": "friend_respond", "id": bobID, "on": true})
 	aliceID := b.social()["friends"].([]any)[0].(map[string]any)["id"].(string)
+	e.warp(b, "neighborhood")
 	b.send(msg{"t": "visit", "owner": aliceID})
 	b.expect("welcome", 2*time.Second)
 	a.expect("mail_new", 2*time.Second)

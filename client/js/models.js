@@ -7,12 +7,17 @@ export const SHIRT = { none: null, xanh: 0x3f86c9, do: 0xd64b3a, luc: 0x4e9a4e, 
 const matCache = new Map();
 export function mat(hex, opts) {
   const key = hex + '|' + (opts ? JSON.stringify(opts) : '');
-  if (!matCache.has(key)) matCache.set(key, new T.MeshStandardMaterial(Object.assign({ color: hex, roughness: 0.92, metalness: 0, flatShading: true }, opts || {})));
+  if (!matCache.has(key)) matCache.set(key, new T.MeshStandardMaterial(Object.assign({ color: hex, roughness: 0.92, metalness: 0, flatShading: false }, opts || {})));
   return matCache.get(key);
 }
 const hexOf = (s) => parseInt(String(s).replace('#', ''), 16);
 
+const geometryCache = new Map();
 function mesh(geo, hex, shadow = true) {
+  // Identical avatars share GPU geometry as well as materials.
+  const key = geo.type + JSON.stringify(geo.parameters || {});
+  if (geometryCache.has(key)) { geo.dispose(); geo = geometryCache.get(key); }
+  else geometryCache.set(key, geo);
   const m = new T.Mesh(geo, mat(hex));
   m.castShadow = shadow;
   return m;
@@ -25,7 +30,7 @@ export function buildChicken({ color = 'vang', comb = 'don', tail: tailKind = 'q
   g.add(rig);
   const parts = { rig };
 
-  const body = mesh(new T.SphereGeometry(0.5, 16, 14), hex);
+  const body = mesh(new T.SphereGeometry(0.5, 24, 18), hex);
   body.scale.set(1, 0.92, 1.08); body.position.y = 0.55; rig.add(body);
   parts.body = body;
 
@@ -37,25 +42,27 @@ export function buildChicken({ color = 'vang', comb = 'don', tail: tailKind = 'q
     for (const sx of [-1, 1]) { const c = mesh(new T.TorusGeometry(0.14, 0.05, 6, 12, Math.PI * 1.5), hex); c.rotation.y = Math.PI / 2; c.position.set(sx * 0.07, 0.12, -0.04); tail.add(c); }
   } else {
     for (let i = -1; i <= 1; i++) {
-      const f = mesh(new T.ConeGeometry(0.12, 0.42, 6), hex);
-      f.rotation.x = -2.2; f.rotation.z = i * 0.4; f.position.x = i * 0.12; tail.add(f);
+      const f = mesh(new T.SphereGeometry(0.12, 12, 10), hex);
+      f.scale.set(0.65, 1.9, 0.7); f.rotation.x = -2.2; f.rotation.z = i * 0.4; f.position.x = i * 0.12; tail.add(f);
     }
   }
   rig.add(tail);
 
   const head = new T.Group(); head.position.set(0, 1.02, 0.08); rig.add(head); parts.head = head;
-  head.add(mesh(new T.SphereGeometry(0.34, 16, 14), hex));
+  head.add(mesh(new T.SphereGeometry(0.34, 24, 18), hex));
   for (const sx of [-1, 1]) head.add(eyeMesh(eyes, sx));
-  const beak = mesh(new T.ConeGeometry(0.1, 0.22, 6), 0xe8922b);
+  const beak = mesh(new T.ConeGeometry(0.1, 0.22, 6), 0xe8922b, false);
   beak.rotation.x = Math.PI / 2; beak.position.set(0, -0.02, 0.37); head.add(beak);
 
   const combHex = 0xe0401f;
   const cg = new T.Group(); cg.position.set(0, 0.33, 0.05); head.add(cg);
-  const blob = (x, s) => { const b = mesh(new T.SphereGeometry(0.1 * s, 8, 8), combHex); b.position.x = x; b.scale.y = 1.3; cg.add(b); };
+  const blob = (x, s) => { const b = mesh(new T.SphereGeometry(0.1 * s, 8, 8), combHex, false); b.position.x = x; b.scale.y = 1.3; cg.add(b); };
   if (comb === 'kep') { blob(-0.09, 1); blob(0.09, 1); blob(0, 0.8); }
-  else if (comb === 'ro') { for (let i = 0; i < 3; i++) { const c = mesh(new T.ConeGeometry(0.07, 0.2, 5), combHex); c.position.set((i - 1) * 0.12, 0.03, 0); cg.add(c); } }
+  else if (comb === 'ro') { for (let i = 0; i < 3; i++) { const c = mesh(new T.ConeGeometry(0.07, 0.2, 5), combHex, false); c.position.set((i - 1) * 0.12, 0.03, 0); cg.add(c); } }
   else { blob(0, 1.1); blob(-0.08, 0.7); blob(0.08, 0.7); }
-  const wattle = mesh(new T.SphereGeometry(0.07, 8, 8), combHex); wattle.scale.y = 1.4; wattle.position.set(0, -0.22, 0.3); head.add(wattle);
+  const wattle = mesh(new T.SphereGeometry(0.07, 8, 8), combHex, false); wattle.scale.y = 1.4; wattle.position.set(0, -0.22, 0.3); head.add(wattle);
+  // Parts too small to read from the social camera; hidden for distant chickens to keep crowds cheap.
+  const detail = [wattle];
 
   parts.wings = [-1, 1].map((sx) => {
     const w = mesh(new T.SphereGeometry(0.22, 10, 8), hex);
@@ -64,14 +71,20 @@ export function buildChicken({ color = 'vang', comb = 'don', tail: tailKind = 'q
   });
   parts.legs = [-1, 1].map((sx) => {
     const leg = new T.Group(); leg.position.set(sx * 0.17, 0.28, 0.02); rig.add(leg);
-    const shin = mesh(new T.CylinderGeometry(0.035, 0.035, 0.28, 6), 0xe8922b); shin.position.y = -0.14; leg.add(shin);
-    const foot = mesh(new T.BoxGeometry(0.2, 0.04, 0.22), 0xe8922b); foot.position.set(0, -0.28, 0.05); leg.add(foot);
+    const shin = mesh(new T.CylinderGeometry(0.035, 0.035, 0.28, 6), 0xe8922b, false); shin.position.y = -0.14; leg.add(shin);
+    for (let toe = -1; toe <= 1; toe++) {
+      const foot = mesh(new T.SphereGeometry(0.04, 8, 6), 0xe8922b, false);
+      foot.scale.set(0.8, 0.5, 2.4); foot.position.set(toe * 0.05, -0.26, 0.09); foot.rotation.y = toe * 0.3; leg.add(foot);
+      if (toe) detail.push(foot);
+    }
     return leg;
   });
 
   parts.slots = {};
   for (const s of ['head', 'eye', 'neck']) { parts.slots[s] = new T.Group(); head.add(parts.slots[s]); }
   for (const s of ['body', 'back']) { parts.slots[s] = new T.Group(); rig.add(parts.slots[s]); }
+  head.traverse((o) => { if (o.isMesh && o.geometry.parameters?.radius < 0.02) detail.push(o); }); // eye glints
+  parts.detail = detail;
   g.userData.parts = parts;
   return g;
 }
@@ -95,7 +108,9 @@ function eyeMesh(kind, sx) {
   } else if (kind === 'ngai') {
     const e = mesh(new T.SphereGeometry(0.055, 8, 8), black, false); e.scale.y = 0.35; g.add(e);
   } else {
-    g.add(mesh(new T.SphereGeometry(0.055, 8, 8), black, false));
+    g.add(mesh(new T.SphereGeometry(0.055, 10, 8), black, false));
+    const glint = mesh(new T.SphereGeometry(0.017, 6, 6), 0xfff9df, false);
+    glint.position.set(-0.013, 0.018, 0.045); g.add(glint);
   }
   return g;
 }

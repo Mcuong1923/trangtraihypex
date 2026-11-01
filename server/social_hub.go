@@ -221,6 +221,10 @@ func (h *Hub) social(s *Session, m *inMsg) {
 		toast("good", "Đã mời "+so.Name(m.ID)+" về chuồng của bạn.")
 
 	case "visit":
+		if !h.inResidential(s) {
+			fail(errors.New("Đi tới Xóm Rơm Vàng rồi vào cổng chuồng từ đó."))
+			return
+		}
 		owner := m.Owner
 		if owner == "" || owner == "me" {
 			owner = me
@@ -354,8 +358,27 @@ func (h *Hub) LeaveHome(s *Session) {
 	prev := h.lastPublic[s]
 	h.mu.Unlock()
 	if !s.closed.Load() {
-		h.place(s, prev)
+		// Step out of the coop gate in the residential lane, not back in the hall.
+		h.placeIn(s, prev, RegionHypex, &arrival{Zone: "neighborhood"})
 	}
+}
+
+// inResidential: coop gates and the guild hall open from the residential lane, never from the hall.
+func (h *Hub) inResidential(s *Session) bool {
+	cur := s.room.Load()
+	if cur == nil {
+		return false
+	}
+	if cur.Kind != "public" {
+		return true
+	}
+	ok := false
+	cur.DoWait(func() {
+		if p := cur.players[s]; p != nil {
+			ok = p.zone == "neighborhood"
+		}
+	})
+	return ok
 }
 
 // closeHome dừng phòng nhà khi không còn ai (kể cả người đang giữ chỗ để vào).

@@ -340,6 +340,7 @@ type arrival struct {
 	Zone string
 	Trip string
 	Ride *rideSpec
+	Pos  *Vec // đổi kênh: đứng lại đúng chỗ cũ trên bản đồ
 }
 
 // place đưa phiên vào sảnh của một chuồng còn chỗ (mục 6.3): ưu tiên chuồng đang có người, rồi mới mở chuồng mới.
@@ -439,7 +440,15 @@ func (h *Hub) Switch(s *Session, roomID string) {
 		s.Send(map[string]any{"t": "toast", "kind": "warn", "text": "Đang trong trận PK hoặc đang trên xe, chưa đổi chuồng được."})
 		return
 	}
-	cur.DoWait(func() { cur.remove(s) })
+	var arr *arrival
+	cur.DoWait(func() {
+		if p := cur.players[s]; p != nil && cur.world != nil && cur.Region == target.Region {
+			pos := p.pos
+			arr = &arrival{Zone: p.zone, Pos: &pos}
+		}
+		cur.remove(s)
+	})
+	s.arrive = arr
 	s.room.Store(target)
 	target.DoWait(func() { target.add(s) })
 }

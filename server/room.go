@@ -23,6 +23,7 @@ type Player struct {
 	sess *Session
 	acc  *Account
 
+	seat   string
 	zone   string
 	pos    Vec
 	ry     float64
@@ -75,6 +76,7 @@ type Room struct {
 	Owner    string // chủ nhà với phòng "home"
 	home     *Home
 	zones    map[string]*Zone
+	world    *Region // bản đồ liền của chuồng công cộng; nil với nhà riêng / Nhà Hội
 	entry    string
 	cap      int
 	quit     bool
@@ -102,7 +104,7 @@ func (r *Room) TickSamples() []float64 {
 func NewRoom(h *Hub, id, name string) *Room {
 	var seed [32]byte
 	_, _ = crand.Read(seed[:])
-	return &Room{ID: id, Name: name, Kind: "public", Region: RegionHypex, zones: Zones, entry: ZoneLobby, cap: RoomCapacity, buses: map[string]*Bus{},
+	return &Room{ID: id, Name: name, Kind: "public", Region: RegionHypex, zones: Zones, world: Regions[RegionHypex], entry: ZoneLobby, cap: RoomCapacity, buses: map[string]*Bus{},
 		hub: h, inbox: make(chan func(), 1024), players: map[*Session]*Player{},
 		rng: rand.New(rand.NewChaCha8(seed)), matches: map[string]*Match{}, invites: map[string]*Invite{}}
 }
@@ -111,7 +113,7 @@ func NewRoom(h *Hub, id, name string) *Room {
 func NewRegionRoom(h *Hub, id, name, region string) *Room {
 	r := NewRoom(h, id, name)
 	reg := Regions[region]
-	r.Region, r.zones, r.entry = region, reg.Zones, reg.Entry
+	r.Region, r.zones, r.entry, r.world = region, reg.Zones, reg.Entry, reg
 	return r
 }
 
@@ -120,6 +122,7 @@ func NewHomeRoom(h *Hub, home *Home) *Room {
 	r := NewRoom(h, "h:"+home.Owner, "Chuồng riêng của "+home.OwnerName)
 	r.Kind, r.Owner, r.home, r.entry, r.cap = "home", home.Owner, home, "home", HomeCapacity
 	r.zones = map[string]*Zone{"home": home.Zone()}
+	r.world = nil
 	return r
 }
 
@@ -166,6 +169,10 @@ func (r *Room) add(s *Session) {
 	s.arrive = nil
 	r.arriveV11(p, arr, time.Now())
 	p.pos = r.freeSpawn(r.zones[p.zone])
+	if arr != nil && arr.Pos != nil && r.world != nil && r.world.World.Walkable(*arr.Pos) {
+		p.pos = *arr.Pos
+		p.zone = r.world.AreaAt(p.pos)
+	}
 	p.ry = math.Pi
 	p.lastStage = p.acc.HungerStage(r.hub.bal)
 	r.players[s] = p
@@ -193,6 +200,9 @@ func (r *Room) sendWelcome(p *Player, now time.Time) {
 		"room": r.info(), "zones": r.zones, "zone": p.zone, "pos": p.pos, "ry": p.ry,
 		"players": r.zonePlayers(p.zone, p), "catalog": catalog(r.hub.bal), "festival": r.hub.festival.Snapshot(),
 		"self": r.publicOf(p), "bus": r.busInfo(), "region": r.Region,
+	}
+	if r.world != nil {
+		welcome["world"] = r.world.WorldInfo()
 	}
 	if r.home != nil {
 		r.home.Tick(now)
@@ -321,6 +331,7 @@ type publicPlayer struct {
 	Guild    string            `json:"guild,omitempty"`
 	GColor   string            `json:"gcolor,omitempty"`
 	Gone     bool              `json:"gone"`
+	Nest     string            `json:"nest,omitempty"`
 	X        float64           `json:"x"`
 	Z        float64           `json:"z"`
 	RY       float64           `json:"ry"`
@@ -334,7 +345,7 @@ func (r *Room) publicOf(p *Player) publicPlayer {
 		eq[k] = v
 	}
 	pp := publicPlayer{PID: p.PID, Name: p.acc.Char.Name, Tag: PlayerTag(p.acc.ID), Char: p.acc.Char, Equipped: eq, Level: p.acc.Level,
-		Title: titleName(p.acc.Title), Gone: !p.goneAt.IsZero(), X: p.pos.X, Z: p.pos.Z, RY: p.ry, Stage: p.acc.HungerStage(r.hub.bal), Pet: petOf(p.acc)}
+		Title: titleName(p.acc.Title), Nest: p.seat, Gone: !p.goneAt.IsZero(), X: p.pos.X, Z: p.pos.Z, RY: p.ry, Stage: p.acc.HungerStage(r.hub.bal), Pet: petOf(p.acc)}
 	if p.ride != nil {
 		pp.Vehicle = p.ride.Kind
 		for _, q := range p.ride.Seats {
@@ -352,10 +363,13 @@ func (r *Room) publicOf(p *Player) publicPlayer {
 	return pp
 }
 
+// sameView: trên bản đồ liền mọi khu nhìn thấy nhau; nhà riêng chỉ có một khu.
+func (r *Room) sameView(a, b string) bool { return r.world != nil || a == b }
+
 func (r *Room) zonePlayers(zone string, except *Player) []publicPlayer {
 	out := []publicPlayer{}
 	for _, o := range r.players {
-		if o != except && o.zone == zone {
+		if o != except && r.sameView(o.zone, zone) {
 			out = append(out, r.publicOf(o))
 		}
 	}
@@ -374,7 +388,7 @@ func (r *Room) byPID(pid string) *Player {
 func (r *Room) broadcastZone(zone string, except *Player, v any) {
 	b, _ := json.Marshal(v)
 	for _, p := range r.players {
-		if p != except && p.zone == zone {
+		if p != except && r.sameView(p.zone, zone) {
 			p.sess.sendRaw(b)
 		}
 	}
@@ -450,11 +464,22 @@ func (r *Room) step(now time.Time, dt float64) {
 			continue // khách ngồi theo ghế, vị trí do syncRides đặt
 		}
 		if now.Sub(p.inAt) < 300*time.Millisecond && (p.in.X != 0 || p.in.Z != 0) && p.dig == nil && mult > 0 {
-			spd := WalkSpeed * SpeedFactor(stage) * mult * dt
+			spd := WalkSpeed * SpeedFactor(stage) * mult * math.Min(dt, .1)
 			z := r.zones[p.zone]
-			p.pos = z.Clamp(Vec{p.pos.X + p.in.X*spd, p.pos.Z + p.in.Z*spd})
+			if r.world != nil {
+				z = r.world.World
+			}
+			if p.seat != "" {
+				r.stand(p)
+			}
+			next := z.Move(p.pos, Vec{p.pos.X + p.in.X*spd, p.pos.Z + p.in.Z*spd})
+			if r.world != nil && p.ride != nil && !DriveZones[r.world.AreaAt(next)] {
+				next = p.pos // xe dừng ở mép khu cấm lái (sảnh, vườn, sân PK, trạm ấp)
+			}
+			p.pos = next
 			p.ry = math.Atan2(p.in.X, p.in.Z)
 			p.moving = true
+			r.enterArea(p)
 		} else {
 			p.moving = false
 		}
@@ -477,8 +502,12 @@ func (r *Room) step(now time.Time, dt float64) {
 			if p.moving {
 				mv = 1
 			}
-			byZone[p.zone] = append(byZone[p.zone], []float64{round2(p.pos.X), round2(p.pos.Z), round2(p.ry), mv})
-			pidsByZone[p.zone] = append(pidsByZone[p.zone], p.PID)
+			key := p.zone
+			if r.world != nil {
+				key = r.world.Outdoor
+			}
+			byZone[key] = append(byZone[key], []float64{round2(p.pos.X), round2(p.pos.Z), round2(p.ry), mv})
+			pidsByZone[key] = append(pidsByZone[key], p.PID)
 		}
 		for zone, rows := range byZone {
 			r.broadcastZone(zone, nil, map[string]any{"t": "snap", "tick": r.tick, "pids": pidsByZone[zone], "p": rows})
