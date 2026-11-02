@@ -17,11 +17,14 @@ import (
 // ---------- Bảng việc làng ----------
 
 type Order struct {
-	ID     string `json:"id"`
-	NPC    string `json:"npc"`
-	Worm   string `json:"worm"`
-	N      int    `json:"n"`
-	Reward int    `json:"reward"`
+	ID     string         `json:"id"`
+	NPC    string         `json:"npc"`
+	Worm   string         `json:"worm,omitempty"`
+	Item   string         `json:"item,omitempty"` // nhiệm vụ của NPC: cần vật phẩm trong kho thay vì giun
+	N      int            `json:"n"`
+	Reward int            `json:"reward"`
+	Gift   map[string]int `json:"gift,omitempty"` // thưởng vật liệu, hạt giống hoặc trứng
+	Line   string         `json:"line,omitempty"`
 }
 
 type OrderView struct {
@@ -32,15 +35,28 @@ type OrderView struct {
 
 // Đơn có thưởng cao hơn giá bán lẻ một chút để đáng công đi giao, nhưng mỗi đơn một lần/ngày nên có trần.
 var OrderPool = []Order{
-	{"dat3", "Lợn Ủn", "dat", 3, 25},
-	{"dat6", "Gà Cụ Cục", "dat", 6, 45},
-	{"beo2", "Lợn Ủn", "beo", 2, 40},
-	{"beo4", "Bò Mộc", "beo", 4, 80},
-	{"sang1", "Chó Mực", "sang", 1, 70},
-	{"dat_beo", "Gà Cụ Cục", "beo", 1, 22},
+	{ID: "dat3", NPC: "Lợn Ủn", Worm: "dat", N: 3, Reward: 25},
+	{ID: "dat6", NPC: "Gà Cụ Cục", Worm: "dat", N: 6, Reward: 45},
+	{ID: "beo2", NPC: "Lợn Ủn", Worm: "beo", N: 2, Reward: 40},
+	{ID: "beo4", NPC: "Bò Mộc", Worm: "beo", N: 4, Reward: 80},
+	{ID: "sang1", NPC: "Chó Mực", Worm: "sang", N: 1, Reward: 70},
+	{ID: "dat_beo", NPC: "Gà Cụ Cục", Worm: "beo", N: 1, Reward: 22},
 }
 
-// OrdersFor chọn 3 đơn của ngày theo giờ Việt Nam; luôn có một đơn giun đất cho người mới.
+// NPCQuests: nhiệm vụ của NPC (PLAN_LOGIC_GAME 16) đặt hàng vật liệu, nông sản hoặc giun, thưởng vật phẩm.
+// Mỗi ngày bảng việc làng có thêm một nhiệm vụ như vậy, đổi theo ngày.
+var NPCQuests = []Order{
+	{ID: "q_rom10", NPC: "Bò Mộc", Item: "rom", N: 10, Reward: 15, Gift: map[string]int{"go": 4}, Line: "Bò đang lợp mái cho nhà bên, thiếu 10 bó rơm!"},
+	{ID: "q_beo5", NPC: "Lợn Ủn", Worm: "beo", N: 5, Reward: 70, Gift: map[string]int{"hat_bi_ngo": 2}, Line: "Khách đặt mâm giun béo, Ủn cần gấp 5 con!"},
+	{ID: "q_hoa1", NPC: "Vịt Bông", Item: "bo_hoa", N: 1, Reward: 10, Gift: map[string]int{"trung_thuong": 1}, Line: "Ai tặng Vịt một bó hoa, Vịt đổi cho quả trứng xinh!"},
+	{ID: "q_cai3", NPC: "Gà Cụ Cục", Item: "cai", N: 3, Reward: 20, Gift: map[string]int{"hat_ca_rot": 2}, Line: "Cụ thèm bát canh cải, cháu hái giúp cụ 3 cây nhé."},
+	{ID: "q_carot3", NPC: "Dê Thợ Máy", Item: "ca_rot", N: 3, Reward: 30, Gift: map[string]int{"dinh": 10}, Line: "Ăn cà rốt cho tinh mắt, vặn ốc mới chuẩn!"},
+	{ID: "q_bingo1", NPC: "Chim Chíp", Item: "bi_ngo", N: 1, Reward: 35, Gift: map[string]int{"gach": 4}, Line: "Chíp muốn khắc đèn bí ngô cho bến xe!"},
+	{ID: "q_go8", NPC: "Ông Chủ Đầu Tư", Item: "go", N: 8, Reward: 30, Gift: map[string]int{"ngoi": 3}, Line: "Dựng biển “NHÀ MẪU” cần 8 tấm gỗ, giá hời đây!"},
+}
+
+// OrdersFor chọn đơn của ngày theo giờ Việt Nam: luôn có một đơn giun đất cho người mới, hai đơn giun khác
+// và một nhiệm vụ của NPC.
 func OrdersFor(day string) []Order {
 	h := fnv.New32a()
 	h.Write([]byte(day))
@@ -50,15 +66,22 @@ func OrdersFor(day string) []Order {
 	rest := OrderPool[2:]
 	a := (seed / 2) % len(rest)
 	b := (a + 1 + (seed/7)%(len(rest)-1)) % len(rest)
-	return append(out, rest[a], rest[b])
+	return append(out, rest[a], rest[b], NPCQuests[(seed/11)%len(NPCQuests)])
+}
+
+func (o Order) need() (string, string) {
+	if o.Item != "" {
+		return o.Item, itemByID(o.Item).Name
+	}
+	return o.Worm, wormByID(o.Worm).Name
 }
 
 func (a *Account) OrderViews(now time.Time) []OrderView {
 	day := DayKey(now)
 	var out []OrderView
 	for _, o := range OrdersFor(day) {
-		w := wormByID(o.Worm)
-		out = append(out, OrderView{Order: o, Text: fmt.Sprintf("%s cần %d %s", o.NPC, o.N, w.Name), Done: a.OrdersDone[day+":"+o.ID]})
+		_, name := o.need()
+		out = append(out, OrderView{Order: o, Text: fmt.Sprintf("%s cần %d %s", o.NPC, o.N, name), Done: a.OrdersDone[day+":"+o.ID]})
 	}
 	return out
 }
@@ -72,10 +95,25 @@ func (a *Account) DeliverOrder(id string, now time.Time) (Order, []string, error
 		if a.OrdersDone[day+":"+o.ID] {
 			return o, nil, errors.New("Đơn này hôm nay đã giao rồi.")
 		}
-		if a.Worms[o.Worm] < o.N {
-			return o, nil, fmt.Errorf("Cần %d %s, túi đang có %d.", o.N, wormByID(o.Worm).Name, a.Worms[o.Worm])
+		id, name := o.need()
+		if o.Item != "" {
+			if a.Items[id] < o.N {
+				return o, nil, fmt.Errorf("Cần %d %s, kho đang có %d.", o.N, name, a.Items[id])
+			}
+			a.Items[id] -= o.N
+			if err := a.addItems(o.Gift); err != nil {
+				a.Items[id] += o.N
+				return o, nil, err
+			}
+		} else {
+			if a.Worms[id] < o.N {
+				return o, nil, fmt.Errorf("Cần %d %s, túi đang có %d.", o.N, name, a.Worms[id])
+			}
+			if err := a.addItems(o.Gift); err != nil {
+				return o, nil, err
+			}
+			a.Worms[id] -= o.N
 		}
-		a.Worms[o.Worm] -= o.N
 		a.OrdersDone[day+":"+o.ID] = true
 		// Dọn khoá ngày cũ để bản lưu không phình.
 		for k := range a.OrdersDone {
@@ -104,6 +142,10 @@ var TitleDefs = []TitleDef{
 	{"suu_tam", "Nhà sưu tầm", "Có đủ 5 loài giun trong sổ"},
 	{"cao_thu", "Cao thủ PK", "Thắng 10 trận PK"},
 	{"hao_tam", "Nhà hảo tâm", "Góp từ 100 thóc cho ngày hội"},
+	{"lao_lang", "Gà Lão Làng", "Đạt cấp 10 (quà lên cấp)"},
+	{"vua_giun", "Vua Giun Dài", "Đứng đầu bảng “Giun dài nhất” của một tuần"},
+	{"san_hiem", "Thợ Săn Giun Hiếm", "Đứng đầu bảng “Nhiều giun hiếm nhất” của một tuần"},
+	{"vo_si_tuan", "Võ Sĩ Của Tuần", "Đứng đầu bảng “Thắng PK nhiều nhất” của một tuần"},
 }
 
 var discoverZones = []string{"lobby", "garden", "market", "arena", "home"}
@@ -142,6 +184,7 @@ func (a *Account) CheckTitles() []string {
 		"suu_tam":   species >= len(Worms),
 		"cao_thu":   a.Stats.PKWins >= 10,
 		"hao_tam":   a.Festival >= 100,
+		"lao_lang":  a.Level >= LevelCap,
 	}
 	var notes []string
 	for _, t := range TitleDefs {

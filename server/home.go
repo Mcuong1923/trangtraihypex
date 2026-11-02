@@ -52,11 +52,11 @@ type LandTier struct {
 	HalfZ float64 `json:"halfZ"`
 }
 
-// Bảng giá mục 8.2: tổ miễn phí, mảnh đất riêng 1.200, mở rộng 3.000; mở mua đất từ cấp 3 (mục 7.3).
+// Bảng giá mục 8.2 / PLAN_LOGIC_GAME 13.2: tổ miễn phí, lô tiêu chuẩn 1.200 (cấp 3), lô rộng 3.000 (cấp 6).
 var LandTiers = []LandTier{
 	{"Tổ nhỏ", 0, 1, 4.5, 4},
-	{"Mảnh đất riêng", 1200, 3, 6.5, 5.5},
-	{"Đất mở rộng", 3000, 3, 8.5, 7},
+	{"Lô tiêu chuẩn", 1200, 3, 6.5, 5.5},
+	{"Lô rộng", 3000, 6, 8.5, 7},
 }
 
 const (
@@ -78,16 +78,19 @@ type PlacedObj struct {
 }
 
 type CoopJob struct {
-	Roof    string    `json:"roof"`
-	State   string    `json:"state"` // building | done
-	StartAt time.Time `json:"startAt"`
-	DoneAt  time.Time `json:"doneAt"`
+	Roof     string    `json:"roof"`
+	Design   string    `json:"design"`   // chuong_nho | nha_hai_gian (PLAN_LOGIC_GAME 13.3)
+	Material string    `json:"material"` // rom | go | gach
+	State    string    `json:"state"`    // building | done
+	StartAt  time.Time `json:"startAt"`
+	DoneAt   time.Time `json:"doneAt"`
 }
 
 type Home struct {
 	Owner     string         `json:"owner"`
 	OwnerName string         `json:"ownerName"`
 	Tier      int            `json:"tier"`
+	LotPlace  string         `json:"place"` // duong | ven_ao | doi_thong (cảnh quanh nhà)
 	Access    string         `json:"access"`
 	Coop      *CoopJob       `json:"coop"`
 	Objects   []PlacedObj    `json:"objects"`
@@ -120,7 +123,7 @@ func (h *Home) OpenParty(minutes int, now time.Time) error {
 }
 
 func NewHome(owner, name string) *Home {
-	h := &Home{Owner: owner, OwnerName: name, Access: "friends", Storage: map[string]int{"chau_hoa": 1}}
+	h := &Home{Owner: owner, OwnerName: name, Access: "friends", LotPlace: "duong", Storage: map[string]int{"chau_hoa": 1}}
 	// Tổ nhỏ + một đồ trang trí miễn phí, không bán/chuyển nhượng (mục 8.2).
 	h.Objects = []PlacedObj{{ID: "o1", Kind: "o_rom", X: 1, Z: -1}}
 	h.Seq = 1
@@ -251,21 +254,10 @@ func (h *Home) UpgradeLand(a *Account, now time.Time) (int, error) {
 	return moved, nil
 }
 
+// HireBuild giữ tên cũ cho chỗ gọi cũ: Bò Mộc xây "Chuồng nhỏ" bằng gỗ (cần vật liệu như mọi nhà mới).
 func (h *Home) HireBuild(a *Account, roof string, now time.Time, dur time.Duration) error {
-	if _, ok := RoofColors[roof]; !ok {
-		return errors.New("Chọn màu mái hợp lệ.")
-	}
-	if h.Tier < 1 {
-		return errors.New("Cần nâng lên Mảnh đất riêng trước khi xây chuồng.")
-	}
-	if h.Coop != nil {
-		return errors.New("Chuồng đã xây hoặc đang xây.")
-	}
-	if err := a.addThoc(-CoopCost, "hire_build", roof, now); err != nil {
-		return err
-	}
-	h.Coop = &CoopJob{Roof: roof, State: "building", StartAt: now, DoneAt: now.Add(dur)}
-	return nil
+	_, err := h.BuildHouse(a, "chuong_nho", "go", roof, now, dur.Seconds()/float64(HouseDesigns[0].Recipes["go"].Minutes*60))
+	return err
 }
 
 // Zone dựng khu "home" cho phòng riêng: cổng về sảnh, Bò Mộc và bảng nhà.
@@ -287,6 +279,8 @@ type HomeView struct {
 	CoopCell  [2]int    `json:"coopCell"`
 	BuildLeft float64   `json:"buildLeft"`
 	PartyLeft float64   `json:"partyLeft"`
+	Regen     float64   `json:"regen"` // hồi độ no/phút khi ngủ ổ ở nhà
+	Cap       int       `json:"cap"`   // sức chứa khách theo vật liệu nhà
 }
 
 func (h *Home) View(now time.Time) HomeView {
@@ -300,6 +294,7 @@ func (h *Home) View(now time.Time) HomeView {
 		v.BuildLeft = math.Max(0, h.Coop.DoneAt.Sub(now).Seconds())
 	}
 	v.PartyLeft = math.Max(0, h.PartyEnd.Sub(now).Seconds())
+	v.Regen, v.Cap = h.comfort()
 	return v
 }
 
@@ -347,6 +342,7 @@ func (s *HomeStore) Get(owner, name string) (*Home, error) {
 		if h.Storage == nil {
 			h.Storage = map[string]int{}
 		}
+		h.normalizeHouse()
 	} else {
 		h = NewHome(owner, name)
 		if err := s.saveLocked(h); err != nil {

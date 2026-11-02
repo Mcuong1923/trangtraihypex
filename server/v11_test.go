@@ -33,28 +33,29 @@ func TestRegionalWormTable(t *testing.T) {
 func TestIncubationAndCompanions(t *testing.T) {
 	b := PlanBalance()
 	a := newAcc()
-	if a.ClaimEggs() != 0 {
+	if a.ClaimEggs(t0) != 0 {
 		t.Fatal("cấp 1 chưa có trứng")
 	}
 	a.Level = 7
-	if a.ClaimEggs() != 2 || a.ClaimEggs() != 0 || a.Eggs != 2 {
-		t.Fatal("mốc cấp 5 và 7 mỗi mốc một trứng, nhận một lần")
+	// Quà cấp 2..7 có trứng ở cấp 4, 5, 7; nhận một lần.
+	if n := a.ClaimEggs(t0); n != 3 || a.ClaimEggs(t0) != 0 || a.Items["trung_thuong"] != 3 {
+		t.Fatalf("quà cấp phải cho 3 trứng một lần, có %d", n)
 	}
-	inc, err := a.StartIncubation(t0, b)
-	if err != nil || a.Eggs != 1 {
+	inc, err := a.StartIncubation("", t0, b)
+	if err != nil || a.Items["trung_thuong"] != 2 || inc.Egg != "trung_thuong" {
 		t.Fatal("bắt đầu ấp tiêu đúng một trứng")
 	}
-	if _, err := a.StartIncubation(t0, b); err == nil {
+	if _, err := a.StartIncubation("", t0, b); err == nil {
 		t.Fatal("một ổ một trứng")
 	}
-	if _, err := a.Hatch(inc.ID, "Bông Con", 0.3, t0.Add(time.Hour)); err == nil {
+	if _, err := a.Hatch(inc.ID, "Bông Con", 0.3, 0.3, t0.Add(time.Hour)); err == nil {
 		t.Fatal("chưa đủ 2 giờ")
 	}
-	c, err := a.Hatch(inc.ID, "Bông Con", 0.3, t0.Add(2*time.Hour))
-	if err != nil || len(a.Companions) != 1 || a.Following != c.ID {
-		t.Fatalf("nở gà con: %v", err)
+	c, err := a.Hatch(inc.ID, "Bông Con", 0.3, 0.3, t0.Add(2*time.Hour))
+	if err != nil || len(a.Companions) != 1 || a.Following != c.ID || c.Species != "ga_con" {
+		t.Fatalf("nở gà con: %v %+v", err, c)
 	}
-	if _, err := a.Hatch(inc.ID, "Bông Con", 0.3, t0.Add(3*time.Hour)); err == nil || len(a.Companions) != 1 {
+	if _, err := a.Hatch(inc.ID, "Bông Con", 0.3, 0.3, t0.Add(3*time.Hour)); err == nil || len(a.Companions) != 1 {
 		t.Fatal("gửi lại yêu cầu nở không tạo thêm gà con")
 	}
 	if g, err := a.Care(c.ID, "pet", t0); err != nil || g != 5 {
@@ -63,6 +64,7 @@ func TestIncubationAndCompanions(t *testing.T) {
 	if _, err := a.Care(c.ID, "pet", t0); err == nil {
 		t.Fatal("vuốt ve 1 lần/ngày")
 	}
+	a.Food = map[string]int{} // quà cấp có cám và rau; làm trống túi để thử trường hợp không có gì ăn
 	if _, err := a.Care(c.ID, "feed", t0); err == nil {
 		t.Fatal("cho ăn cần thức ăn trong túi")
 	}
@@ -78,50 +80,59 @@ func TestIncubationAndCompanions(t *testing.T) {
 	}
 }
 
-func TestBookingQuota(t *testing.T) {
+func TestBookingTokens(t *testing.T) {
+	bal := PlanBalance()
 	a := newAcc()
-	if _, err := a.Book(RegionHypex, RegionVenSuoi, t0); err == nil {
+	if _, err := a.Book(RegionHypex, RegionVenSuoi, t0, bal); err == nil {
 		t.Fatal("cần cấp 3 để tới Ven Suối")
 	}
 	a.Level = 3
-	for i := 0; i < FreeTrips; i++ {
-		bk, err := a.Book(RegionHypex, RegionVenSuoi, t0)
-		if err != nil || !bk.Free {
+	for i := 0; i < MaxBusTokens; i++ {
+		bk, err := a.Book(RegionHypex, RegionVenSuoi, t0, bal)
+		if err != nil || !bk.Token {
 			t.Fatalf("lượt miễn phí %d: %v", i, err)
 		}
 		a.Booking = nil // giả lập đã đi xong
 	}
-	if _, err := a.Book(RegionHypex, RegionVenSuoi, t0); err == nil {
+	if _, err := a.Book(RegionHypex, RegionVenSuoi, t0, bal); err == nil {
 		t.Fatal("hết lượt và không có thóc thì không đặt được")
 	}
 	a.Thoc = 15
-	bk, err := a.Book(RegionHypex, RegionVenSuoi, t0)
-	if err != nil || bk.Free || a.Thoc != 5 {
+	bk, err := a.Book(RegionHypex, RegionVenSuoi, t0, bal)
+	if err != nil || bk.Token || a.Thoc != 5 {
 		t.Fatal("hết lượt thì trả 10 thóc")
 	}
-	if _, err := a.Book(RegionHypex, RegionVenSuoi, t0); err == nil {
+	if _, err := a.Book(RegionHypex, RegionVenSuoi, t0, bal); err == nil {
 		t.Fatal("một người một vé đang giữ")
 	}
-	if _, err := a.CancelBooking(t0); err != nil || a.Thoc != 15 {
+	if _, err := a.CancelBooking(t0, bal); err != nil || a.Thoc != 15 {
 		t.Fatal("huỷ vé trả tiền hoàn thóc")
 	}
-	if _, err := a.CancelBooking(t0); err == nil || a.Thoc != 15 {
+	if _, err := a.CancelBooking(t0, bal); err == nil || a.Thoc != 15 {
 		t.Fatal("hoàn đúng một lần")
 	}
-	// Vé miễn phí đặt trước nửa đêm, huỷ sau nửa đêm: không cộng thêm lượt cho ngày mới.
-	b := newAcc()
-	b.Level = 3
-	late := time.Date(2026, 10, 31, 23, 59, 0, 0, vnZone)
-	b.Book(RegionHypex, RegionVenSuoi, late)
-	next := late.Add(2 * time.Minute)
-	b.CancelBooking(next)
-	if b.TripsLeft(next) != FreeTrips {
-		t.Fatalf("ngày mới đúng %d lượt, có %d", FreeTrips, b.TripsLeft(next))
+	// Hồi 1 lượt mỗi 5 phút, tối đa 2.
+	if a.Tokens(t0.Add(4*time.Minute), bal) != 0 || a.Tokens(t0.Add(5*time.Minute+time.Second), bal) != 1 {
+		t.Fatal("5 phút hồi 1 lượt")
 	}
+	if a.Tokens(t0.Add(time.Hour), bal) != MaxBusTokens {
+		t.Fatal("tối đa 2 lượt")
+	}
+	// Huỷ vé dùng lượt thì trả lượt; về Hypex luôn miễn phí.
+	bk, _ = a.Book(RegionHypex, RegionVenSuoi, t0.Add(time.Hour), bal)
+	a.CancelBooking(t0.Add(time.Hour), bal)
+	if !bk.Token || a.Tokens(t0.Add(time.Hour), bal) != MaxBusTokens {
+		t.Fatal("huỷ vé trả lại lượt")
+	}
+	home, err := a.Book(RegionVenSuoi, RegionHypex, t0.Add(time.Hour), bal)
+	if err != nil || !home.Free || home.Token || home.Paid != 0 {
+		t.Fatal("về Hypex miễn phí, không tiêu lượt")
+	}
+	a.Booking = nil
 	// Vé đã chạy thì không huỷ.
-	b.Book(RegionHypex, RegionVenSuoi, next)
-	b.Booking.State = "departed"
-	if _, err := b.CancelBooking(next); err == nil {
+	a.Book(RegionHypex, RegionVenSuoi, t0.Add(time.Hour), bal)
+	a.Booking.State = "departed"
+	if _, err := a.CancelBooking(t0.Add(time.Hour), bal); err == nil {
 		t.Fatal("xe đã chạy không huỷ")
 	}
 }

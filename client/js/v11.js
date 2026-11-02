@@ -1,7 +1,7 @@
 // Giao diện V1.1/V1.2: trạm ấp trứng, bến xe & Ven Suối, xe riêng, giao dịch, hợp đồng thợ, Hội Gà.
 // Mọi quyết định do máy chủ; các bảng chỉ gửi ý định và hiển thị kết quả.
 import { G, $, esc, openSheet, setSheetBody, closeSheet, toast, showResult, wormById } from './ui.js';
-import { buildVehicle, buildChick } from './models.js';
+import { buildVehicle, buildChick, buildDuck, mat } from './models.js';
 import { sfx } from './audio.js';
 
 const T = window.THREE;
@@ -28,12 +28,26 @@ export const rideHeight = (kind) => ({ xe_dap: 0.45, xe_may: 0.55, o_to: 0.45 }[
 const pets = new Map(); // mesh chủ → { chick, name }
 export function setPet(ownerMesh, pet) {
   const cur = pets.get(ownerMesh);
-  if (cur && (!pet || cur.color !== pet.color || cur.name !== pet.name)) { G.world.scene.remove(cur.chick); pets.delete(ownerMesh); }
+  if (cur && (!pet || cur.color !== pet.color || cur.name !== pet.name || cur.species !== pet.species)) { G.world.scene.remove(cur.chick); pets.delete(ownerMesh); }
   if (!pet || pets.has(ownerMesh) || G.hidePets && ownerMesh !== G.self?.mesh) return;
-  const chick = buildChick(pet.color);
+  const chick = petModel(pet);
   chick.position.copy(ownerMesh.position).add(new T.Vector3(0.8, 0, -0.6));
   G.world.scene.add(chick);
-  pets.set(ownerMesh, { chick, color: pet.color, name: pet.name, phase: Math.random() * 6 });
+  pets.set(ownerMesh, { chick, color: pet.color, name: pet.name, species: pet.species, phase: Math.random() * 6 });
+}
+// Mô hình theo loài (PLAN_LOGIC_GAME 15): vịt/ngỗng dáng vịt, công con có đuôi xoè, còn lại là gà con theo màu.
+function petModel(pet) {
+  const sp = pet.species || 'ga_con';
+  if (sp === 'vit_con' || sp === 'ngong_con') {
+    const g = new T.Group(), d = buildDuck(); d.scale.setScalar(sp === 'ngong_con' ? 0.55 : 0.42);
+    d.traverse((o) => { if (o.isMesh && o.material.color?.getHex() === 0x8ec6d9) o.visible = false; });
+    g.add(d); return g;
+  }
+  const c = buildChick(pet.color);
+  if (sp === 'cong_con') {
+    for (let i = -2; i <= 2; i++) { const f = new T.Mesh(new T.ConeGeometry(0.06, 0.42, 5), mat([0x3f8fa8, 0x2f7a5a, 0xc9a03a][(i + 2) % 3])); f.position.set(i * 0.06, 0.32, -0.2); f.rotation.x = -0.7; f.rotation.z = i * 0.25; c.add(f); }
+  }
+  return c;
 }
 export function dropPet(ownerMesh) { const p = pets.get(ownerMesh); if (p) { G.world.scene.remove(p.chick); pets.delete(ownerMesh); } }
 export function clearPets(except) { for (const m of [...pets.keys()]) if (m !== except) dropPet(m); }
@@ -53,38 +67,47 @@ export function updatePets(dt) {
 
 // ---------- Trạm ấp trứng ----------
 
+const EGG_EMO = { trung_thuong: '🥚', trung_dom: '🥚', trung_vang: '🥚' };
+const pct = (v, unit) => unit === 's' ? `+${v} giây` : `${Math.round(v * 100)}%`;
+// Kỹ năng của loài theo mức thân thiết (PLAN_LOGIC_GAME 15.2).
+export function abilityText(c) {
+  const sp = G.catalog.species.find((x) => x.id === c.species) || G.catalog.species[0];
+  const lv = c.affinity >= 150 ? 2 : c.affinity >= 50 ? 1 : 0;
+  return { sp, lv, line: `${sp.emo} ${sp.name} · ${sp.abilityName} Lv${lv + 1}: ${sp.unit === 's' ? pct(sp.values[lv], 's') : pct(sp.values[lv])}`, levels: sp.values.map((v) => pct(v, sp.unit)).join(' / ') };
+}
 export function dialogDuck() {
   const me = G.me, bal = G.catalog.balance;
-  const claimable = G.catalog.eggMilestones.filter((lv) => me.level >= lv && !me.eggsClaimed?.[lv]).length;
   const inc = me.incubation;
   const hatchLeft = inc ? Math.max(0, me.hatchIn - since(me._at)) : 0;
+  const eggs = G.catalog.eggKinds.map((id) => ({ id, n: me.items?.[id] || 0, it: G.catalog.items.find((x) => x.id === id) })).filter((e) => e.n > 0);
+  const cap = me.companionCap || G.catalog.companionMax;
   const pets = (me.companions || []).map((c) => {
-    const lv = c.affinity >= 150 ? 'Thân thiết' : c.affinity >= 50 ? 'Thân' : 'Mới quen';
-    const on = me.following === c.id;
-    return `<div class="row"><div class="ico" style="background:${c.color}55">🐥</div>
+    const lvName = c.affinity >= 150 ? 'Thân thiết' : c.affinity >= 50 ? 'Thân' : 'Mới quen';
+    const on = me.following === c.id, ab = abilityText(c);
+    return `<div class="row"><div class="ico" style="background:${c.color}55">${ab.sp.emo}</div>
       <div class="meta"><div class="nm">${esc(c.name)} ${on ? '<span class="rtag" style="background:var(--good)">Đang đi theo</span>' : ''}</div>
-        <div class="sub">Thân thiết ${c.affinity} · ${lv}</div></div>
+        <div class="sub">${esc(ab.line)} · thân thiết ${c.affinity} (${lvName})</div><div class="sub mut">${esc(ab.sp.desc)} Mức: ${ab.levels}</div></div>
       <div class="act"><button class="mini ${on ? 'sec' : 'hot'}" data-follow="${on ? '' : c.id}">${on ? 'Để ở nhà' : 'Đi theo'}</button>
-        <button class="mini sec" data-care="${c.id}" data-mode="pet">Vuốt ve</button><button class="mini sec" data-care="${c.id}" data-mode="feed">Cho ăn</button></div></div>`;
+        <button class="mini sec" data-care="${c.id}" data-mode="pet">Vuốt ve</button><button class="mini sec" data-care="${c.id}" data-mode="feed">Cho ăn</button>
+        ${on && ab.sp.ability === 'carry' && ab.lv >= 2 ? '<button class="mini hot" id="gooseRide">🪿 Cưỡi ngỗng</button>' : ''}</div></div>`;
   }).join('');
+  const odds = (id) => (G.catalog.eggSpecies[id] || []).map((e) => `${G.catalog.species.find((s) => s.id === e.Species)?.name || e.Species} ${Math.round(e.P * 100)}%`).join(', ');
   openSheet('duck', '🦆 Trạm ấp trứng · Vịt Bông', `
     <div class="npcbox"><div class="npcface" style="background:#f5f2e9">🦆</div><div><div class="who">Vịt Bông</div>
-      <p>Trứng đầu tiên cô tặng qua nhiệm vụ ở cấp ${G.catalog.eggMilestones.join(', ')} — không bán trứng ngẫu nhiên đâu nhé. Ấp ${dur(bal.hatchSec)}, cháu đi chơi hay offline trứng vẫn ấm.</p></div></div>
-    <div class="kvs" style="margin:12px 0"><b>Trứng đang có</b><span>🥚 ${me.eggs || 0}</span><b>Bạn đồng hành</b><span>${(me.companions || []).length}/${G.catalog.companionMax}</span></div>
-    <div class="choices">
-      ${claimable ? `<button class="btn" id="eggClaim">🎁 Nhận ${claimable} quả trứng mốc cấp</button>` : ''}
-      ${inc ? (hatchLeft > 0 ? `<div class="note">🔥 Trứng đang ấp — còn <b id="hatchLeft">${Math.ceil(hatchLeft)}</b> giây.</div>`
-        : `<div class="row"><div class="meta"><label class="nm" for="petName">Trứng nở rồi! Đặt tên cho gà con</label><input type="text" id="petName" maxlength="14" placeholder="vd: Bông Con" style="margin-top:6px"></div><div class="act"><button class="mini hot" id="hatchBtn" data-id="${inc.id}">Đón gà con</button></div></div>`)
-        : (me.eggs > 0 ? '<button class="btn sec" id="incBtn">🪺 Đặt trứng vào ổ ấp</button>' : '')}
-    </div>
-    <h2>Bạn đồng hành</h2>${pets || '<p class="mut">Chưa có gà con nào. Lên cấp 5 để nhận quả trứng đầu tiên.</p>'}
-    <p class="mut">Bỏ game không làm bạn đồng hành ốm hay mất đi. Chăm sóc mỗi ngày để tăng thân thiết.</p>`);
-  if ($('eggClaim')) $('eggClaim').onclick = async () => { if (showResult(await act('eggs_claim'))) dialogDuck(); };
-  if ($('incBtn')) $('incBtn').onclick = async () => { if (showResult(await act('incubate'))) dialogDuck(); };
+      <p>Trứng có trong quà lên cấp, thưởng hướng dẫn và điểm danh ngày 7. Ấp ${dur(bal.hatchSec)}, cháu đi chơi hay offline trứng vẫn ấm. Mỗi loài nở ra có một <b>kỹ năng riêng</b> — chỉ con đang đi theo mới giúp được cháu.</p></div></div>
+    <div class="kvs" style="margin:12px 0"><b>Bạn đồng hành</b><span>${(me.companions || []).length}/${cap}${me.houseBuilt ? '' : ' (xây nhà để nuôi thêm 6)'}</span></div>
+    ${inc ? (hatchLeft > 0 ? `<div class="note">🔥 Đang ấp ${esc(G.catalog.items.find((x) => x.id === inc.egg)?.name || 'trứng')} — còn <b id="hatchLeft">${Math.ceil(hatchLeft)}</b> giây.</div>`
+      : `<div class="row"><div class="meta"><label class="nm" for="petName">Trứng nở rồi! Đặt tên cho bạn mới</label><input type="text" id="petName" maxlength="14" placeholder="vd: Bông Con" style="margin-top:6px"></div><div class="act"><button class="mini hot" id="hatchBtn" data-id="${inc.id}">Đón bạn mới</button></div></div>`)
+      : (eggs.length ? eggs.map((e) => `<div class="row"><div class="ico" style="background:#fff0cf">${EGG_EMO[e.id]}</div><div class="meta"><div class="nm">${esc(e.it.name)} ×${e.n}</div><div class="sub">Có thể nở: ${esc(odds(e.id))}</div></div>
+        <div class="act"><button class="mini hot" data-inc="${e.id}">🪺 Ấp trứng này</button></div></div>`).join('') : '<p class="mut">Chưa có trứng. Lên cấp 4 nhận quả trứng đầu tiên, hoặc hoàn thành hướng dẫn của Cụ Cục.</p>')}
+    <h2>Bạn đồng hành</h2>${pets || '<p class="mut">Chưa có bạn đồng hành nào.</p>'}
+    <p class="mut">Bỏ game không làm bạn đồng hành ốm hay mất đi. Chăm sóc mỗi ngày để tăng thân thiết và lên mức kỹ năng.</p>`);
+  document.querySelectorAll('[data-inc]').forEach((b) => (b.onclick = async () => { if (showResult(await act('incubate', { id: b.dataset.inc }))) dialogDuck(); }));
   if ($('hatchBtn')) $('hatchBtn').onclick = async () => {
-    const r = await act('hatch', { id: $('hatchBtn').dataset.id, text: $('petName').value || 'Gà Con' });
+    const r = await act('hatch', { id: $('hatchBtn').dataset.id, text: $('petName').value || 'Bé Con' });
     if (showResult(r)) { sfx('rare'); dialogDuck(); }
   };
+  if ($('gooseRide')) $('gooseRide').onclick = async () => { if (showResult(await act('pet_ride'))) closeSheet(); };
   document.querySelectorAll('[data-follow]').forEach((b) => (b.onclick = async () => { if (showResult(await act('follow', { id: b.dataset.follow }), { quiet: true })) dialogDuck(); }));
   document.querySelectorAll('[data-care]').forEach((b) => (b.onclick = async () => { if (showResult(await act('care', { id: b.dataset.care, mode: b.dataset.mode }))) dialogDuck(); }));
   if (inc && hatchLeft > 0) {
@@ -156,14 +179,18 @@ export function dialogFrog() {
 
 export function dialogGoat() {
   const me = G.me;
+  // Phiếu Dê Thợ Máy tặng khách mới: giảm 10% chiếc xe đầu tiên trong 24 giờ (PLAN_LOGIC_GAME 9.4).
+  const coupon = me.coupons?.xe_dau_tien > 0 && !Object.keys(me.ownedVehicles || {}).length;
+  const price = (v) => coupon ? Math.floor(v.cost * 9 / 10) : v.cost;
   openSheet('goat', '🐐 Cửa hàng xe · Dê Thợ Máy', `
     <p class="mut" style="margin-top:0">Xe chỉ để đi lại và chở bạn; không húc, không gây sát thương. Không lái trong sảnh, khu đào, nhà riêng hay sân PK.</p>
+    ${me.coupons?.xe_dau_tien > 0 ? `<div class="note">🎟️ Phiếu giảm <b>10%</b> chiếc xe đầu tiên — còn ${Math.ceil(me.coupons.xe_dau_tien / 3600)} giờ.</div>` : ''}
     ${G.catalog.vehicles.map((v) => {
       const owned = me.ownedVehicles?.[v.id];
       return `<div class="row"><div class="ico" style="background:#f1e3c6">${v.emo}</div>
         <div class="meta"><div class="nm">${esc(v.name)} ${owned ? '<span class="rtag" style="background:var(--good)">Đã có</span>' : ''}</div>
           <div class="sub">${v.seats} ghế (chở ${v.seats - 1}) · nhanh ×${v.speed} · ${v.road ? 'đi được đường liên trại' : 'chỉ đi trong trại'} · cần cấp ${v.level} · ${v.phase}</div></div>
-        <div class="act">${owned ? '' : `<button class="mini hot" data-buyv="${v.id}" ${me.level < v.level || me.thoc < v.cost ? 'disabled' : ''}>🌾 ${fmt(v.cost)}</button>`}</div></div>`;
+        <div class="act">${owned ? '' : `<button class="mini hot" data-buyv="${v.id}" ${me.level < v.level || me.thoc < price(v) ? 'disabled' : ''}>${price(v) < v.cost ? `<s>${fmt(v.cost)}</s> ` : ''}🌾 ${fmt(price(v))}</button>`}</div></div>`;
     }).join('')}
     <p class="mut">Mua xong, ra <b>Điểm đỗ xe</b> để lấy xe.</p>`);
   document.querySelectorAll('[data-buyv]').forEach((b) => (b.onclick = async () => { b.disabled = true; if (showResult(await act('vehicle_buy', { id: b.dataset.buyv }))) { sfx('coin'); dialogGoat(); } }));

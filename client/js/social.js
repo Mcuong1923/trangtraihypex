@@ -2,6 +2,7 @@
 import { G, $, esc, openSheet, setSheetBody, closeSheet, toast, showResult } from './ui.js';
 import { ghostDecor } from './world.js';
 import * as V from './v11.js';
+import * as L from './life.js';
 
 const raw = (m) => G.net.raw(m);
 const act = (a, args) => G.net.act(a, args);
@@ -218,25 +219,24 @@ const isOwner = () => G.home && G.me && G.home.owner === G.me.id;
 
 export function dialogCow() {
   const h = G.home;
+  if (!h) { L.dialogMaterials(); return; } // Bò Mộc ở Xóm Rơm Vàng: tiệm vật liệu
   if (!isOwner()) {
     openSheet('npc', 'Bò Mộc', `<div class="npcbox"><div class="npcface" style="background:#dfe9f5">🐮</div><div><div class="who">Bò Mộc</div><p>Chuồng của ${esc(h.ownerName)} đó, đẹp không? Muốn có chuồng thế này thì về nhà mình gọi tôi nhé.</p></div></div>`);
     return;
   }
-  const t = h.tierInfo, n = h.nextTier, me = G.me;
+  const t = h.tierInfo, me = G.me;
   const building = h.coop && h.coop.state === 'building';
-  const upgrade = n ? `<div class="row"><div class="ico" style="background:#e8f0dc">📐</div><div class="meta"><div class="nm">Nâng lên ${esc(n.name)}</div><div class="sub">🌾 ${fmt(n.cost)} · cần cấp ${n.level} · đồ đang đặt được giữ, món không còn chỗ về kho</div></div>
-    <div class="act"><button class="mini hot" id="upBtn" ${me.level < n.level || me.thoc < n.cost ? 'disabled' : ''}>Mua đất</button></div></div>` : '<p class="mut">Đất đã ở hạng cao nhất.</p>';
-  const build = h.coop ? (building ? `<p>🔨 Đang xây chuồng — còn <b id="buildLeft">${Math.ceil(h.buildLeft)}</b> giây. Bạn đi chơi, tôi vẫn làm.</p>` : '<p>✅ Chuồng đã xây xong.</p>') :
-    h.tier < 1 ? '<p class="mut">Có Mảnh đất riêng thì tôi mới dựng được chuồng gỗ.</p>' :
-    `<p>Thuê xây chuồng mẫu cơ bản: <b>🌾 ${G.catalog.coopCost}</b> trọn gói, xong sau ${Math.round(G.catalog.balance.buildSec)} giây. Chọn màu mái:</p>
-     <div class="coinbtns" style="flex-wrap:wrap">${Object.entries(G.catalog.roofs).map(([k, v]) => `<button class="mini ${k === 'do' ? 'hot' : 'sec'}" data-roof="${k}" ${me.thoc < G.catalog.coopCost ? 'disabled' : ''}>${esc(v)}</button>`).join('')}</div>`;
   const shop = G.catalog.decors.map((d) => `<button class="cos" data-buyd="${d.id}" ${me.thoc < d.cost ? 'disabled' : ''}><span class="ci">${d.emo}</span><span class="cn">${esc(d.name)}</span><span class="mut"><b>🌾 ${d.cost}</b>${h.storage[d.id] ? ` · kho ${h.storage[d.id]}` : ''}</span></button>`).join('');
+  const mats = G.catalog.items.filter((it) => it.group === 'vatlieu').map((it) => `${it.emo}${me.items?.[it.id] || 0}`).join(' ');
   openSheet('cow', 'Bò Mộc · xây dựng & trang trí', `
-    <p class="mut" style="margin-top:0">Đất hiện tại: <b>${esc(t.name)}</b> · ví 🌾 ${fmt(me.thoc)} · cấp ${me.level}</p>
-    <h2>Đất</h2>${upgrade}<h2>Chuồng gỗ</h2>${build}${V.contractSection()}<h2>Đồ trang trí <span class="mut" style="font-weight:600">· mua vào kho rồi tự đặt</span></h2><div class="grid">${shop}</div>`);
+    <p class="mut" style="margin-top:0">Đất: <b>${esc(t.name)}</b> (${t.halfX * 2} × ${t.halfZ * 2} m) · ví 🌾 ${fmt(me.thoc)} · cấp ${me.level}</p>
+    <p class="mut">Vật liệu trong kho: ${mats} <button class="mini sec" id="matShop">Mua vật liệu</button></p>
+    <h2>Nhà</h2>${L.houseSection(h)}
+    <div class="note">Muốn lô rộng hơn hoặc đổi vị trí (ven ao, đồi thông)? Gặp Ông Chủ Đầu Tư ở Văn phòng đất nền cạnh cổng Xóm Rơm Vàng.</div>
+    ${V.contractSection()}<h2>Đồ trang trí <span class="mut" style="font-weight:600">· mua vào kho rồi tự đặt</span></h2><div class="grid">${shop}</div>`);
   V.bindContractSection(dialogCow);
-  if ($('upBtn')) $('upBtn').onclick = async () => { $('upBtn').disabled = true; if (showResult(await act('home_upgrade'))) dialogCow(); };
-  document.querySelectorAll('[data-roof]').forEach((b) => (b.onclick = async () => { document.querySelectorAll('[data-roof]').forEach((x) => (x.disabled = true)); if (showResult(await act('home_build', { id: b.dataset.roof }))) dialogCow(); }));
+  L.bindHouseSection(dialogCow);
+  $('matShop').onclick = L.dialogMaterials;
   document.querySelectorAll('[data-buyd]').forEach((b) => (b.onclick = async () => { b.disabled = true; if (showResult(await act('home_buy', { id: b.dataset.buyd }))) dialogCow(); }));
   if (building) {
     const end = performance.now() + h.buildLeft * 1000;
@@ -248,7 +248,7 @@ export function openHomeBoard() {
   const h = G.home;
   const guests = [...G.players.entries()];
   if (!isOwner()) {
-    openSheet('homeboard', `Chuồng của ${esc(h.ownerName)}`, `<p>Đất: <b>${esc(h.tierInfo.name)}</b> · ${h.objects.length} món trang trí${h.coop?.state === 'done' ? ' · có chuồng gỗ' : ''}.</p>
+    openSheet('homeboard', `Chuồng của ${esc(h.ownerName)}`, `<p>Đất: <b>${esc(h.tierInfo.name)}</b> · ${h.objects.length} món trang trí${h.coop?.state === 'done' ? ` · có ${esc(G.catalog.houseDesigns.find((d) => d.id === h.coop.design)?.name || 'chuồng')} ${G.catalog.materialNames[h.coop.material] || ''}` : ''}.</p>
       <p class="mut">Chủ chuồng có thể mời khách ra về. Muốn ra ngoài thì đi tới cổng chuồng để ra Xóm Rơm Vàng.</p>`);
     return;
   }

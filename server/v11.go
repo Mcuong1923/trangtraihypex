@@ -13,6 +13,7 @@ import (
 
 type Incubation struct {
 	ID       string    `json:"id"`
+	Egg      string    `json:"egg"` // loại trứng đang ấp: trung_thuong | trung_dom | trung_vang
 	StartAt  time.Time `json:"startAt"`
 	DoneAt   time.Time `json:"doneAt"`
 	Notified bool      `json:"notified"`
@@ -43,37 +44,75 @@ func AffinityLevel(n int) (int, string) {
 	return 0, "Mới quen"
 }
 
-// ClaimEggs trao trứng ở các mốc cấp đã đạt nhưng chưa nhận; mỗi mốc một lần.
-func (a *Account) ClaimEggs() int {
-	got := 0
-	for _, lv := range EggMilestones {
-		if a.Level >= lv && !a.EggsClaimed[lv] {
-			a.EggsClaimed[lv] = true
-			a.Eggs++
-			got++
-		}
-	}
-	return got
+// ClaimEggs nhận các phần quà lên cấp còn chờ (trứng nằm trong bảng quà cấp, PLAN_LOGIC_GAME 12); trả số trứng mới.
+func (a *Account) ClaimEggs(now time.Time) int {
+	before := a.eggCount()
+	a.ClaimLevelRewards(now)
+	return a.eggCount() - before
 }
 
-// StartIncubation tiêu đúng một trứng; mỗi người ấp một trứng một lúc.
-func (a *Account) StartIncubation(now time.Time, b Balance) (*Incubation, error) {
+// EggSpecies: loài có thể nở theo loại trứng (PLAN_LOGIC_GAME 15.1); tổng mỗi dòng bằng 1.
+var EggSpecies = map[string][]struct {
+	Species string
+	P       float64
+}{
+	"trung_thuong": {{"ga_con", .60}, {"vit_con", .25}, {"ngong_con", .15}},
+	"trung_dom":    {{"chim_cut", .35}, {"ga_tre", .35}, {"ga_ac", .30}},
+	"trung_vang":   {{"cong_con", .50}, {"ga_con", .0834}, {"vit_con", .0833}, {"ngong_con", .0833}, {"chim_cut", .0833}, {"ga_tre", .0833}, {"ga_ac", .0834}},
+}
+
+var EggKinds = []string{"trung_thuong", "trung_dom", "trung_vang"}
+
+// CompanionCap: 3 con mang theo; nhà đã xây xong có chuồng nuôi thêm 6 con.
+func (a *Account) CompanionCap() int {
+	if a.HouseBuilt {
+		return CompanionMax + 6
+	}
+	return CompanionMax
+}
+
+// StartIncubation tiêu đúng một trứng (loại kind, rỗng = loại đầu tiên đang có); ấp một trứng một lúc.
+func (a *Account) StartIncubation(kind string, now time.Time, b Balance) (*Incubation, error) {
 	if a.Incubation != nil {
 		return nil, errors.New("Ổ ấp đang có trứng.")
 	}
-	if a.Eggs <= 0 {
-		return nil, errors.New("Bạn chưa có trứng. Vịt Bông tặng trứng ở cấp 5, 7 và 9.")
+	if kind == "" {
+		for _, k := range EggKinds {
+			if a.Items[k] > 0 {
+				kind = k
+				break
+			}
+		}
 	}
-	if len(a.Companions) >= CompanionMax {
-		return nil, fmt.Errorf("Đã đủ %d bạn đồng hành.", CompanionMax)
+	if !contains(EggKinds, kind) || a.Items[kind] <= 0 {
+		return nil, errors.New("Bạn chưa có trứng. Trứng có trong quà lên cấp, thưởng hướng dẫn và điểm danh.")
 	}
-	a.Eggs--
-	a.Incubation = &Incubation{ID: a.nextID("egg"), StartAt: now, DoneAt: now.Add(b.HatchDuration)}
+	if len(a.Companions) >= a.CompanionCap() {
+		return nil, fmt.Errorf("Đã đủ %d bạn đồng hành. Xây nhà để có chuồng nuôi thêm.", a.CompanionCap())
+	}
+	a.Items[kind]--
+	a.Incubation = &Incubation{ID: a.nextID("egg"), Egg: kind, StartAt: now, DoneAt: now.Add(b.HatchDuration)}
 	return a.Incubation, nil
 }
 
+// hatchSpecies chọn loài theo bảng của loại trứng với số ngẫu nhiên r ∈ [0,1).
+func hatchSpecies(egg string, r float64) string {
+	tab := EggSpecies[egg]
+	if len(tab) == 0 {
+		tab = EggSpecies["trung_thuong"]
+	}
+	acc := 0.0
+	for _, e := range tab {
+		acc += e.P
+		if r < acc {
+			return e.Species
+		}
+	}
+	return tab[len(tab)-1].Species
+}
+
 // Hatch tạo đúng một gà con cho đúng một lần ấp; gửi lại yêu cầu không tạo thêm (mục 12).
-func (a *Account) Hatch(jobID, name string, colorR float64, now time.Time) (Companion, error) {
+func (a *Account) Hatch(jobID, name string, colorR, speciesR float64, now time.Time) (Companion, error) {
 	inc := a.Incubation
 	if inc == nil || inc.ID != jobID {
 		return Companion{}, errors.New("Không có trứng nào đang chờ nở.")
@@ -85,7 +124,12 @@ func (a *Account) Hatch(jobID, name string, colorR float64, now time.Time) (Comp
 	if err != nil {
 		return Companion{}, err
 	}
-	c := Companion{ID: a.nextID("pet"), Name: n, Species: "ga_con", Color: ChickColors[int(colorR*float64(len(ChickColors)))%len(ChickColors)], HatchedAt: now}
+	sp := hatchSpecies(inc.Egg, speciesR)
+	color := speciesByID(sp).Body
+	if sp == "ga_con" {
+		color = ChickColors[int(colorR*float64(len(ChickColors)))%len(ChickColors)]
+	}
+	c := Companion{ID: a.nextID("pet"), Name: n, Species: sp, Color: color, HatchedAt: now}
 	a.Companions = append(a.Companions, c)
 	a.Incubation = nil
 	if a.Following == "" {
@@ -172,6 +216,7 @@ type Booking struct {
 	To    string    `json:"to"`
 	Day   string    `json:"day"` // ngày quota của lượt miễn phí
 	Free  bool      `json:"free"`
+	Token bool      `json:"token,omitempty"` // đã tiêu một lượt miễn phí
 	Paid  int       `json:"paid"`
 	State string    `json:"state"` // held | departed
 	Trip  string    `json:"trip,omitempty"`
@@ -184,13 +229,12 @@ func (a *Account) ensureTravelDay(now time.Time) {
 	}
 }
 
-func (a *Account) TripsLeft(now time.Time) int {
-	a.ensureTravelDay(now)
-	return max(0, FreeTrips-a.TripsUsed)
-}
+// TripsLeft giữ tên cũ cho client: nay là số lượt xe miễn phí đang có (PLAN_LOGIC_GAME 7.2).
+func (a *Account) TripsLeft(now time.Time, b Balance) int { return a.Tokens(now, b) }
 
-// Book giữ chỗ: ưu tiên dùng lượt miễn phí, hết lượt thì giữ thóc (mục 8.5).
-func (a *Account) Book(from, to string, now time.Time) (*Booking, error) {
+// Book giữ ghế xe liên trại: về Hypex luôn miễn phí; còn lại ưu tiên lượt miễn phí, hết thì trả BusFare
+// (đã áp "Mặc Cả").
+func (a *Account) Book(from, to string, now time.Time, b Balance) (*Booking, error) {
 	r := Regions[to]
 	if r == nil || to == from {
 		return nil, errors.New("Tuyến không hợp lệ.")
@@ -201,23 +245,22 @@ func (a *Account) Book(from, to string, now time.Time) (*Booking, error) {
 	if a.Level < r.Level {
 		return nil, fmt.Errorf("Cần cấp %d để tới %s.", r.Level, r.Title)
 	}
-	a.ensureTravelDay(now)
-	bk := &Booking{ID: a.nextID("bk"), From: from, To: to, Day: a.TravelDay, State: "held", At: now}
-	if a.TripsUsed < FreeTrips {
-		a.TripsUsed++
-		bk.Free = true
+	bk := &Booking{ID: a.nextID("bk"), From: from, To: to, Day: DayKey(now), State: "held", At: now}
+	if to == RegionHypex {
+		bk.Free = true // không bao giờ kẹt ở vùng khác
 	} else {
-		if err := a.addThoc(-BusFare, "bus_fare", bk.ID, now); err != nil {
-			return nil, fmt.Errorf("Hết lượt miễn phí hôm nay; vé %d thóc.", BusFare)
+		token, paid, err := a.payRide(BusFare, "bus_fare", bk.ID, now, b)
+		if err != nil {
+			return nil, fmt.Errorf("Hết lượt miễn phí (lượt mới sau %s); vé %d thóc.", humanDur(time.Duration(a.NextTokenIn(now, b))*time.Second), fareAfter(a, BusFare))
 		}
-		bk.Paid = BusFare
+		bk.Free, bk.Token, bk.Paid = token, token, paid
 	}
 	a.Booking = bk
 	return bk, nil
 }
 
-// CancelBooking hoàn đúng một lần: lượt miễn phí về quota của ngày đặt, thóc về ví.
-func (a *Account) CancelBooking(now time.Time) (string, error) {
+// CancelBooking hoàn đúng một lần: lượt miễn phí về ví lượt, thóc về ví.
+func (a *Account) CancelBooking(now time.Time, b Balance) (string, error) {
 	bk := a.Booking
 	if bk == nil {
 		return "", errors.New("Bạn không có vé nào.")
@@ -226,15 +269,15 @@ func (a *Account) CancelBooking(now time.Time) (string, error) {
 		return "", errors.New("Xe đã chạy, không huỷ được.")
 	}
 	a.Booking = nil
-	if bk.Free {
-		a.ensureTravelDay(now)
-		if bk.Day == a.TravelDay && a.TripsUsed > 0 {
-			a.TripsUsed-- // vé đặt hôm nay: trả lượt; vé hôm trước: quota ngày cũ đã qua, không cộng lượt cho ngày mới
-		}
+	switch {
+	case bk.Token:
+		a.refundToken(now, b)
 		return "Đã huỷ vé, trả lại lượt miễn phí.", nil
+	case bk.Paid > 0:
+		_ = a.addThoc(bk.Paid, "bus_refund", bk.ID, now)
+		return fmt.Sprintf("Đã huỷ vé, hoàn %d thóc.", bk.Paid), nil
 	}
-	_ = a.addThoc(bk.Paid, "bus_refund", bk.ID, now)
-	return fmt.Sprintf("Đã huỷ vé, hoàn %d thóc.", bk.Paid), nil
+	return "Đã huỷ vé.", nil
 }
 
 // ---------- Xe ----------
@@ -250,11 +293,31 @@ func (a *Account) BuyVehicle(id string, now time.Time) error {
 	if a.Level < v.Level {
 		return fmt.Errorf("Cần cấp %d để mua %s.", v.Level, v.Name)
 	}
-	if err := a.addThoc(-v.Cost, "buy_vehicle", id, now); err != nil {
+	cost := v.Cost
+	if len(a.OwnedVehicles) == 0 && a.couponLive(CouponFirstBike, now) {
+		cost = v.Cost * 9 / 10 // phiếu Dê Thợ Máy: giảm 10% chiếc xe đầu tiên
+	}
+	if err := a.addThoc(-cost, "buy_vehicle", id, now); err != nil {
 		return err
+	}
+	if cost != v.Cost {
+		delete(a.Coupons, CouponFirstBike)
+		a.Coupons[CouponFirstBike+"_used"] = now
 	}
 	a.OwnedVehicles[id] = true
 	return nil
+}
+
+// VehiclePrice là giá xe sau phiếu giảm giá (để client hiện đúng).
+func (a *Account) VehiclePrice(id string, now time.Time) int {
+	v := vehicleByID(id)
+	if v == nil {
+		return 0
+	}
+	if len(a.OwnedVehicles) == 0 && a.couponLive(CouponFirstBike, now) {
+		return v.Cost * 9 / 10
+	}
+	return v.Cost
 }
 
 func (a *Account) hatchIn(now time.Time) float64 {

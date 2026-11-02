@@ -339,6 +339,9 @@ func (r *Room) finishMatch(mt *Match, leaver string) {
 		fx := "ko" // người thua ngã KO rồi đứng dậy; không mất đồ hay cấp
 		if winner == i {
 			p.acc.Stats.PKWins++
+			if !mt.Bot {
+				r.hub.weeklyPKWin(p.acc, time.Now()) // bảng tuần chỉ tính trận với người thật
+			}
 			go r.hub.store.Guilds.AddWin(p.acc.ID)
 			fx = "win"
 		} else if winner == -1 {
@@ -346,6 +349,9 @@ func (r *Room) finishMatch(mt *Match, leaver string) {
 		}
 		if _, ok := r.players[p.sess]; ok {
 			r.broadcastZone(p.zone, nil, map[string]any{"t": "fx", "pid": p.PID, "fx": fx})
+			if fx == "ko" {
+				r.npcEvent(p, "lostpk", nil)
+			}
 			if err := r.hub.store.Save(p.acc); err != nil {
 				log.Printf("save pk %s: %v", p.acc.ID, err)
 			}

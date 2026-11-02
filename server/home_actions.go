@@ -141,11 +141,30 @@ func (r *Room) homeAct(p *Player, m *inMsg, reply func(ActResult), fail func(err
 			fail(errors.New("Bạn đang có hợp đồng thuê thợ xây; huỷ hoặc chờ hợp đồng xong."))
 			return
 		}
+		design, material := m.To, m.Mode
+		if design == "" {
+			design = "chuong_nho"
+		}
+		if material == "" {
+			material = "go"
+		}
 		commit(func() (ActResult, error) {
-			if err := h.HireBuild(p.acc, m.ID, now, b.BuildDuration); err != nil {
+			dur, err := h.BuildHouse(p.acc, design, material, m.ID, now, buildScale(b))
+			if err != nil {
 				return ActResult{}, err
 			}
-			return ActResult{Msg: fmt.Sprintf("Bò Mộc bắt tay vào xây chuồng — xong sau %s.", humanDur(b.BuildDuration))}, nil
+			return ActResult{Msg: fmt.Sprintf("Bò Mộc bắt tay vào xây %s bằng %s — xong sau %s.", designByID(design).Name, MaterialNames[material], humanDur(dur))}, nil
+		})
+	case "home_upgrade_house":
+		if !needCow() {
+			return
+		}
+		commit(func() (ActResult, error) {
+			dur, err := h.UpgradeHouse(p.acc, m.Mode, now, buildScale(b))
+			if err != nil {
+				return ActResult{}, err
+			}
+			return ActResult{Msg: fmt.Sprintf("Bò Mộc nâng cấp nhà lên %s — xong sau %s.", MaterialNames[m.Mode], humanDur(dur))}, nil
 		})
 	case "home_access":
 		if !contains(HomeAccess, m.ID) {

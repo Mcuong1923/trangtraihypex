@@ -13,13 +13,21 @@ func main() {
 	addr := flag.String("addr", ":8080", "địa chỉ lắng nghe")
 	data := flag.String("data", "data", "thư mục lưu tài khoản và sổ cái")
 	static := flag.String("static", "../client", "thư mục client (Three.js)")
-	balance := flag.String("balance", "demo", "bộ cân bằng: demo (rút ngắn để playtest) | plan (số trong PLAN.md)")
+	balance := flag.String("balance", "live", "bộ cân bằng: live (chơi thật, PLAN_LOGIC_GAME) | demo (rút ngắn để playtest) | plan (số trong PLAN.md)")
 	staff := flag.String("staff", "", "tài khoản quản trị, vd: an:mod,binh:econ,chu:admin")
+	devWarp := flag.Bool("devwarp", false, "cho phép nhảy thẳng tới khu (chỉ để chụp ảnh đối chiếu giao diện, không bật khi chơi thật)")
 	flag.Parse()
 
-	bal := DemoBalance()
-	if *balance == "plan" {
+	var bal Balance
+	switch *balance {
+	case "live":
+		bal = LiveBalance()
+	case "demo":
+		bal = DemoBalance()
+	case "plan":
 		bal = PlanBalance()
+	default:
+		log.Fatalf("bộ cân bằng %q không có (live | demo | plan)", *balance)
 	}
 	store, err := OpenStore(*data)
 	if err != nil {
@@ -30,6 +38,7 @@ func main() {
 	}
 	hub := NewHub(store, bal)
 	hub.staff = ParseStaff(*staff)
+	hub.devWarp = *devWarp
 
 	mux := hub.Routes()
 	files := http.FileServer(http.Dir(*static))

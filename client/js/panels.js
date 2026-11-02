@@ -3,6 +3,7 @@ import { G, $, esc, openSheet, setSheetBody, closeSheet, toast, showResult, appl
 import { dress } from './models.js';
 import { sfx } from './audio.js';
 import * as V from './v11.js';
+import * as L from './life.js';
 
 const act = (a, args) => G.net.act(a, args);
 const fmt = (n) => Number(n).toLocaleString('vi-VN');
@@ -20,21 +21,45 @@ function npc(face, bg, who, text, choices) {
   document.querySelectorAll('.choice').forEach((b) => (b.onclick = () => { const c = choices[+b.dataset.i]; if (c.keep) { c.fn(); return; } closeSheet(); c.fn?.(); }));
 }
 
+// Lần đầu gặp Cụ Cục: dặn luật 4 trang ngắn, có nút bỏ qua (PLAN_LOGIC_GAME 6.1 bước 1–2).
+const ELDER_RULES = [
+  ['🐔', 'Ơ kìa, gà mới! <b>{ten}</b> đấy hả? Chào mừng tới Trại Hypex — nơi giun béo, thóc đầy, và chưa ai bị làm gà rán. Lại đây cụ dặn mấy câu!'],
+  ['🍚', 'Luật số một: bụng đói thì mổ chậm. Thanh <b>Độ no</b> góc trên bên trái tụt dần, hết là chân run như cầy sấy. Đầy bụng chơi được chừng 15–20 phút.<div class="bar" style="margin-top:8px"><div class="track"><div class="fill mana" style="width:62%"></div></div></div>'],
+  ['🪱', 'Luật số hai: đói thì ăn, nghèo thì đào, lười thì… vẫn phải đào. Ở ụ đất bấm <b>E</b>, giun ló đầu thì <b>giữ nút để kéo</b>, dây đỏ thì thả. Hết sức vẫn đào được giun thường, ăn sống cũng no.'],
+  ['🌾', 'Cụ cho {ten} <b>100 thóc</b> làm vốn. Tiêu cho khéo, đừng mua hết mũ! Giờ giữ <kbd>Shift</kbd> (hoặc nút 🏃) chạy ra cửa — Gà Đón Khách chờ ở đó.'],
+];
+function elderRules(page = 0) {
+  const me = G.me, [emo, text] = ELDER_RULES[page], last = page === ELDER_RULES.length - 1;
+  npc('🐔', '#f0e2b0', `Gà Cụ Cục · ${page + 1}/${ELDER_RULES.length}`, `${emo} ${text.replaceAll('{ten}', esc(me.char.name))}`, [
+    last ? { t: 'Dạ, cháu đi chạy đây! 🏃', fn: null } : { t: 'Tiếp ›', keep: true, fn: () => elderRules(page + 1) },
+    { t: '<span class="mut">Tôi biết chơi rồi (bỏ qua hướng dẫn)</span>', keep: true, fn: skipTutorial },
+  ]);
+}
+function skipTutorial() {
+  npc('🐔', '#f0e2b0', 'Gà Cụ Cục', 'Bỏ qua thì cháu vẫn giữ 100 thóc khởi nghiệp, nhưng không nhận thưởng hướng dẫn (thóc, cám, trứng) nữa đâu nhé. Chắc chưa?', [
+    { t: 'Chắc, cháu tự khám phá!', fn: async () => showResult(await act('tutorial_skip')) },
+    { t: 'Thôi, cụ dặn tiếp đi', keep: true, fn: () => elderRules(1) },
+  ]);
+}
+
 export async function dialogElder(item) {
+  const first = !G.me.tutorial?.met_elder && !G.me.tutorialClaimed;
   const res = await act('talk', { id: item.id });
   if (!showResult(res, { quiet: true })) return;
+  if (first) { elderRules(0); return; }
   const me = G.me;
   const tutDone = G.catalog.tutorial.every((s) => me.tutorial[s.id]);
   const choices = [];
   if (me.rescue) choices.push({ t: '🧹 Tiếp tục việc “Dọn ổ rơm”', fn: () => startRescue() });
   else if (me.rescueEligible) choices.push({ t: `🧹 Nhận việc “Dọn ổ rơm” (+${G.catalog.balance.rescueReward} thóc)`, fn: () => startRescue() });
-  if (!me.tutorialClaimed && tutDone) choices.push({ t: `🎁 Nhận thưởng hoàn thành hướng dẫn (+${G.catalog.balance.tutorialReward} thóc)`, fn: claimTutorial });
+  if (me.rationReady) choices.push({ t: '🍚 Xin cụ một khẩu phần cám (mỗi ngày một lần)', fn: async () => showResult(await act('ration')) });
+  if (!me.tutorialClaimed && tutDone) choices.push({ t: `🎁 Nhận thưởng hướng dẫn (+${G.catalog.balance.tutorialReward} thóc, 3 cám, 1 trứng)`, fn: claimTutorial });
   choices.push({ t: '📋 Xem nhiệm vụ & hướng dẫn', fn: openQuests });
   choices.push({ t: '🏠 Đổi chuồng / xem các chuồng', fn: openRooms });
   choices.push({ t: '❓ Cách chơi', fn: openHelp });
   choices.push({ t: 'Tạm biệt cụ', fn: null });
   let text;
-  if (me.stage >= 2) text = 'Ối, cháu đói lả rồi! Ra Chợ thóc mua cám, hoặc chế biến con giun trong túi mà ăn. Hết sạch thóc thì phụ cụ dọn ổ rơm, cụ trả công.';
+  if (me.stage >= 2) text = 'Ối, cháu đói lả rồi! Có giun trong túi thì <b>ăn sống</b> ngay, chẳng tốn đồng nào. Hết sạch thì ra vườn đào — kiệt sức vẫn đào được giun thường. Cụ còn để dành cho cháu một khẩu phần cám mỗi ngày đấy.';
   else if (!tutDone) text = `Chào ${esc(me.char.name)}! Đây là sảnh chuồng chung, ai vào trại cũng xuất phát ở đây. Ra cửa chính là sân làng; đi đường đất phía tây tới <b>Vườn giun</b> đào giun, rồi mang ra <b>Chợ thóc</b> bán lấy thóc, nhớ ăn cho no. Lạc đường thì bấm <b>M</b> mở bản đồ. Xong mấy việc trong bảng nhiệm vụ thì quay lại cụ thưởng cho.`;
   else if (!me.tutorialClaimed) text = 'Giỏi lắm! Cháu đã biết đào, bán, ăn và làm quen. Đây, phần thưởng của cụ.';
   else text = 'Trại hôm nay đông vui ghê. Cứ đào, cứ khoe, cứ quậy — miễn đừng để bụng đói nhé!';
@@ -46,48 +71,13 @@ async function claimTutorial() { showResult(await act('claim_tutorial')); }
 export async function dialogPig(item) {
   await act('talk', { id: item.id });
   npc('🐷', '#f3b4bb', 'Lợn Ủn',
-    'Đào bới là nghề của tui! Tới ụ đất, bấm <b>E</b>, canh con trỏ vào vùng xanh rồi đào. Canh chuẩn thì tay nhanh hơn, còn trúng giun gì là do may — giun cầu vồng 1 phần nghìn thôi đó!',
+    'Đào bới là nghề của tui! Tới ụ đất bấm <b>E</b>: gà mổ đất, giun ló đầu thì <b>giữ nút để kéo</b>. Thanh độ căng đỏ thì <b>thả ra</b> kẻo tuột. Giun hiếm quẫy mạnh, tuột 3 lần là nó chuồn! Hết sức vẫn đào được giun thường, ăn sống một con là có sức ngay.',
     [{ t: '📖 Xem sổ giun', fn: openBook }, { t: '📋 Nhiệm vụ ngày', fn: openQuests }, { t: 'Để tui đào tiếp', fn: null }]);
 }
 
 // ---------- Đào giun ----------
-
-function markerPos(el, speed) { const ph = (el * speed) % 2; return ph > 1 ? 2 - ph : ph; }
-
-export async function startDig(item) {
-  if (G.busy) return;
-  G.busy = true;
-  const res = await act('dig_start', { id: item.id });
-  if (!showResult(res, { quiet: true })) { G.busy = false; return; }
-  sfx('dig');
-  const d = res.data;
-  const slow = G.me.stage >= 3;
-  let live = true;
-  openSheet('dig', `Đào giun · ${esc(item.label)}`, `
-    <p class="mut" style="margin:0">Canh con trỏ vào vùng xanh rồi bấm <b>Đào!</b> (hoặc <kbd>Space</kbd>). ${slow ? '<b style="color:var(--bad)">Đang đói: thao tác chậm hơn.</b>' : ''}</p>
-    <div class="digbar"><div class="digzone" style="left:${(d.center - d.half) * 100}%;width:${d.half * 200}%"></div><div class="digmark" id="dm"></div></div>
-    <button class="btn block" id="digGo">Đào! 🪱</button>`,
-    { close: () => { if (live) { live = false; G.net.raw({ t: 'act', a: 'dig_cancel' }); } G.busy = false; } });
-  const t0 = performance.now();
-  const dm = $('dm');
-  (function frame() {
-    if (!live) return;
-    dm.style.left = markerPos((performance.now() - t0) / 1000, d.speed) * 100 + '%';
-    requestAnimationFrame(frame);
-  })();
-  $('digGo').onclick = async () => {
-    if (!live) return;
-    live = false;
-    $('digGo').disabled = true;
-    const elapsed = (performance.now() - t0) / 1000;
-    const r = await act('dig_stop', { id: d.id, elapsed });
-    G.busy = false;
-    if (!r.ok) { showResult(r); closeSheet(); return; }
-    if (r.me) applyMe(r.me);
-    G.fx?.('dug', G.self.mesh, { color: wormById(r.data.loot.worm).color, rare: wormById(r.data.loot.worm).rare });
-    showLoot(r.data.loot, r.data.perfect, r.data.notes);
-  };
-}
+// Luồng đào mổ → giun ló → giằng co nằm ở dig.js; ở đây chỉ còn thẻ chiến lợi phẩm.
+G.showLoot = (...a) => showLoot(...a);
 
 function showLoot(loot, perfect, notes) {
   const w = wormById(loot.worm);
@@ -101,7 +91,7 @@ function showLoot(loot, perfect, notes) {
         <b>Chiều dài</b><span>${loot.size} cm${G.me.records[w.id] === loot.size ? ' 🏅' : ''}</span>
         <b>Bán NPC</b><span>🌾 ${w.sell}</span>
         <b>Chế biến & ăn</b><span>+${w.xp} XP · +${w.mana} mana · phí ${w.fee}</span>
-        <b>Canh lực</b><span>${perfect ? 'Chuẩn ✔' : 'Tạm ổn'}</span>
+        <b>Giằng co</b><span>${perfect ? 'Không tuột lần nào ✔' : 'Có tuột nhưng vẫn kéo được'}</span>
         <b>Mã lần đào</b><span style="font-size:.7rem;overflow-wrap:anywhere">${esc(loot.id)}</span>
       </div>
       ${(notes || []).map((n) => `<p class="mut" style="margin:8px 0 0">✨ ${esc(n)}</p>`).join('')}
@@ -120,6 +110,7 @@ export function openBag(tab = 'worm') {
   const me = G.me;
   const worms = G.catalog.worms.filter((w) => (me.worms[w.id] || 0) > 0);
   const foods = G.catalog.foods.filter((f) => (me.food[f.id] || 0) > 0);
+  if (tab === 'store') return openStore();
   const body = tab === 'worm'
     ? (worms.map((w) => wormRow(w, false)).join('') || '<div class="empty">Chưa có giun. Ra <b>Vườn giun</b> đào nhé! 🪱</div>') +
       `<div class="note">Giun tự đào có 3 cách dùng: <b>bán</b> ở Sạp thu mua (Chợ thóc), <b>chế biến &amp; ăn</b> ngay tại đây (trừ phí, nhận XP + mana), hoặc <b>giữ</b> để sưu tầm. Mỗi con chỉ bán hoặc ăn một lần.</div>`
@@ -128,11 +119,41 @@ export function openBag(tab = 'worm') {
         <div class="act"><button class="mini hot" data-eatfood="${f.id}" ${me.mana >= 100 ? 'disabled' : ''}>Ăn</button></div></div>`).join('') ||
       '<div class="empty">Chưa có thức ăn dự trữ. Mua ở <b>Quầy thức ăn</b> tại Chợ thóc.</div>');
   openSheet('bag', 'Túi đồ', `
-    <div class="tabs"><button class="tab" data-tab="worm" aria-selected="${tab === 'worm'}">🪱 Giun</button><button class="tab" data-tab="food" aria-selected="${tab === 'food'}">🍱 Thức ăn</button></div>
+    ${bagTabs(tab)}
     ${manaLine()}<p class="mut" style="margin:-6px 0 10px">Túi giun ${me.bagCount}/${me.bagCap}${me.bagCount >= me.bagCap ? ' — <b style="color:var(--bad)">đầy, bán hoặc ăn bớt để đào tiếp</b>' : ''}</p>${body}`);
   document.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => openBag(b.dataset.tab)));
   bindWormButtons(() => openBag('worm'));
   document.querySelectorAll('[data-eatfood]').forEach((b) => (b.onclick = async () => { b.disabled = true; showResult(await act('eat_food', { id: b.dataset.eatfood })); openBag('food'); }));
+}
+
+const bagTabs = (tab) => `<div class="tabs"><button class="tab" data-tab="worm" aria-selected="${tab === 'worm'}">🪱 Giun</button><button class="tab" data-tab="food" aria-selected="${tab === 'food'}">🍱 Thức ăn</button><button class="tab" data-tab="store" aria-selected="${tab === 'store'}">📦 Kho</button></div>`;
+const GROUP = { vatlieu: 'Vật liệu xây nhà', hatgiong: 'Hạt giống', nongsan: 'Nông sản', trung: 'Trứng' };
+// Kho đồ (PLAN_LOGIC_GAME 11): vật liệu, hạt giống, nông sản, trứng.
+function openStore() {
+  const me = G.me, items = G.catalog.items.filter((it) => (me.items?.[it.id] || 0) > 0);
+  const groups = Object.keys(GROUP).map((g) => {
+    const rows = items.filter((it) => it.group === g);
+    if (!rows.length) return '';
+    return `<h3 class="grp">${GROUP[g]}</h3>` + rows.map((it) => `<div class="row"><div class="ico" style="background:#fff0cf">${it.emo}</div>
+      <div class="meta"><div class="nm">${esc(it.name)} ×${me.items[it.id]}</div><div class="sub">${it.mana ? `ăn +${it.mana} độ no · ` : ''}${it.sell ? `bán ${it.sell} thóc ở Quầy thức ăn` : it.group === 'trung' ? 'đem tới Vịt Bông ở Trạm ấp để ấp' : it.group === 'hatgiong' ? 'gieo ở luống Ao và vườn hoặc luống rau nhà riêng' : 'dùng để xây nhà với Bò Mộc'}</div></div>
+      <div class="act">${it.mana ? `<button class="mini hot" data-eatitem="${it.id}" ${me.mana >= 100 ? 'disabled' : ''}>Ăn</button>` : ''}</div></div>`).join('');
+  }).join('');
+  openSheet('bag', 'Túi đồ', `${bagTabs('store')}${manaLine()}<p class="mut" style="margin:-6px 0 10px">Kho ${me.storageCount}/${me.storageCap} (trứng không tính)</p>
+    ${groups || '<div class="empty">Kho trống. Quà lên cấp, điểm danh và tiệm vật liệu của Bò Mộc sẽ lấp đầy chỗ này.</div>'}`);
+  document.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => openBag(b.dataset.tab)));
+  document.querySelectorAll('[data-eatitem]').forEach((b) => (b.onclick = async () => { b.disabled = true; showResult(await act('eat_item', { id: b.dataset.eatitem })); openStore(); }));
+}
+
+// Quà lên cấp (PLAN_LOGIC_GAME 12): Cụ Cục chúc mừng, bảng liệt kê quà đã vào ví/kho.
+export function showLevelReward(level, rw) {
+  const list = [`🌾 ${rw.thoc} thóc`, ...Object.entries(rw.food || {}).map(([id, n]) => `${foodById(id)?.emo || '🍱'} ${n} ${foodById(id)?.name || id}`),
+    ...Object.entries(rw.items || {}).map(([id, n]) => { const it = G.catalog.items.find((x) => x.id === id); return `${it?.emo || '🎁'} ${n} ${it?.name || id}`; })];
+  if (rw.title) list.push('🏅 Danh hiệu mới');
+  sfx('level');
+  openSheet('reward', `Lên cấp ${level}!`, `<div class="lootcard"><div class="big">🎁</div><div class="nm">Quà cấp ${level}</div>
+    <ul class="rewardlist">${list.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>${rw.unlock ? `<p class="mut">Mở khoá: <b>${esc(rw.unlock)}</b></p>` : ''}
+    <button class="btn block" id="rwOk">Cảm ơn Cụ Cục!</button></div>`);
+  $('rwOk').onclick = closeSheet;
 }
 
 function manaLine() {
@@ -149,7 +170,8 @@ function wormRow(w, atShop) {
       <div class="sub">Bán ${w.sell} · ăn +${w.xp} XP/+${w.mana} mana · phí chế biến ${w.fee}</div></div>
     <div class="act">
       ${atShop ? `<button class="mini good" data-sell="${w.id}">Bán +${w.sell}</button>${n > 1 ? `<button class="mini sec" data-sellall="${w.id}">Bán hết (${n})</button>` : ''}` : ''}
-      <button class="mini hot" data-eat="${w.id}" ${canEat ? '' : 'disabled'} title="${me.mana >= 100 ? 'Mana đã đầy' : me.thoc < w.fee ? 'Thiếu thóc trả phí' : ''}">Chế biến &amp; ăn −${w.fee}</button>
+      <button class="mini hot" data-eat="${w.id}" ${canEat ? '' : 'disabled'} title="${me.mana >= 100 ? 'Độ no đã đầy' : me.thoc < w.fee ? 'Thiếu thóc trả phí' : ''}">Chế biến &amp; ăn −${w.fee}</button>
+      ${atShop ? '' : `<button class="mini sec" data-raw="${w.id}" ${me.mana >= 100 ? 'disabled' : ''} title="Không tốn thóc, không cộng XP">Ăn sống +${Math.round(w.mana * (G.catalog.balance.rawEatRatio || 0.6))}</button>`}
     </div></div>`;
 }
 
@@ -160,6 +182,7 @@ function bindWormButtons(refresh) {
     if (showResult(r) && r.data?.levelUp) G.fx?.('levelup', G.self.mesh);
     refresh();
   }));
+  document.querySelectorAll('[data-raw]').forEach((b) => (b.onclick = async () => { b.disabled = true; showResult(await act('eat_raw', { id: b.dataset.raw })); refresh(); }));
   document.querySelectorAll('[data-sell]').forEach((b) => (b.onclick = async () => { b.disabled = true; if (showResult(await act('sell', { id: b.dataset.sell }))) sfx('coin'); refresh(); }));
   document.querySelectorAll('[data-sellall]').forEach((b) => (b.onclick = async () => {
     b.disabled = true;
@@ -194,12 +217,14 @@ export function openFood() {
       <div class="meta"><div class="nm">${esc(f.name)}</div><div class="sub">🌾 ${f.cost} · +${f.mana} mana · 0 XP${me.food[f.id] ? ` · đang có ${me.food[f.id]}` : ''}</div></div>
       <div class="act"><button class="mini hot" data-buy="${f.id}" data-eat="1" ${me.thoc < f.cost || me.mana >= 100 ? 'disabled' : ''}>Mua &amp; ăn</button>
         <button class="mini sec" data-buy="${f.id}" ${me.thoc < f.cost ? 'disabled' : ''}>Mua cất túi</button></div></div>`).join('')}
-    <div class="note">Ăn đưa mana tối đa 100, phần dư mất. Thức ăn là chi phí sinh hoạt để tránh phạt đói; mana không tự hồi khi đăng nhập, đổi chuồng hay qua ngày.</div>`);
+    <div class="note">Ăn đưa mana tối đa 100, phần dư mất. Thức ăn là chi phí sinh hoạt để tránh phạt đói; mana không tự hồi khi đăng nhập, đổi chuồng hay qua ngày (trừ khi ngủ ổ trong nhà đã xây).</div>
+    ${L.seedsSection()}`);
   document.querySelectorAll('[data-buy]').forEach((b) => (b.onclick = async () => {
     b.disabled = true;
     showResult(await act('buy_food', { id: b.dataset.buy, eat: !!b.dataset.eat }));
     openFood();
   }));
+  L.bindSeeds(openFood);
 }
 
 // Quầy thời trang: thử trên gà 3D (chỉ xem trước), giỏ hàng hiện tổng thóc trước khi mua.
@@ -340,22 +365,46 @@ let questTab = 'quests';
 export function openQuests(tab) {
   if (typeof tab === 'string') questTab = tab;
   if (questTab === 'contracts') { questTab = 'quests'; return V.openContracts(); }
-  const tabs = `<div class="tabs">${[['quests', 'Nhiệm vụ'], ['orders', 'Bảng việc làng'], ['festival', 'Ngày hội'], ['contracts', 'Hợp đồng xây']].map(([k, l]) => `<button class="tab" data-qt="${k}" aria-selected="${questTab === k}">${l}</button>`).join('')}</div>`;
+  const tabs = `<div class="tabs">${[['quests', 'Nhiệm vụ'], ['orders', 'Bảng việc làng'], ['weekly', 'Xếp hạng tuần'], ['festival', 'Ngày hội'], ['contracts', 'Hợp đồng xây']].map(([k, l]) => `<button class="tab" data-qt="${k}" aria-selected="${questTab === k}">${l}</button>`).join('')}</div>`;
   if (questTab === 'orders') return openOrders(tabs);
+  if (questTab === 'weekly') return openWeekly(tabs);
   if (questTab === 'festival') return openFestival(tabs);
   openQuestList(tabs);
 }
 function bindQuestTabs() { document.querySelectorAll('[data-qt]').forEach((b) => (b.onclick = () => openQuests(b.dataset.qt))); }
 
+// Bảng xếp hạng tuần (PLAN_LOGIC_GAME 16): chỉ thưởng danh hiệu cho người đứng đầu khi tuần mới bắt đầu.
+async function openWeekly(tabs) {
+  openSheet('quests', 'Nhiệm vụ & bảng tin', `${tabs}<p class="mut">Đang tải bảng xếp hạng…</p>`);
+  bindQuestTabs();
+  const r = await act('weekly');
+  if (G.modal !== 'quests' || questTab !== 'weekly' || !showResult(r, { quiet: true })) return;
+  const d = r.data, me = G.me;
+  const fmtV = (b, e) => b.unit === 'cm' ? `${e.value.toFixed(1)} cm${e.note ? ' · ' + esc(e.note) : ''}` : `${e.value} ${b.unit}`;
+  const boards = d.boards.map((b) => {
+    const rows = b.entries.map((e, i) => `<div class="row${e.id === me.id ? ' me' : ''}"><div class="ico" style="background:${['#f5d76e', '#dfe3e8', '#e8c4a0'][i] || '#f1e3c6'}">${['🥇', '🥈', '🥉'][i] || i + 1}</div>
+      <div class="meta"><div class="nm">${esc(e.name)}${e.id === me.id ? ' <span class="mut">(bạn)</span>' : ''}</div><div class="sub">${fmtV(b, e)}</div></div></div>`).join('');
+    const win = d.winners?.[b.id];
+    return `<h2>${esc(b.name)} <span class="mut" style="font-weight:600">· hạng nhất nhận “${esc(b.title)}”</span></h2>
+      ${rows || '<p class="mut">Tuần này chưa có ai. Ra tay ngay!</p>'}
+      ${win ? `<p class="mut">Tuần trước: 🏆 <b>${esc(win.name)}</b> (${fmtV(b, win)})</p>` : ''}`;
+  }).join('');
+  openSheet('quests', 'Nhiệm vụ & bảng tin', `${tabs}
+    <p class="mut" style="margin-top:0">Tuần ${esc(d.week)} · tính theo giờ Việt Nam, chốt sáng thứ Hai. PK chỉ tính trận với người thật. Không có thưởng thóc — chỉ có danh hiệu và tiếng tăm!</p>${boards}`);
+  bindQuestTabs();
+}
+
 function openOrders(tabs) {
   const me = G.me;
   const atBoard = nearKind('board');
   openSheet('quests', 'Nhiệm vụ & bảng tin', `${tabs}
-    <p class="mut" style="margin-top:0">Đơn hàng của các NPC, đổi mới lúc 0:00. Mỗi đơn nhận một lần trong ngày; luôn có một đơn giun đất cho người mới.</p>
+    <p class="mut" style="margin-top:0">Đơn hàng của các NPC, đổi mới lúc 0:00. Mỗi đơn nhận một lần trong ngày; luôn có một đơn giun đất cho người mới và một nhiệm vụ đặc biệt của NPC.</p>
     ${me.orders.map((o) => {
-      const w = wormById(o.worm), have = me.worms[o.worm] || 0;
+      const item = o.item && G.catalog.items.find((x) => x.id === o.item);
+      const name = item ? item.name : wormById(o.worm).name, have = item ? me.items?.[o.item] || 0 : me.worms[o.worm] || 0;
+      const gift = Object.entries(o.gift || {}).map(([id, n]) => { const it = G.catalog.items.find((x) => x.id === id); return `${it?.emo || ''}${n} ${esc(it?.name || id)}`; }).join(' · ');
       return `<div class="q ${o.done ? 'done' : ''}"><div class="box">${o.done ? '✔' : ''}</div>
-        <div style="flex:1"><div class="qt">${esc(o.text)}</div><div class="qs">Trong túi: ${have}/${o.n} ${esc(w.name)}</div></div>
+        <div style="flex:1"><div class="qt">${item || o.gift ? '⭐ ' : ''}${esc(o.text)}</div>${o.line ? `<div class="qs">“${esc(o.line)}”</div>` : ''}<div class="qs">${item ? 'Trong kho' : 'Trong túi'}: ${have}/${o.n} ${esc(name)}${gift ? ` · thưởng thêm ${gift}` : ''}</div></div>
         <span class="qr">🌾 ${o.reward}</span>
         ${o.done ? '' : `<button class="mini hot" data-order="${o.id}" ${have < o.n || !atBoard ? 'disabled' : ''} style="margin-left:6px">Giao</button>`}</div>`;
     }).join('')}
@@ -434,6 +483,8 @@ export async function startRescue() {
 
 export function chatLine(m) {
   if (m.kind === 'system') return `<div class="cm sys">${esc(m.text)}</div>`;
+  // Lời NPC nói với mình: nhãn 🐔 NPC để không lẫn với người chơi thật (PLAN_LOGIC_GAME 1.3).
+  if (m.kind === 'npc') return `<div class="cm npc"><span class="au" style="color:#8a5a30">🐔 ${esc(m.name)} <span class="npctag">NPC</span>:</span> ${esc(m.text)}</div>`;
   const self = m.pid === G.pid;
   const who = `<span class="au" style="color:${self ? 'var(--accent)' : 'var(--wood)'}">${esc(m.name)}<span class="mut">#${esc(m.tag)}</span>:</span>`;
   if (m.kind === 'show') {
@@ -465,23 +516,32 @@ export function appendChat(m) {
 // ---------- Hướng dẫn ----------
 
 export function openHelp() {
-  const b = G.catalog.balance;
+  const b = G.catalog.balance, c = G.catalog;
+  const perMin = b.manaDrainPerSec * 60, fullMin = Math.round(100 / perMin);
   openSheet('help', 'Cách chơi', `
-    <p style="margin-top:0"><b>Di chuyển:</b> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / phím mũi tên, điện thoại dùng joystick trái. <b>Đi tới chỗ chỉ định:</b> click/chạm mặt đất. <b>Camera:</b> kéo chuột/ngón tay trên cảnh để xoay ngang và ngẩng/cúi, lăn chuột hoặc hai ngón để zoom; nút ◫ đổi giữa góc sảnh và góc theo gà. <b>Bản đồ:</b> <kbd>M</kbd> hoặc bấm minimap, chọn địa điểm rồi “Đặt chỉ đường”. <b>Ngồi ổ rơm:</b> lại gần ổ trống. <b>Tương tác:</b> lại gần rồi nhấn <kbd>E</kbd> hoặc nút Tương tác. <b>Chat:</b> <kbd>Enter</kbd>.</p>
+    <p style="margin-top:0"><b>Di chuyển:</b> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / phím mũi tên, điện thoại dùng joystick trái. <b>Chạy nhanh:</b> giữ <kbd>Shift</kbd> hoặc nút 🏃 — nhanh ×${c.sprintMult} trong ${c.staminaSec} giây, hụt hơi thì nghỉ 5 giây rồi chạy tiếp. <b>Đi tới chỗ chỉ định:</b> click/chạm mặt đất. <b>Camera:</b> kéo để xoay, lăn chuột hoặc hai ngón để zoom; cây và mái che tự mờ khi chắn tầm nhìn. <b>Bản đồ:</b> <kbd>M</kbd>. <b>Tương tác:</b> lại gần rồi nhấn <kbd>E</kbd>. <b>Chat:</b> <kbd>Enter</kbd>.</p>
     <h2>Vòng chơi</h2>
-    <p>Vào trại ở <b>sảnh chuồng chung</b> → qua cửa chính ra <b>sân làng</b> → theo đường tới <b>Vườn giun</b> đào → mang ra <b>Chợ thóc</b> bán lấy 🌾 thóc, hoặc <b>chế biến &amp; ăn</b> để nhận XP và mana → mua thức ăn giữ no → dành thóc cho thời trang. Giun từ <b>Hiếm</b> trở lên có thể <b>khoe với chuồng</b>. Ra <b>Sân tỷ thí</b> đấu PK vui với bạn hoặc Gà Máy.</p>
-    <h2>Mana · Độ no</h2>
+    <p>Gà mới nhận <b>${b.starterThoc || 100} thóc khởi nghiệp</b>; Cụ Cục ở cuối sảnh dẫn từng bước. Ra <b>Vườn giun</b> đào → bán ở <b>Chợ thóc</b> lấy 🌾 hoặc ăn để có XP và độ no → lên cấp nhận thóc, vật liệu, hạt giống, trứng → mua đất, xây nhà, nuôi bạn đồng hành. Ra <b>Sân tỷ thí</b> xem gà NPC đấu hoặc PK vui với bạn.</p>
+    <h2>Đào giun</h2>
+    <p>Nhấn <kbd>E</kbd> ở ụ đất: gà mổ đất, giun ló lên rồi camera kéo lại gần. <b>Giữ nút</b> (hoặc <kbd>Space</kbd>) để kéo, thấy dây <b>đỏ</b> hay giun quẫy thì <b>thả</b> cho dịu. Giun Hiếm trở lên kéo lâu hơn và <b>tuột 3 lần là chạy mất</b> — lượt đó không tính vào hạn đào trong ngày, vẫn có chút XP an ủi. Bỏ dở giữa chừng cũng tính như giun thoát.</p>
+    <h2>Độ no và không bao giờ kẹt</h2>
     <div class="tblwrap"><table class="t"><tr><th>Trạng thái</th><th>Điều kiện</th><th>Hệ quả</th></tr>
-      <tr><td>Bình thường</td><td>Mana ≥ 20</td><td>—</td></tr>
-      <tr><td>Sắp đói</td><td>1–19</td><td>Thanh đổi màu, nhắc ăn</td></tr>
-      <tr><td>Đói</td><td>= 0</td><td>Đếm ngược đến phạt</td></tr>
-      <tr><td>Đói kéo dài</td><td>${b.hungerSlowSec} giây online tại 0</td><td>Đi chậm 15%, đào chậm 25%</td></tr>
-      <tr><td>Kiệt sức</td><td>${b.hungerExhaustSec} giây online tại 0</td><td>Không đào/nhận PK; vẫn chat, mua, ăn</td></tr></table></div>
-    <p class="mut">Mana giảm ${b.manaDrainPerSec >= 0.1 ? b.manaDrainPerSec + ' điểm/giây' : '1 điểm/phút'} khi online, thêm ${b.manaPerDig} điểm mỗi lượt đào có thưởng. Ăn đạt ≥ 20 thì gỡ phạt. Hết sạch thóc lẫn đồ ăn: gặp Gà Cụ Cục nhận việc <b>Dọn ổ rơm</b>.</p>
+      <tr><td>Bình thường</td><td>Độ no ≥ 20</td><td>—</td></tr>
+      <tr><td>Sắp đói</td><td>1–19</td><td>Thanh đổi màu, NPC nhắc ăn</td></tr>
+      <tr><td>Đói</td><td>= 0</td><td>Đếm ngược tới phạt</td></tr>
+      <tr><td>Đói kéo dài</td><td>${Math.round(b.hungerSlowSec / 60)} phút online ở 0</td><td>Đi chậm 15%, ít thể lực chạy</td></tr>
+      <tr><td>Kiệt sức</td><td>${Math.round(b.hungerExhaustSec / 60)} phút online ở 0</td><td>Vẫn đào được (chỉ giun thường/khá hiếm, mổ chậm), vẫn ăn, bán, mua</td></tr></table></div>
+    <p class="mut">Độ no tụt ${perMin.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} điểm/phút khi online (đầy bụng dùng được khoảng ${fullMin} phút) và ${b.manaPerDig} điểm mỗi lượt đào; ngồi ổ rơm tụt chậm hơn, ngủ ổ trong nhà đã xây thì hồi lại. Hết thóc và đồ ăn: <b>ăn sống</b> giun ngay trong túi, hoặc gặp Cụ Cục xin <b>một phần cám</b> mỗi ngày.</p>
+    <h2>Đi lại</h2>
+    <p><b>Xe buýt vòng làng</b> do NPC lái chạy liên tục qua ${G.worldMap?.roads?.stops?.length || 9} bến ở cổng các khu: mỗi người có ${c.maxBusTokens} lượt miễn phí, hồi 1 lượt mỗi 5 phút; hết lượt trả ${c.villageFare} thóc. <b>Xe ôm</b> dọc đường sẽ mời bạn: chọn điểm đến trên bản đồ, 1–2 thóc tuỳ xa gần (trời mưa +1 thóc khăn lau). Đứng ở bến nhấn <kbd>E</kbd> để xem xe sắp tới.</p>
+    <h2>Nhà, vườn và bạn đồng hành</h2>
+    <p><b>Ông Chủ Đầu Tư</b> ở cổng Xóm Rơm Vàng bán lô đất (cạnh đường, ven ao, đồi thông). <b>Bò Mộc</b> bán rơm, gỗ, gạch… và xây nhà theo thiết kế: nhà rơm ấm ít, gỗ ấm vừa, gạch ấm nhất (hồi độ no khi ngủ ổ, chứa nhiều khách hơn). Mua hạt giống ở Quầy thức ăn, gieo ở luống cộng đồng (Ao và vườn) hoặc luống rau nhà, tưới một lần cho nhanh, thu trước khi héo. Trứng ấp ở Trạm ấp nở ra bạn đồng hành, mỗi loài một kỹ năng (đánh hơi giun, mặc cả giá vé, cõng chạy…).</p>
+    <h2>Làng sống</h2>
+    <p>Một ngày trong làng dài ${Math.round((c.gameDay || 2880) / 60)} phút: ban đêm đèn lồng thắp, Giun phát sáng ngoi lên nhiều hơn. Thỉnh thoảng có mưa nhẹ: ụ đất hồi nhanh hơn 30%. NPC chào hỏi, trêu nhẹ, rủ đi xe — chỉnh mức trò chuyện và tắt trêu trong Cài đặt. Bảng việc làng có nhiệm vụ của NPC; bảng <b>Xếp hạng tuần</b> trao danh hiệu cho người giỏi nhất.</p>
     <h2>Bảng giun</h2>
-    <div class="tblwrap"><table class="t"><tr><th>Giun</th><th>Độ hiếm</th><th>Tỷ lệ</th><th>Bán</th><th>XP</th><th>Mana</th><th>Phí</th></tr>
+    <div class="tblwrap"><table class="t"><tr><th>Giun</th><th>Độ hiếm</th><th>Tỷ lệ</th><th>Bán</th><th>XP</th><th>Độ no</th><th>Phí</th></tr>
       ${G.catalog.worms.map((w) => `<tr><td>${esc(w.name)}</td><td>${esc(w.rarity)}</td><td>${(w.prob * 100).toLocaleString('vi-VN')}%</td><td>${w.sell}</td><td>${w.xp}</td><td>${w.mana}</td><td>${w.fee}</td></tr>`).join('')}</table></div>
-    ${b.name === 'demo' ? `<div class="note"><b>Máy chủ đang chạy bộ cân bằng “demo”:</b> hồi đất ${b.digCooldownSec} giây, đói nhanh hơn và mốc phạt rút ngắn để thử nhanh. Bộ “plan” dùng đúng số trong PLAN.md (45 giây, 1 mana/phút, phạt ở phút 5 và 10).</div>` : ''}
+    ${b.name !== 'live' ? `<div class="note"><b>Máy chủ đang chạy bộ cân bằng “${esc(b.name)}”</b> (hồi đất ${b.digCooldownSec} giây) để thử nhanh. Chơi thật dùng bộ “live”: độ no khoảng 15–20 phút, hồi đất 8 giây.</div>` : ''}
     <button class="btn block" id="helpOk">Chơi thôi!</button>`);
   $('helpOk').onclick = closeSheet;
 }

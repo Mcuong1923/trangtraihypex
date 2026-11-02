@@ -1,5 +1,29 @@
 # Tiến độ dự án Trang trại gà Hypex
 
+## Logic game v2 (02/11/2026, theo [PLAN_LOGIC_GAME.md](PLAN_LOGIC_GAME.md))
+
+Đủ các giai đoạn P0–P7 của plan. Server mặc định chạy bộ cân bằng `live` (`go run .`); `-balance demo` để thử nhanh. Toàn bộ 69 test xanh với `-race` (~12 phút), gồm so khớp giằng co Go ↔ JS bằng Node. Ảnh kiểm tra trên trình duyệt: [docs/visual-qa/logic/](docs/visual-qa/logic/).
+
+| Giai đoạn | Đã làm | Kiểm chứng |
+| --- | --- | --- |
+| P0 Chống kẹt, di chuyển | Bộ `live` (độ no ~15–20 phút), quà 100 thóc khởi nghiệp, ăn sống giun, Cụ Cục cho cám cứu trợ, kiệt sức vẫn đào giun thường; chạy nhanh ×1,65 trong 6 giây, hụt hơi nghỉ 5 giây; cây che tầm nhìn tự mờ | `TestLiveManaLastsFifteenToTwentyMinutes`, `TestStarterGiftOnce`, `TestRawEatAndRationNeverStuck`, `TestStaminaSprintAndLock`, e2e `TestZeroThocZeroManaStillPlayable` |
+| P1 Đào giun v2 | Mổ đất → giun ló (popup) → cận cảnh → giữ/thả giằng co; giun hiếm kéo lâu, tuột 3 lần là thoát; máy chủ chạy lại mô phỏng để chốt, chống gieo lại; XP khi đào | `TestTugRatesByTier`, `TestTugDeterministicAndBounded`, `TestTugMatchesClient` (Node), e2e `TestRareWormEscapeNotCountedDaily`; ảnh 07–08 |
+| P2 Nền NPC, hướng dẫn | Bong bóng thoại, Cụ Cục gọi đúng tên gà mới, dặn luật 4 trang có nút bỏ qua, hướng dẫn 6 việc có dấu "!" và mũi tên, tự trao thưởng; cài đặt NPC (Đầy đủ/Vừa/Ít, tắt trêu) | e2e `TestNPCWelcomeStarterAndCheckIn`, `TestTutorialSkipKeepsStarter`, `TestEndToEnd`; ảnh 06 |
+| P3 Xe buýt, xe ôm | 3 xe buýt NPC chạy liên tục qua 9 bến; 2 lượt miễn phí hồi 5 phút, hết lượt 3 thóc; chip 🎫 trên HUD; xe ôm số lượng theo người ngoài trời, mời đi, chọn điểm trên bản đồ, 1–2 thóc | e2e `TestVillageBusTokensThenFare`, `TestXeOmCarriesForOneOrTwoThoc`; ảnh 09 |
+| P4 Làng sống | Xe đạp, xe máy, ván trượt; thiếu gia ô tô, hai mẹ con gà, shipper hỏi đường, nhà báo, bán rong, cụ dưỡng sinh; trận biểu diễn có Chó Mực và khán giả (dời ra sân khấu ao khi có ngày hội); chủ quán chủ động; hạn mức trêu/cameo, ≤ 3 câu/giây | `TestDirectorTeaseAndCameoLimits`, `TestRoomSayBudget`, e2e `TestArenaShowStartsWhenSomeoneWatches`; ảnh 10, 13 |
+| P5 Kho, thưởng cấp, đất, nhà | Kho 200 món, quà cấp 2–10, điểm danh 7 ngày; Ông Chủ Đầu Tư bán lô (cạnh đường/ven ao/đồi thông); Bò Mộc bán vật liệu, xây nhà theo thiết kế + rơm/gỗ/gạch, nâng cấp; ngủ ổ trong nhà hồi độ no | `TestLotsHouseDesignsAndUpgrade`, `TestLevelRewardsOnceAndEggMigration`, `TestCheckInStreak`, e2e `TestBuyLotAndBuildHouseE2E`; ảnh 01–02 |
+| P6 Trồng cây, thú cưng | Hạt giống ở Quầy thức ăn, luống cộng đồng ở Ao và vườn + luống rau nhà, tưới, héo ra phân ủ; 3 loại trứng, 7 loài với 7 kỹ năng (may mắn, mặc cả, cõng chạy, cưỡi ngỗng…) | `TestGardenGrowWaterHarvestWilt`, `TestPetAbilities`, `TestDigLuckKeepsTableNormalised`; ảnh 03 |
+| P7 Bổ sung | Ngày/đêm 48 phút (đèn lồng, Giun phát sáng ×1,5, xe về nhà ban đêm, chào theo buổi); mưa ~10% (hồi đất −30%, xe ôm +1 thóc); nhiệm vụ NPC trên bảng việc làng; bảng xếp hạng tuần trao danh hiệu; nghỉ ổ cạnh bạn bè +1 thân thiết/phút | `TestGameClockDayNightAndRain`, `TestNightGlowKeepsTableNormalised`, `TestRainXeOmSurcharge`, `TestNPCQuestsWellFormed`, `TestWeeklyBoardsAndTitles`, `TestNestBuddyAffinity`; ảnh 04–05, 11–12 |
+
+Chưa làm (plan để giai đoạn sau hoặc đổi cách làm): lô trưng bày nhà người chơi ở Xóm (P5b); tưới giúp luống của bạn bè; câu cá; mở cấp 11–20; đèn pha xe NPC ban đêm. Luống cộng đồng là "mỗi người một lớp" (ai cũng thấy cây của mình, không tranh luống) thay vì giữ chỗ độc quyền.
+
+## Giao diện theo bộ ảnh 2 (02/11/2026, theo [PLAN_GIAO_DIEN_BO_2.md](PLAN_GIAO_DIEN_BO_2.md))
+
+Đủ 11 cảnh đã dựng lại theo bố cục ảnh trong `assets/illustrations/bo-2` (mái rơm có mặt trong, vách lưới, lối ván, quầy/NPC đúng chỗ, ánh sáng ấm, HUD gỗ–kem). Mức hoàn thành: **dựng đủ bố cục và vật chủ đạo**; chưa đạt độ chi tiết của ảnh render. Bảng từng cảnh và phần còn thiếu: mục “Trạng thái triển khai” trong plan. Ảnh đối chiếu: [docs/visual-qa/bo-2/](docs/visual-qa/bo-2/).
+
+- Server: dời Lợn Ủn (vườn), Chó Mực, Vịt Bông, Chim Chíp, Dê Thợ Máy, Bò Mộc và biển xóm tới vị trí trong ảnh; vật cản mới cho lán vườn, quầy thợ, nhà chờ + xe buýt (cả bến Ven Suối), khung nhà Bò Mộc, chuồng Ven Suối; khu “park” đổi tên thành “Ao và vườn”. Thêm cờ `-devwarp` (tắt mặc định) chỉ để chụp ảnh đối chiếu.
+- Chưa làm: câu cá ở ao (trồng rau ở ao đã có, xem Logic game v2); bảng điểm 3D và hiệu ứng KO ở sân PK; đo FPS trên máy thật.
+
 ## Làm lại thế giới 3D (01/11/2026, theo [PLAN_THE_GIOI_3D.md](PLAN_THE_GIOI_3D.md))
 
 | Hạng mục | Trạng thái | Kiểm chứng |

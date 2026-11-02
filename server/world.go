@@ -158,11 +158,12 @@ type Region struct {
 	Level   int    // cấp tối thiểu để vào vùng
 	Themes  []string
 	Zones   map[string]*Zone
-	Station string // khu bến xe
-	WormSet string // bảng giun của các ụ đất trong vùng
-	Outdoor string // khu ngoài trời: mọi chỗ không thuộc khu nào khác
-	Hub     Vec    // nút giao các con đường (quảng trường)
-	World   *Zone  // biên bản đồ + toàn bộ vật cản, dùng cho di chuyển
+	Station string   // khu bến xe
+	WormSet string   // bảng giun của các ụ đất trong vùng
+	Outdoor string   // khu ngoài trời: mọi chỗ không thuộc khu nào khác
+	Hub     Vec      // nút giao các con đường (quảng trường)
+	World   *Zone    // biên bản đồ + toàn bộ vật cản, dùng cho di chuyển
+	Roads   *RoadNet // đường làng: xe buýt, xe ôm, xe NPC (PLAN_LOGIC_GAME 5.1)
 }
 
 // AreaAt trả về khu chứa điểm p; ngoài mọi khu là khu ngoài trời của vùng.
@@ -179,7 +180,7 @@ func (reg *Region) AreaAt(p Vec) string {
 func (reg *Region) WorldInfo() map[string]any {
 	w := reg.World
 	return map[string]any{"cx": w.CX, "cz": w.CZ, "halfX": w.HalfX, "halfZ": w.HalfZ, "obstacles": w.Obstacles,
-		"hub": reg.Hub, "outdoor": reg.Outdoor, "title": reg.Title}
+		"hub": reg.Hub, "outdoor": reg.Outdoor, "title": reg.Title, "roads": reg.Roads, "belt": VanhDai, "plazaRing": PlazaRing}
 }
 
 func newRegion(r *Region) *Region {
@@ -191,6 +192,7 @@ func newRegion(r *Region) *Region {
 		}
 		r.World.Obstacles = append(r.World.Obstacles, z.Obstacles...)
 	}
+	r.Roads = buildRoads(r)
 	return r
 }
 
@@ -208,11 +210,11 @@ func buildVenSuoi() map[string]*Zone {
 	st := &Zone{ID: "vs_station", Title: "Bến Ven Suối", HalfX: 10.4, HalfZ: 8.0,
 		Spawns: []Vec{{0, 5.6}, {-1.2, 5.6}, {1.2, 5.6}, {0, 4.4}},
 		Items: []Item{
-			{ID: "tram_bus", Kind: "bus_stop", Label: "Trạm xe buýt", Emo: "🚌", X: 2, Z: -4.5, R: 2.6},
+			{ID: "tram_bus", Kind: "bus_stop", Label: "Trạm xe buýt", Emo: "🚌", X: 3.2, Z: -3.4, R: 2.6},
 			{ID: "diem_do", Kind: "parking", Label: "Điểm đỗ xe", Emo: "🅿️", X: 7, Z: 3, R: 2.4},
 			{ID: "duong_lien_trai", Kind: "road", Label: "Đường liên trại", Emo: "🛣️", X: -9.0, Z: 3, R: 2.4},
 		},
-		Obstacles: []Obstacle{{-.9, -5.7, 2.2, 4.6, 2.2}, {4, -5.1, 4.2, 1.6, 2.6}},
+		Obstacles: []Obstacle{{-6.4, -6.6, 7.2, 2.6, 3}, {6.6, -4.2, 3.4, 7.6, 3.4}},
 		Entry:     &Vec{0, -11}}
 	farm := &Zone{ID: "vensuoi", Title: "Đồng Ven Suối", HalfX: 11.4, HalfZ: 9.0,
 		Spawns: []Vec{{0, 7}, {-1.2, 7}, {1.2, 7}, {0, 5.8}},
@@ -220,7 +222,8 @@ func buildVenSuoi() map[string]*Zone {
 			{ID: "ech_xanh", Kind: "npc_frog", Label: "Ếch Xanh", Emo: "🐸", X: 6, Z: 5, R: 2.4},
 		},
 		// Dòng suối chảy dọc bờ đông, chỉ qua được ở cầu gỗ (z = -5).
-		Obstacles: []Obstacle{{9.4, -9, 2.6, 6, .1}, {9.4, 4, 2.6, 16, .1}}}
+		// Chuồng dài mái rơm sát bờ tây (ảnh B02-10).
+		Obstacles: []Obstacle{{9.4, -9, 2.6, 6, .1}, {9.4, 4, 2.6, 16, .1}, {-10.2, -2, 2.6, 10, 3}}}
 	for i, p := range [][2]float64{{-7, -3}, {-4, 0}, {-1, -2.5}, {3, 0.5}, {6, -2}, {-6, 3}, {2, 4}} {
 		soil := "Bãi bồi"
 		if p[1] < -1 {
@@ -267,9 +270,9 @@ func buildHypex() map[string]*Zone {
 	spawns := func(z float64) []Vec { return []Vec{{0, z}, {-1.2, z}, {1.2, z}, {0, z - 1.2}} }
 
 	garden := &Zone{ID: "garden", Title: "Vườn giun", HalfX: 10.4, HalfZ: 9.0, Spawns: spawns(6.6),
-		Items: []Item{{ID: "lon_un", Kind: "npc_pig", Label: "Lợn Ủn", Emo: "🐷", X: -7, Z: 4, R: 2.4}},
-		// Hàng rào ba phía, phía nam mở ra đường làng.
-		Obstacles: []Obstacle{{-10.4, 0, .3, 18, 1}, {0, -9, 20.8, .3, 1}, {10.4, 0, .3, 18, 1}}}
+		Items: []Item{{ID: "lon_un", Kind: "npc_pig", Label: "Lợn Ủn", Emo: "🐷", X: 8.2, Z: -4.6, R: 2.4}},
+		// Hàng rào ba phía, phía nam mở ra đường làng; lán hướng dẫn của Lợn Ủn ở góc sau bên phải (ảnh B02-03).
+		Obstacles: []Obstacle{{-10.4, 0, .3, 18, 1}, {0, -9, 20.8, .3, 1}, {10.4, 0, .3, 18, 1}, {7.4, -7.4, 5.6, 2.8, 3}}}
 	// Tiểu vùng đất vườn / đất ẩm / gốc cây: khác hình thức, cùng bảng cơ bản (mục 7.2.1).
 	digSpots := []struct {
 		x, z float64
@@ -288,43 +291,53 @@ func buildHypex() map[string]*Zone {
 		Obstacles: []Obstacle{{-7, -5.8, 3.9, 1.5, 1}, {0, -5.8, 4.1, 1.5, 1}, {7, -5.8, 3.9, 1.5, 1}}}
 
 	arena := &Zone{ID: "arena", Title: "Sân tỷ thí", HalfX: 9.4, HalfZ: 9.0, Spawns: spawns(6.6),
-		Items:     []Item{{ID: "cho_muc", Kind: "pk", Label: "Chó Mực (trọng tài)", Emo: "🐶", X: -5, Z: -3, R: 2.6}},
+		Items:     []Item{{ID: "cho_muc", Kind: "pk", Label: "Chó Mực (trọng tài)", Emo: "🐶", X: 0, Z: -5.2, R: 2.6}},
 		Obstacles: []Obstacle{{-8, 0, 2.6, 7, 1}, {8, 0, 2.6, 7, 1}}}
 
 	// Trạm ấp trứng (ảnh 6, mục 12).
 	hatchery := &Zone{ID: "hatchery", Title: "Trạm ấp trứng", HalfX: 9.4, HalfZ: 8.0, Spawns: spawns(6.2),
-		Items:     []Item{{ID: "vit_bong", Kind: "npc_duck", Label: "Vịt Bông", Emo: "🦆", X: -4, Z: -2, R: 2.4}},
+		Items:     []Item{{ID: "vit_bong", Kind: "npc_duck", Label: "Vịt Bông", Emo: "🦆", X: 0, Z: -3.4, R: 2.4}},
 		Obstacles: []Obstacle{{0, -6.2, 12.6, 3.6, 3.4}}}
 
 	// Bến xe Chim Chíp (ảnh 9, mục 8.5): đặt vé xe buýt, điểm đỗ, đường liên trại cho xe máy/ô tô.
 	station := &Zone{ID: "station", Title: "Bến xe Chim Chíp", HalfX: 11.0, HalfZ: 8.0, Spawns: spawns(6.2),
 		Items: []Item{
-			{ID: "chim_chip", Kind: "npc_bird", Label: "Chim Chíp", Emo: "🐦", X: -6, Z: -3, R: 2.4},
-			{ID: "tram_bus", Kind: "bus_stop", Label: "Trạm xe buýt", Emo: "🚌", X: 2, Z: -4.5, R: 2.6},
+			{ID: "chim_chip", Kind: "npc_bird", Label: "Chim Chíp", Emo: "🐦", X: -4.6, Z: -2.8, R: 2.4},
+			{ID: "tram_bus", Kind: "bus_stop", Label: "Trạm xe buýt", Emo: "🚌", X: 3.2, Z: -3.4, R: 2.6},
 			{ID: "diem_do", Kind: "parking", Label: "Điểm đỗ xe", Emo: "🅿️", X: 7, Z: 3, R: 2.4},
 			{ID: "duong_lien_trai", Kind: "road", Label: "Đường liên trại", Emo: "🛣️", X: -9.6, Z: 3, R: 2.4},
 		},
-		Obstacles: []Obstacle{{-.9, -5.7, 2.2, 4.6, 2.2}, {4, -5.1, 4.2, 1.6, 2.6}}}
+		Obstacles: []Obstacle{{-6.4, -6.6, 7.2, 2.6, 3}, {6.6, -4.2, 3.4, 7.6, 3.4}}}
 
 	// Cửa hàng xe và điểm đỗ (ảnh 10, mục 8.4).
 	garage := &Zone{ID: "garage", Title: "Cửa hàng xe", HalfX: 9.4, HalfZ: 8.0, Spawns: spawns(6.2),
 		Items: []Item{
-			{ID: "de_tho", Kind: "npc_goat", Label: "Dê Thợ Máy", Emo: "🐐", X: -5, Z: -3, R: 2.4},
+			{ID: "de_tho", Kind: "npc_goat", Label: "Dê Thợ Máy", Emo: "🐐", X: 0, Z: -4.6, R: 2.4},
 			{ID: "diem_do", Kind: "parking", Label: "Điểm đỗ xe", Emo: "🅿️", X: 5, Z: -2, R: 2.4},
 		},
-		Obstacles: []Obstacle{{0, -7.6, 9.4, .8, 3}}}
+		// Quầy thợ giữa phía sau (ảnh B02-11).
+		Obstacles: []Obstacle{{0, -6.5, 6, 1.2, 1.1}}}
 
 	neighborhood := &Zone{ID: "neighborhood", Title: "Xóm Rơm Vàng", HalfX: 22, HalfZ: 22, Spawns: []Vec{{0, 18}, {1.5, 18}, {-1.5, 18}},
 		Items: []Item{
-			{ID: "bien_nha", Kind: "home_sign", Label: "Chuồng riêng & thăm bạn", X: -8, Z: 0, R: 3},
-			{ID: "bo_moc", Kind: "npc_cow", Label: "Bò Mộc", X: -8, Z: 7, R: 2.6},
+			{ID: "bien_nha", Kind: "home_sign", Label: "Chuồng riêng & thăm bạn", X: -4.4, Z: 16.6, R: 3},
+			// Văn phòng đất nền của Ông Chủ Đầu Tư cạnh cổng xóm (PLAN_LOGIC_GAME 13.2).
+			{ID: "chu_dau_tu", Kind: "npc_investor", Label: "Ông Chủ Đầu Tư", Emo: "🐓", X: 6.4, Z: 15.4, R: 2.4},
+			{ID: "bo_moc", Kind: "npc_cow", Label: "Bò Mộc", X: 9.6, Z: 12.4, R: 2.6},
 			{ID: "hoi_ga", Kind: "guild_board", Label: "Nhà Hội Gà", X: 9, Z: -8, R: 3},
 		},
-		Obstacles: []Obstacle{{-13, -12, 5, 7, 4}, {13, -12, 5, 7, 4}, {-13, 4, 5, 7, 4}, {13, 4, 5, 7, 4}, {12, -16, 7, 4, 4}}}
+		// Bốn chuồng có sân, Nhà Hội phía sau và khung nhà Bò Mộc đang dựng (ảnh B02-07).
+		Obstacles: []Obstacle{{-13, -12, 5, 7, 4}, {13, -12, 5, 7, 4}, {-13, 4, 5, 7, 4}, {13, 4, 5, 7, 4}, {12, -16, 7, 4, 4}, {14.4, 13, 4.6, 4.6, 3}, {6.4, 13.6, 3, 1.2, 1.1}}}
 
-	park := &Zone{ID: "park", Title: "Vườn An Nhiên", HalfX: 26, HalfZ: 24, Spawns: []Vec{{0, 20}, {1.5, 20}, {-1.5, 20}},
+	park := &Zone{ID: "park", Title: "Ao và vườn", HalfX: 26, HalfZ: 24, Spawns: []Vec{{0, 20}, {1.5, 20}, {-1.5, 20}},
 		Items:     []Item{{ID: "hoi_cho", Kind: "board", Label: "Lễ hội của làng", X: 12, Z: 5, R: 2.6}},
 		Obstacles: []Obstacle{{0, -2, 18, 12, .1}}}
+	// 12 luống cộng đồng trên ba luống rau bên phải ao (PLAN_LOGIC_GAME 14): mỗi người giữ tối đa một luống.
+	for row, z := range []float64{-6, -2.4, 1.2} {
+		for col, x := range []float64{15.8, 17.6, 19.4, 21.2} {
+			park.Items = append(park.Items, Item{ID: fmt.Sprintf("luong_%d", row*4+col), Kind: "bed", Label: "Luống cộng đồng", Emo: "🌱", X: x, Z: z, R: 1.1})
+		}
+	}
 
 	village := &Zone{ID: "village", Title: "Làng Hypex", HalfX: 115, HalfZ: 125, Outdoor: true, Capacity: 50,
 		Spawns: []Vec{{0, 14}, {2, 14}, {-2, 14}}, Items: []Item{}, Obstacles: []Obstacle{{0, 0, 5, 5, 9}}}

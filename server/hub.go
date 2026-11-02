@@ -30,9 +30,11 @@ type Hub struct {
 	lastPublic  map[*Session]string
 
 	staff       map[string]string // username → mod | econ | admin
+	devWarp     bool              // -devwarp: cho phép "go" nhảy khu, chỉ để chụp ảnh QA
 	maintenance bool
 	maintText   string
 	festival    *Festival
+	weekly      *Weekly
 }
 
 func NewHub(store *Store, bal Balance) *Hub {
@@ -42,7 +44,8 @@ func NewHub(store *Store, bal Balance) *Hub {
 		fest = &Festival{st: FestivalState{Name: "Hội đèn lồng mùa thu", Goal: 5000}, path: filepath.Join(store.dir, "festival.json")}
 	}
 	h := &Hub{store: store, bal: bal, sessions: map[string]*Session{}, homes: map[string]*Room{},
-		homeInvites: map[string]homeInvite{}, lastPublic: map[*Session]string{}, staff: map[string]string{}, festival: fest}
+		homeInvites: map[string]homeInvite{}, lastPublic: map[*Session]string{}, staff: map[string]string{}, festival: fest,
+		weekly: OpenWeekly(store.dir)}
 	go h.contractJanitor()
 	return h
 }
@@ -149,17 +152,19 @@ type inMsg struct {
 	Shirt string `json:"shirt"`
 	Sex   string `json:"sex"`
 	// hành động
-	RID     string  `json:"rid"`
-	A       string  `json:"a"`
-	ID      string  `json:"id"`
-	To      string  `json:"to"`
-	Slot    string  `json:"slot"`
-	Eat     bool    `json:"eat"`
-	I       int     `json:"i"`
-	Elapsed float64 `json:"elapsed"`
-	Target  string  `json:"target"`
-	Mode    string  `json:"mode"`
-	Side    string  `json:"side"`
+	RID     string       `json:"rid"`
+	A       string       `json:"a"`
+	ID      string       `json:"id"`
+	To      string       `json:"to"`
+	Slot    string       `json:"slot"`
+	Eat     bool         `json:"eat"`
+	I       int          `json:"i"`
+	Elapsed float64      `json:"elapsed"`
+	Target  string       `json:"target"`
+	Run     bool         `json:"run"` // gói "in": đang giữ nút chạy
+	Ev      [][2]float64 `json:"ev"`  // dig_finish: [giây từ lúc giằng co, 1 giữ / 0 thả]
+	Mode    string       `json:"mode"`
+	Side    string       `json:"side"`
 	// xã hội & nhà
 	Owner    string         `json:"owner"`
 	On       bool           `json:"on"`
@@ -616,5 +621,12 @@ func catalog(b Balance) map[string]any {
 		"tails": TailKinds, "eyes": EyeKinds, "decors": Decors, "landTiers": LandTiers, "coopCost": CoopCost,
 		"roofs": RoofColors, "homeCap": HomeCapacity, "homeObjLimit": HomeObjLimit, "emotes": Emotes,
 		"titles": TitleDefs, "festivalAmounts": FestivalAmounts, "bagCap": BagCapacity, "reconnectSec": b.ReconnectGrace.Seconds(),
+		// PLAN_LOGIC_GAME
+		"walkSpeed": WalkSpeed, "sprintMult": SprintMult, "staminaSec": StaminaSec, "tugTiers": TugTiers, "digXP": DigXP,
+		"items": Items, "storageCap": StorageCap, "levelRewards": LevelRewards, "checkInRewards": CheckInRewards,
+		"species": Species, "eggSpecies": EggSpecies, "eggKinds": EggKinds, "seeds": Seeds,
+		"maxBusTokens": MaxBusTokens, "villageFare": VillageFare,
+		"houseDesigns": HouseDesigns, "landPlaces": LandPlaces, "materialNames": MaterialNames, "comfort": Comfort,
+		"weeklyKinds": WeeklyKinds, "gameDay": GameDay.Seconds(),
 	}
 }

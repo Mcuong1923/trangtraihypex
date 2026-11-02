@@ -88,48 +88,114 @@
 
 <!-- HUD -->
 <div id="hud" hidden>
+  <svg class="sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden">
+    <defs>
+      <symbol id="i-bag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8V6a5 5 0 0 1 10 0v2"/><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M9 14h6"/></symbol>
+      <symbol id="i-quest" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2.4"/><path d="M9 3.6h6v3H9z"/><path d="M9 12.4l2 2 4-4"/></symbol>
+      <symbol id="i-shop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16"/><path d="M5.2 9 3.6 13.2h16.8L18.8 9"/><path d="M6.5 13.5V20M17.5 13.5V20"/><path d="M4 20h16"/><path d="M8 16.5h8"/></symbol>
+      <symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.2C10 4.7 7.4 4.1 4.4 4.6v13.2c3-.5 5.6.1 7.6 1.7 2-1.6 4.6-2.2 7.6-1.7V4.6c-3-.5-5.6.1-7.6 1.6z"/><path d="M12 6.2v13.3"/><path d="M15.2 9.4c.9-1.1 2.2.9 3.1-.2"/></symbol>
+      <symbol id="i-wardrobe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4a2.5 2.5 0 0 1 2.5 2.5c0 .7-.3 1.3-.7 1.7"/><path d="M12 8.4 5 13.9a1.5 1.5 0 0 0 1.8 2.4L12 13.4l5.2 2.9a1.5 1.5 0 0 0 1.8-2.4L12 8.4z"/></symbol>
+      <symbol id="i-friends" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7.5" r="3"/><path d="M3 19.5c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><circle cx="16.4" cy="7.5" r="2.6"/><path d="M11.7 19.5c.2-2.6 2.1-4.2 4.7-4.4 1.7-.1 3 .5 3.8 1.7"/></symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3H9l-5 4z"/></symbol>
+      <symbol id="i-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7.5l9 6 9-6"/></symbol>
+      <symbol id="i-guild" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v18"/><path d="M5 4h13l-2 3 2 3H5"/></symbol>
+      <symbol id="i-help" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.4 9.4a2.6 2.6 0 1 1 3.5 2.4c-.8.3-.9 1-.9 1.7"/><path d="M12 17.2h.01"/></symbol>
+      <symbol id="i-photo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+      <symbol id="i-sound" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6"/></symbol>
+      <symbol id="i-sound-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9l5 6M21 9l-5 6"/></symbol>
+      <symbol id="i-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="7" cy="17" r="2" fill="currentColor" stroke="none"/></symbol>
+      <symbol id="i-map" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/></symbol>
+      <symbol id="i-reset" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.4-5.9"/><path d="M3.5 3.5v4h4"/></symbol>
+      <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.8"/></symbol>
+      <symbol id="i-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3.4"/></symbol>
+      <symbol id="i-wheat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V8"/><path d="M12 8c-2.5 0-4-1.5-4-4 2.5 0 4 1.5 4 4z"/><path d="M12 8c2.5 0 4-1.5 4-4-2.5 0-4 1.5-4 4z"/><path d="M12 12.5c-3 0-5-2-5-5 3 0 5 2 5 5z"/><path d="M12 12.5c3 0 5-2 5-5-3 0-5 2-5 5z"/></symbol>
+      <symbol id="i-plane" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></symbol>
+      <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="19" cy="12" r="1.7" fill="currentColor"/></symbol>
+      <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 12 3l9 8"/><path d="M5 9.5V20h14V9.5"/><path d="M10 20v-6h4v6"/></symbol>
+    </defs>
+  </svg>
+
+  <!-- Hồ sơ gà (trên trái) -->
   <div class="player-panel">
-    <div class="player-portrait">🐥<span id="lvTxt">Cấp 1</span></div>
-    <div class="player-copy"><small>TRANG TRẠI HYPEX</small><strong id="playerName">Gà con</strong>
+    <div class="player-portrait">
+      <svg class="chick" viewBox="0 0 72 80" role="img" aria-label="Chân dung gà">
+        <g fill="var(--feather-shade,#d8a62c)"><ellipse cx="16" cy="34" rx="7" ry="15" transform="rotate(-18 16 34)"/><ellipse cx="11" cy="46" rx="6" ry="13" transform="rotate(-28 11 46)"/><ellipse cx="21" cy="50" rx="5.5" ry="11" transform="rotate(-6 21 50)"/></g>
+        <g stroke="#e8922b" stroke-width="4" stroke-linecap="round"><line x1="33" y1="78" x2="33" y2="66"/><line x1="45" y1="78" x2="45" y2="66"/></g>
+        <ellipse cx="40" cy="52" rx="26" ry="25" fill="var(--feather,#f4cf3f)"/>
+        <ellipse cx="46" cy="58" rx="10" ry="15" fill="var(--feather-shade,#d8a62c)" transform="rotate(-14 46 58)"/>
+        <circle cx="46" cy="26" r="17" fill="var(--feather,#f4cf3f)"/>
+        <g fill="#e0401f"><circle cx="38" cy="11" r="4.6"/><circle cx="46" cy="8" r="5.2"/><circle cx="54" cy="11" r="4.6"/></g>
+        <path d="M30 24l-8 2 8 4z" fill="#e8922b"/>
+        <circle cx="48" cy="23" r="4.2" fill="#24170f"/>
+        <circle cx="49.4" cy="21.6" r="1.4" fill="#fff"/>
+      </svg>
+      <span id="lvTxt">Cấp 1</span>
+    </div>
+    <div class="player-copy">
+      <small>TRANG TRẠI HYPEX</small>
+      <strong id="playerName">Gà con</strong>
+      <div class="bar xp-mini"><div class="lab"><span>Kinh nghiệm</span><span id="xpLab">0/80</span></div><div class="track"><div class="fill xp" id="xpFill" style="width:0%"></div></div></div>
       <div class="bar" id="manaBar"><div class="lab"><span id="manaName">Độ no</span><span id="manaLab">100/100</span></div><div class="track"><div class="fill mana" id="manaFill" style="width:100%"></div></div></div>
-      <div class="bar xp-mini"><span id="xpLab">0/80</span><div class="track"><div class="fill xp" id="xpFill"></div></div></div>
     </div>
   </div>
-  <button class="location-pill" id="roomChip"><span class="net" id="netDot"></span><span><strong id="currentZoneName">Sảnh chuồng gà</strong><small id="roomTxt">Đang vào làng…</small></span><span class="chevron">⌄</span></button>
-  <div class="map-corner"><div class="wallet"><span>🌾</span><strong id="thocTxt">0</strong><small>THÓC</small></div>
+
+  <!-- Bảng tên khu (trên giữa) -->
+  <button class="location-pill" id="roomChip"><span class="lamp"></span><span class="net" id="netDot"></span><span class="pill-copy"><strong id="currentZoneName">Sảnh chuồng gà</strong><small id="roomTxt">Đang vào làng…</small></span><span class="lamp"></span></button>
+
+  <!-- Ví thóc + minimap (trên phải) -->
+  <div class="map-corner"><div class="wallet"><svg class="ic"><use href="#i-wheat"></use></svg><strong id="thocTxt">0</strong><small>THÓC</small></div>
     <button id="miniMapButton" aria-label="Mở bản đồ làng"><canvas id="minimapCanvas" width="280" height="240"></canvas><span class="map-compass">N ↑</span><span class="mini-label"><span id="miniLocation">Làng Hypex</span><kbd>M</kbd></span></button>
+    <div class="chip-row"><span class="sky-chip" id="skyChip" title="Trời trong làng">☀️</span><span class="sky-chip" id="ticketChip" title="Lượt xe buýt miễn phí" hidden>🎫 2/2</span></div>
     <small id="localPopulation">Một ngôi làng để trở về</small>
   </div>
   <div id="routeCard" hidden><span class="route-symbol">↗</span><div><small>ĐANG CHỈ ĐƯỜNG</small><strong id="routeName"></strong><span id="routeStep"></span></div><b id="routeDistance"></b><button id="cancelRoute" aria-label="Hủy chỉ đường">×</button></div>
   <div class="areaName" id="areaName"></div>
   <div id="routeArrow" hidden aria-hidden="true"><span>➤</span></div>
+  <!-- Làng sống: thẻ hướng dẫn, mời xe ôm, câu hỏi NPC, đang ngồi xe (PLAN_LOGIC_GAME 5–8) -->
+  <div id="tutCard" class="npc-card tut" hidden></div>
+  <div id="offerCard" class="npc-card offer" hidden></div>
+  <div id="askCard" class="npc-card ask" hidden></div>
+  <div id="rideCard" class="npc-card ride" hidden></div>
 
-  <div class="sidebtns">
-    <button class="iconbtn" id="btnMap" title="Bản đồ" aria-label="Bản đồ">⌖<span>Bản đồ</span></button>
-    <button class="iconbtn" id="btnQuest" title="Nhiệm vụ" aria-label="Nhiệm vụ">📋<span class="dot" id="questDot" hidden>!</span></button>
-    <button class="iconbtn" id="btnBag" title="Túi đồ" aria-label="Túi đồ">🎒</button>
-    <button class="iconbtn" id="btnBook" title="Sổ giun" aria-label="Sổ giun">📖</button>
-    <button class="iconbtn" id="btnWard" title="Tủ đồ" aria-label="Tủ đồ">👗</button>
-    <button class="iconbtn" id="btnChat" title="Chat chuồng" aria-label="Chat chuồng">💬<span class="dot" id="chatDot" hidden>•</span></button>
-    <button class="iconbtn" id="btnFriends" title="Bạn bè" aria-label="Bạn bè">👥<span class="dot" id="friendsDot" hidden></span></button>
-    <button class="iconbtn" id="btnMail" title="Thư Chim Chíp" aria-label="Thư Chim Chíp">📮<span class="dot" id="mailDot" hidden></span></button>
-    <button class="iconbtn" id="btnGuild" title="Hội Gà" aria-label="Hội Gà">🏰</button>
-    <button class="iconbtn" id="btnHelp" title="Hướng dẫn" aria-label="Hướng dẫn">❓</button>
-    <button class="iconbtn" id="btnPhoto" title="Chụp ảnh" aria-label="Chụp ảnh">📸</button>
-    <button class="iconbtn" id="btnSettings" title="Cài đặt" aria-label="Cài đặt">⚙️</button>
+  <!-- Bộ công cụ (phải dưới): 6 nút chính + nút xanh "..." -->
+  <div class="tool-tray">
+    <div class="tool-grid">
+      <button class="iconbtn" id="btnBag" title="Túi đồ" aria-label="Túi đồ"><svg><use href="#i-bag"></use></svg></button>
+      <button class="iconbtn" id="btnQuest" title="Nhiệm vụ" aria-label="Nhiệm vụ"><svg><use href="#i-quest"></use></svg><span class="dot" id="questDot" hidden>!</span></button>
+      <button class="iconbtn" id="btnShop" title="Cửa hàng" aria-label="Cửa hàng"><svg><use href="#i-shop"></use></svg></button>
+      <button class="iconbtn" id="btnBook" title="Sổ giun" aria-label="Sổ giun"><svg><use href="#i-book"></use></svg></button>
+      <button class="iconbtn" id="btnWard" title="Tủ đồ" aria-label="Tủ đồ"><svg><use href="#i-wardrobe"></use></svg></button>
+      <button class="iconbtn" id="btnFriends" title="Bạn bè" aria-label="Bạn bè"><svg><use href="#i-friends"></use></svg><span class="dot" id="friendsDot" hidden></span></button>
+    </div>
+    <div class="tool-grid extra">
+      <button class="iconbtn" id="btnChat" title="Chat chuồng" aria-label="Chat chuồng"><svg><use href="#i-chat"></use></svg><span class="dot" id="chatDot" hidden>•</span></button>
+      <button class="iconbtn" id="btnMail" title="Thư Chim Chíp" aria-label="Thư Chim Chíp"><svg><use href="#i-mail"></use></svg><span class="dot" id="mailDot" hidden></span></button>
+      <button class="iconbtn" id="btnGuild" title="Hội Gà" aria-label="Hội Gà"><svg><use href="#i-guild"></use></svg></button>
+      <button class="iconbtn" id="btnHelp" title="Hướng dẫn" aria-label="Hướng dẫn"><svg><use href="#i-help"></use></svg></button>
+      <button class="iconbtn" id="btnPhoto" title="Chụp ảnh" aria-label="Chụp ảnh"><svg><use href="#i-photo"></use></svg></button>
+      <button class="iconbtn" id="btnSound" title="Âm thanh" aria-label="Âm thanh"><svg><use href="#i-sound"></use></svg></button>
+      <button class="iconbtn" id="btnSettings" title="Cài đặt" aria-label="Cài đặt"><svg><use href="#i-settings"></use></svg></button>
+      <button class="iconbtn" id="socialCamera" title="Góc sảnh / theo gà" aria-label="Góc sảnh / theo gà"><svg><use href="#i-camera"></use></svg></button>
+    </div>
+    <button id="btnMore" class="more-button" aria-label="Mở thêm công cụ"><svg><use href="#i-more"></use></svg></button>
   </div>
-  <button id="btnMore" class="more-button" aria-label="Mở thêm công cụ">•••</button>
+
   <div class="emotes" id="emotes"></div>
-  <div class="camera-tools"><button id="resetCamera" title="Đặt lại góc nhìn">◉</button><button id="socialCamera" title="Góc sảnh / theo gà">◫</button><button id="toggleHUD" title="Ẩn giao diện">▣</button></div>
-  <form id="quickChat"><span>◌</span><input id="quickChatInput" maxlength="160" autocomplete="off" placeholder="Nói gì đó với mọi người…"><button type="submit" aria-label="Gửi tin nhắn">↗</button></form>
-  <div class="control-hint">W A S D / chạm đất <span>đi</span> · Kéo <span>xoay góc nhìn</span> · Lăn <span>zoom</span> · M <span>bản đồ</span></div>
+
+  <!-- Công cụ góc dưới trái: camera, bản đồ, ẩn HUD -->
+  <div class="camera-tools"><button id="resetCamera" title="Đặt lại góc nhìn" aria-label="Đặt lại góc nhìn"><svg><use href="#i-reset"></use></svg></button><button id="btnMap" title="Bản đồ" aria-label="Bản đồ"><svg><use href="#i-map"></use></svg></button><button id="toggleHUD" title="Ẩn giao diện" aria-label="Ẩn giao diện"><svg><use href="#i-eye"></use></svg></button></div>
+
+  <!-- Chat giữa dưới -->
+  <form id="quickChat"><input id="quickChatInput" maxlength="160" autocomplete="off" placeholder="Nói gì đó với mọi người…"><button type="submit" aria-label="Gửi tin nhắn"><svg><use href="#i-plane"></use></svg></button></form>
+  <div class="control-hint">W A S D / chạm đất <span>đi</span> · Shift <span>chạy</span> · E <span>tương tác</span> · Kéo <span>xoay góc nhìn</span> · M <span>bản đồ</span></div>
 
   <div id="bubbles"></div>
   <div id="toasts"></div>
   <div id="inviteBar" hidden></div>
   <div id="decorBar" hidden></div>
-  <button id="homeBtn" hidden>🏠 Về sảnh chuồng</button>
+  <button id="homeBtn" hidden><svg><use href="#i-home"></use></svg> Về sảnh chuồng</button>
   <div id="joy"><div id="joyNub"></div></div>
+  <button id="sprintBtn" aria-label="Chạy nhanh (giữ Shift)" title="Giữ để chạy nhanh (Shift)"><span class="ico">🏃</span><span id="sprintTxt">Chạy</span></button>
   <button id="interact" hidden><span id="interactTxt">Tương tác</span><span class="k">phím E</span></button>
 </div>
 

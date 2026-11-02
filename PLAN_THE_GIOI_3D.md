@@ -2,6 +2,8 @@
 
 Ngày: 01/11/2026 · Bản thiết kế 1.1 · Trạng thái: đã triển khai R0–R4 và một phần R5 trên Go + Three.js (xem mục 14 và [TIEN_DO.md](TIEN_DO.md)); chưa đo FPS trên điện thoại thật.
 
+**Cập nhật mỹ thuật 02/11/2026:** dùng [PLAN_GIAO_DIEN_BO_2.md](PLAN_GIAO_DIEN_BO_2.md) làm chuẩn mới cho camera đối chiếu, kiến trúc, vật liệu, nhân vật và HUD theo 11 ảnh bộ 2. Plan bộ 2 chưa được triển khai; trạng thái R0–R5 ở tài liệu này chỉ thuộc đợt làm thế giới trước. Phần mô tả code “cần thay đổi” tại mục 2.2 bên dưới là căn cứ lịch sử của đợt đó, không phải hiện trạng mới nhất.
+
 Tài liệu này là đặc tả mới cho camera, sảnh, NPC, bản đồ, đường đi và chuyển khu. Khi có khác biệt về các phần đó, dùng tài liệu này thay cho thiết kế cũ trong PLAN.md bản 0.3. Các luật tài khoản, mana, giun, thóc, nhà, thời trang, xe, PK và Hội Gà vẫn theo [PLAN.md](PLAN.md), trừ những điều chỉnh về cách tiếp cận địa điểm được nêu rõ bên dưới.
 
 ## 1. Kết quả cần đạt

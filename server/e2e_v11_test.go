@@ -51,7 +51,7 @@ func TestBusToVenSuoi(t *testing.T) {
 		t.Fatalf("tới Bến Ven Suối: %v %v", w["zone"], w["room"])
 	}
 	me := w["me"].(map[string]any)
-	if me["booking"] != nil || me["tripsLeft"].(float64) != FreeTrips-1 {
+	if me["booking"] != nil || me["tripsLeft"].(float64) != MaxBusTokens-1 {
 		t.Fatalf("quyết toán chuyến: %v còn %v lượt", me["booking"], me["tripsLeft"])
 	}
 
@@ -212,7 +212,7 @@ func (e *env) roomOf(t *testing.T) *Room {
 
 func TestContractBuildFlow(t *testing.T) {
 	e := newEnv(t, t.TempDir())
-	o, oid := e.seeded(t, "chu", "Gà Chủ", func(a *Account) { a.Level = 3; a.Thoc = 1000 })
+	o, oid := e.seeded(t, "chu", "Gà Chủ", func(a *Account) { a.Level = 3; a.Thoc = 1000; a.Items["go"], a.Items["dinh"] = 20, 10 })
 	home, _ := e.store.Homes.Get(oid, "Gà Chủ")
 	home.Tier = 1
 	e.store.Homes.Save(home)
@@ -308,14 +308,14 @@ func TestLeaveStationCancelsBooking(t *testing.T) {
 	a.goZone("ra_ben", "station")
 	a.walkToItem("station", "tram_bus")
 	a.mustOK("book", nil)
-	if a.num("tripsLeft") != FreeTrips-1 {
+	if a.num("tripsLeft") != MaxBusTokens-1 {
 		t.Fatal("giữ một lượt miễn phí")
 	}
 	// Rời bến trước giờ xe chạy: vé tự huỷ, lượt trả lại đúng một lần.
 	a.goZone("", "village") // đi bộ ra khỏi bến
 	a.toastHas("rời bến")
 	r := a.mustOK("title", msg{"id": ""})
-	if r["me"].(map[string]any)["tripsLeft"].(float64) != FreeTrips || r["me"].(map[string]any)["booking"] != nil {
+	if r["me"].(map[string]any)["tripsLeft"].(float64) != MaxBusTokens || r["me"].(map[string]any)["booking"] != nil {
 		t.Fatal("rời bến trước giờ chạy phải trả lượt")
 	}
 }

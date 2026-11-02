@@ -2,7 +2,9 @@
 
 Phiên bản: 0.4 — 01/11/2026. Cập nhật: camera điều khiển theo nhân vật, sảnh lớn có chủ chuồng ngồi trên bục và NPC sinh hoạt; các khu nằm ngoài chuồng, có bản đồ và đường đi thực tế.
 
-**Đặc tả ưu tiên cho đợt sửa giao diện/thế giới hiện tại: [PLAN_THE_GIOI_3D.md](PLAN_THE_GIOI_3D.md).** Tài liệu đó chứa bố cục, camera, NPC, topology, bản đồ, luồng đi lại, danh sách file cần sửa và tiêu chí nghiệm thu. Các mục V1/V1.1/V1.2 bên dưới là phân kỳ sản phẩm ban đầu, không phải báo cáo tính năng đang có; xem TIEN_DO.md và code để đối chiếu. Đây là kế hoạch, chưa phải cam kết thời gian hoặc sức chứa đã kiểm chứng.
+**Đặc tả mỹ thuật ưu tiên từ 02/11/2026: [PLAN_GIAO_DIEN_BO_2.md](PLAN_GIAO_DIEN_BO_2.md)**, dựa trên đủ 11 ảnh nâng cấp trong `assets/illustrations/bo-2`. Tài liệu mới quy định bố cục, camera đối chiếu, HUD, asset và nghiệm thu hình ảnh; thay định hướng low-poly tối giản bằng nhân vật mềm và môi trường chi tiết theo bộ 2. Đây là kế hoạch chưa triển khai.
+
+**Đặc tả thế giới và di chuyển: [PLAN_THE_GIOI_3D.md](PLAN_THE_GIOI_3D.md).** Tài liệu đó tiếp tục quy định NPC, topology, bản đồ và luồng đi lại; phần hình ảnh xung đột áp dụng plan bộ 2. Các mục V1/V1.1/V1.2 bên dưới là phân kỳ sản phẩm ban đầu, không phải báo cáo tính năng đang có; xem TIEN_DO.md và code để đối chiếu. Đây là kế hoạch, chưa phải cam kết thời gian hoặc sức chứa đã kiểm chứng.
 
 ## 1. Định hướng và những điểm đã chốt
 
@@ -183,12 +185,12 @@ flowchart TB
 
 ### 7.1. Luật đào
 
-Đi tới điểm đất trong phạm vi cho phép → bấm tương tác → hoàn thành mini-game canh nhịp ngắn → máy chủ chốt kết quả → giun vào túi. Không yêu cầu spam chạm liên tục để đào.
+Đi tới điểm đất trong phạm vi cho phép → bấm tương tác → gà mổ đất, giun ló → **giằng co giữ/thả** (giun hiếm kéo lâu hơn và có thể chạy thoát) → máy chủ chạy lại mô phỏng để chốt kết quả → giun vào túi. Không yêu cầu spam chạm liên tục để đào. *Luật giằng co hiện hành: [PLAN_LOGIC_GAME.md](PLAN_LOGIC_GAME.md) mục 4.*
 
 - V1 có 5 loại giun từ thường đến huyền thoại, với bảng xác suất và giá rõ ràng ở mục 7.2. Nhiều màu/hiệu ứng không đồng nghĩa phải tạo 5 bộ khung hoạt ảnh khác nhau.
 - Tài nguyên cơ bản có lượt thu hoạch theo người chơi để người mới không bị người khác lấy hết. Hiệu ứng đào vẫn thấy được trong phòng.
 - Hồi chiêu theo tài khoản và nhóm bãi đào, không theo mã phòng.
-- Giới hạn khởi điểm: tối đa 1 phần thưởng mỗi 45 giây và 120 lượt có thưởng/ngày, cộng thêm kiểm tra thời gian hoàn thành thao tác. Đây là cấu hình thử nghiệm, không phải cân bằng cuối.
+- Giới hạn: 120 lượt có thưởng/ngày; hồi đất **8 giây** ở bộ `live` (bộ `plan` giữ 45 giây để đối chiếu), cộng thêm kiểm tra thời gian hoàn thành thao tác. Giun chạy thoát không tính vào 120 lượt (PLAN_LOGIC_GAME 4.4, 17).
 - Không coi mini-game là cách chống bot tuyệt đối. Máy chủ kiểm tra tốc độ, khoảng cách, trạng thái và mẫu hành vi bất thường.
 - Túi đầy: báo rõ, không âm thầm xóa vật phẩm. Phần thưởng chưa nhận đi vào hàng chờ có giới hạn hoặc dừng lượt trước khi bắt đầu.
 
@@ -241,7 +243,7 @@ Công thức khởi điểm: XP để đi từ cấp L lên L+1 = 80 + 40 × (L�
 
 Trong sản phẩm dùng nhãn **“Mana · Độ no”**, một thanh duy nhất từ 0–100. Mục đích là sức ăn/sinh hoạt của gà, chưa thêm một thanh năng lượng thứ hai gây khó hiểu.
 
-Quy tắc thử nghiệm: giảm 1 điểm/phút khi phiên online còn hoạt động và thêm 1 điểm cho mỗi lượt đào có thưởng hoàn thành. Không trừ thêm vì chat, PK hoặc đi xe ở bản đầu. Người mới bắt đầu 100; sau đó đăng nhập, lên cấp, đổi chuồng hoặc qua ngày không tự hồi. Chỉ mua và ăn thức ăn, hoặc trả phí chế biến giun, mới hồi thanh.
+Quy tắc hiện hành (bộ `live`, PLAN_LOGIC_GAME 2.2): giảm **4,5 điểm/phút** khi phiên online còn hoạt động (đầy bụng dùng được khoảng 15–20 phút) và thêm **0,4 điểm** cho mỗi lượt đào; ngồi ổ tụt chậm một nửa, ngủ ổ trong nhà đã xây thì hồi lại. Bộ `plan` giữ số cũ (1 điểm/phút, +1 mỗi lượt) để đối chiếu. Không trừ thêm vì chat, PK hoặc đi xe ở bản đầu. Người mới bắt đầu 100; sau đó đăng nhập, lên cấp, đổi chuồng hoặc qua ngày không tự hồi. Chỉ mua và ăn thức ăn, hoặc trả phí chế biến giun, mới hồi thanh.
 
 | Trạng thái | Điều kiện đề xuất | Hệ quả |
 | --- | --- | --- |
@@ -249,7 +251,7 @@ Quy tắc thử nghiệm: giảm 1 điểm/phút khi phiên online còn hoạt �
 | Sắp đói | Mana từ 1 đến dưới 20, chưa có phạt lưu lại | Thanh chuyển màu, gà có biểu cảm đói, gợi ý mở túi/cửa hàng |
 | Đói | Mana =0, chưa tích đủ 5 phút online tại 0 kể từ lần hồi đạt 20 gần nhất | Cảnh báo và đếm ngược đến hình phạt; vẫn kiếm ăn được |
 | Đói kéo dài | 5 đến dưới 10 phút online tại 0 | Đi bộ chậm 15%, thao tác đào kéo dài 25% |
-| Kiệt sức | Từ 10 phút online tại 0 | Giữ giảm tốc, dừng đào có thưởng, không nhận PK mới hoặc lái xe; vẫn chat, mua/ăn, đi xe làm khách và làm việc cứu đói |
+| Kiệt sức | Từ 10 phút online tại 0 (bộ `live`: 6 phút; đói kéo dài từ 3 phút) | Giữ giảm tốc, không nhận PK mới hoặc lái xe; **vẫn đào được** nhưng chỉ ra giun thường/khá hiếm và mổ chậm hơn (PLAN_LOGIC_GAME 2.3, 4.6); vẫn chat, mua/ăn, ăn sống giun, đi xe làm khách |
 
 Các mốc là phương án đề xuất, có thể đổi sau playtest. Không trừ XP/thóc tự động hay tạo nợ tăng dần. Ăn đưa mana lên ít nhất 20 thì gỡ phạt và reset bộ đếm đói; hồi dưới 20 thì giữ mức phạt đã có cho đến khi đạt ngưỡng này, nhưng bộ đếm chỉ tăng khi mana bằng 0. Trạng thái và thời gian do máy chủ tính, dùng cùng nguồn dữ liệu xuyên phòng.
 
@@ -276,7 +278,8 @@ Thức ăn là chi phí sinh hoạt bắt buộc để tránh hình phạt đói
 
 | Hạng mục | Giá đề xuất |
 | --- | --- |
-| Thưởng hoàn thành hướng dẫn, một lần | 100 thóc |
+| Quà khởi nghiệp, một lần mỗi tài khoản (PLAN_LOGIC_GAME 2.3) | 100 thóc |
+| Thưởng hoàn thành hướng dẫn, một lần | 50 thóc, 3 cám, 1 trứng thường (bộ `live`) |
 | Tổ nhỏ ban đầu + một đồ trang trí | Miễn phí, không bán/chuyển nhượng |
 | Tổng thưởng 3 nhiệm vụ ngày | 60 thóc |
 | Khẩu phần cám hoặc giun thức ăn nuôi | 5 thóc, +20 mana, 0 XP |
@@ -286,10 +289,10 @@ Thức ăn là chi phí sinh hoạt bắt buộc để tránh hình phạt đói
 | Phụ kiện cơ bản | 200–400 thóc |
 | Váy/vest theo bộ | 500–1.200 thóc tùy mẫu, chỉ đổi ngoại hình |
 | Nâng tổ lên mảnh đất riêng đầu tiên | 1.200 thóc |
-| Thuê Bò Mộc xây chuồng theo mẫu cơ bản | 500 thóc; tổng giá hiển thị trước |
+| Bò Mộc xây nhà theo thiết kế + vật liệu | Chuồng nhỏ rơm 200 thóc + 20 rơm + 5 gỗ … nhà hai gian gạch 1.800 thóc + vật liệu (PLAN_LOGIC_GAME 13.3) |
 | Mở rộng đất lần đầu | 3.000 thóc |
 | Xe đạp có ghế sau / xe máy / ô tô | 800 / 3.000 / 10.000 thóc; mở theo giai đoạn |
-| Vé công cộng sau khi hết lượt miễn phí | 10 thóc tuyến gần, 25 thóc tuyến xa; mở theo giai đoạn |
+| Vé công cộng sau khi hết lượt miễn phí | Vòng làng 3 thóc, liên trại 10 thóc; xe ôm 1–2 thóc (mưa +1) |
 
 Mô phỏng sơ bộ theo bảng mới: 20 lượt đào thành công có kỳ vọng 192 thóc nếu bán hết, hoặc 360 XP nếu chế biến và ăn toàn bộ, khi đủ tiền phí và khả năng tiêu thụ. Các kết quả hiếm làm trung bình cao hơn trải nghiệm của nhiều phiên ngắn; đây không phải khoản thu bảo đảm.
 
@@ -337,8 +340,8 @@ Giá thử ở bảng 8.2; tốc độ khởi điểm xe đạp/xe máy/ô tô k
 
 **Chuồng công cộng** là một bản sao/kênh của cùng nơi; **trang trại/vùng** là điểm đến có bản đồ và nội dung khác. “Đổi chuồng” trong cùng vùng, mời bạn vào cùng bản sao và thăm chuồng riêng trong vùng không tốn vé. Phí giao thông áp dụng cho chuyến sang vùng khác, không áp cho việc phân tải máy chủ.
 
-- Đề xuất 3 chuyến công cộng miễn phí/ngày/tài khoản, một lượt là một chiều cho một người, reset lúc 00:00 Asia/Ho_Chi_Minh. Không cộng dồn, không bán/chuyển lượt; đổi chuồng hay thiết bị không reset.
-- Khi còn lượt miễn phí, ưu tiên dùng lượt. Hết lượt thì hiện giá tuyến và yêu cầu xác nhận trả thóc. Các tuyến gần/xa đề xuất 10/25 thóc; mỗi hành khách thanh toán hoặc dùng lượt của chính mình.
+- Lượt miễn phí (đã đổi theo PLAN_LOGIC_GAME 7.2): **tối đa 2 lượt, hồi 1 lượt mỗi 5 phút** theo giờ thực (cả khi offline), dùng chung cho xe buýt vòng làng và xe liên trại. Không bán/chuyển lượt; đổi chuồng hay thiết bị không reset.
+- Khi còn lượt miễn phí, ưu tiên dùng lượt. Hết lượt thì hiện giá tuyến và yêu cầu xác nhận trả thóc: **vòng làng 3 thóc, xe liên trại 10 thóc**, về Hypex luôn miễn phí; xe ôm 1–2 thóc theo quãng đường. Mỗi hành khách thanh toán hoặc dùng lượt của chính mình.
 - Bảng bến hiển thị đích đến, điều kiện cấp, thời gian chờ tối đa đề xuất 30 giây, ghế trống, lượt còn lại và phí. Chuyến vẫn chạy khi không đủ 8 khách; không buộc chờ đầy xe.
 - Luồng: chọn tuyến → giữ ghế/lượt hoặc thóc → xác nhận → máy chủ đích nhận chỗ → hoàn tất chuyến và quyết toán. Không có ghế thì không trừ tiền/lượt.
 - Hủy trước khởi hành hoặc lỗi hệ thống chưa bàn giao thành công: trả đúng khoản thóc/lượt đã giữ một lần. Đã đến đích mà mất mạng trước màn thông báo thì đọc lại trạng thái chuyến, không tự hoàn tiền.

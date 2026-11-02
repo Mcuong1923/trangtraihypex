@@ -2,6 +2,8 @@
 
 11 ảnh do người dùng cung cấp, thêm vào project ngày 31/10/2026. Giữ nguyên tên, kích thước và nội dung ảnh gốc. Đây là ảnh tham chiếu thiết kế; không phải mô hình 3D.
 
+Bộ ảnh thứ hai (11 ảnh, 02/11/2026) nằm trong [bo-2/](bo-2/README.md).
+
 | STT | Ảnh minh họa | Kích thước |
 | --- | --- | --- |
 | 1 | [Sảnh nông trại gà tối giản-1.png](S%E1%BA%A3nh%20n%C3%B4ng%20tr%E1%BA%A1i%20g%C3%A0%20t%E1%BB%91i%20gi%E1%BA%A3n-1.png) | 1672 × 941 |

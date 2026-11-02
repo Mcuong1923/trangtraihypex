@@ -70,7 +70,7 @@ func (r *Room) cancelTrip(p *Player, why string) {
 	if bk := p.acc.Booking; bk == nil || bk.State != "held" {
 		return
 	}
-	msg, err := p.acc.CancelBooking(time.Now())
+	msg, err := p.acc.CancelBooking(time.Now(), r.hub.bal)
 	if err != nil {
 		return
 	}
@@ -237,7 +237,7 @@ func (r *Room) arriveV11(p *Player, arr *arrival, now time.Time) {
 			p.dirty = true
 		} else if bk.State == "held" {
 			// Vé giữ chỗ không còn chuyến (máy chủ khởi động lại / phiên mới): hoàn đúng một lần.
-			if msg, err := p.acc.CancelBooking(now); err == nil {
+			if msg, err := p.acc.CancelBooking(now, r.hub.bal); err == nil {
 				r.hub.store.Save(p.acc)
 				r.toast(p, "warn", "Chuyến xe trước chưa chạy. "+msg)
 			}
@@ -278,17 +278,17 @@ func (r *Room) v11Act(p *Player, m *inMsg, reply func(ActResult), fail func(erro
 			return
 		}
 		txn(func() (ActResult, error) {
-			if n := p.acc.ClaimEggs(); n > 0 {
-				return ActResult{Msg: fmt.Sprintf("Vịt Bông tặng bạn %d quả trứng 🥚", n)}, nil
+			if n := p.acc.ClaimEggs(now); n > 0 {
+				return ActResult{Msg: fmt.Sprintf("Vịt Bông trao bạn %d quả trứng từ quà lên cấp 🥚", n)}, nil
 			}
-			return ActResult{}, fmt.Errorf("Chưa tới mốc nhận trứng (cấp %v).", EggMilestones)
+			return ActResult{}, errors.New("Chưa có trứng mới. Trứng có trong quà lên cấp 4, 5, 7, 8, 9, 10.")
 		})
 	case "incubate":
 		if !near("npc_duck", "Gặp Vịt Bông để đặt trứng vào ổ ấp.") {
 			return
 		}
 		txn(func() (ActResult, error) {
-			inc, err := p.acc.StartIncubation(now, b)
+			inc, err := p.acc.StartIncubation(m.ID, now, b)
 			if err != nil {
 				return ActResult{}, err
 			}
@@ -299,12 +299,13 @@ func (r *Room) v11Act(p *Player, m *inMsg, reply func(ActResult), fail func(erro
 			return
 		}
 		txn(func() (ActResult, error) {
-			c, err := p.acc.Hatch(m.ID, m.Text, r.rng.Float64(), now)
+			c, err := p.acc.Hatch(m.ID, m.Text, r.rng.Float64(), r.rng.Float64(), now)
 			if err != nil {
 				return ActResult{}, err
 			}
 			r.broadcastLook(p)
-			return ActResult{Msg: "🐣 Chào mừng " + c.Name + " ra đời!", Data: map[string]any{"pet": c}}, nil
+			sp := speciesByID(c.Species)
+			return ActResult{Msg: fmt.Sprintf("🐣 Chào mừng %s %s ra đời! Kỹ năng: %s.", sp.Name, c.Name, sp.AbilityName), Data: map[string]any{"pet": c}}, nil
 		})
 	case "follow", "rename_pet", "care":
 		txn(func() (ActResult, error) {
@@ -345,7 +346,7 @@ func (r *Room) v11Act(p *Player, m *inMsg, reply func(ActResult), fail func(erro
 			return
 		}
 		txn(func() (ActResult, error) {
-			bk, err := p.acc.Book(r.Region, to, now)
+			bk, err := p.acc.Book(r.Region, to, now, b)
 			if err != nil {
 				return ActResult{}, err
 			}
@@ -361,7 +362,7 @@ func (r *Room) v11Act(p *Player, m *inMsg, reply func(ActResult), fail func(erro
 		})
 	case "cancel_booking":
 		txn(func() (ActResult, error) {
-			msg, err := p.acc.CancelBooking(now)
+			msg, err := p.acc.CancelBooking(now, b)
 			r.broadcastBus()
 			return ActResult{Msg: msg}, err
 		})
@@ -442,7 +443,7 @@ func (r *Room) v11Act(p *Player, m *inMsg, reply func(ActResult), fail func(erro
 			}
 			d.ride.Seats[i] = p
 			p.rideOf = d
-			p.dig = nil
+			r.abandonDig(p)
 			r.broadcastRide(d)
 			r.broadcastZone(p.zone, nil, map[string]any{"t": "pride", "pid": p.PID, "rideOf": d.PID})
 			reply(ActResult{OK: true, Msg: "Đã lên xe của " + d.acc.Char.Name})

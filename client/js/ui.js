@@ -44,7 +44,7 @@ export function toast(text, kind = '') {
   el.textContent = text;
   $('toasts').appendChild(el);
   while ($('toasts').children.length > 4) $('toasts').firstChild.remove();
-  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 400); }, 2800);
+  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 400); }, kind === 'npc' ? 6500 : 2800);
 }
 
 // Kết quả hành động: hiện thông báo, ghi chú phụ (nhiệm vụ, kỷ lục) và cập nhật bản nhìn tài khoản.
@@ -66,14 +66,17 @@ export function applyMe(me) {
 
 // Bong bóng chat / biểu cảm gắn với một mesh trong cảnh.
 const bubbles = [];
-export function bubble(mesh, text, { emo = false, ttl = 3.2 } = {}) {
+// name: bong bóng NPC (nền kem, tên NPC phía trên); me: câu NPC nói với chính mình (viền cam);
+// lift: nâng cao hơn (tài xế trên xe buýt, NPC ngồi trên bục).
+export function bubble(mesh, text, { emo = false, ttl = 3.2, name = '', me = false, lift = 0 } = {}) {
   if (!mesh) return;
   for (const b of bubbles) if (b.mesh === mesh && b.emo === emo) b.ttl = 0;
   const el = document.createElement('div');
-  el.className = 'bubble' + (emo ? ' emo' : '');
-  el.textContent = text;
+  el.className = 'bubble' + (emo ? ' emo' : '') + (name ? ' npc' : '') + (me ? ' me' : '');
+  if (name) { const n = document.createElement('b'); n.textContent = name; el.appendChild(n); el.appendChild(document.createTextNode(text)); }
+  else el.textContent = text;
   $('bubbles').appendChild(el);
-  bubbles.push({ el, mesh, ttl, emo });
+  bubbles.push({ el, mesh, ttl, emo, lift });
 }
 const v = new window.THREE.Vector3();
 export function updateBubbles(dt, camera) {
@@ -82,7 +85,7 @@ export function updateBubbles(dt, camera) {
     b.ttl -= dt;
     if (b.ttl <= 0 || !b.mesh.parent) { b.el.remove(); bubbles.splice(i, 1); continue; }
     b.mesh.getWorldPosition(v);
-    v.y += b.emo ? 2.75 : 2.3;
+    v.y += (b.emo ? 2.75 : 2.3) + (b.lift || 0);
     v.project(camera);
     if (v.z > 1) { b.el.style.display = 'none'; continue; }
     b.el.style.display = '';

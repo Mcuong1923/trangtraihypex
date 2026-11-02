@@ -58,6 +58,11 @@ const SFX = {
   lose: () => tone(330, 0.5, { type: 'sawtooth', gain: 0.1, slide: -200 }),
   notify: () => { tone(880, 0.1, { gain: 0.15 }); tone(1175, 0.14, { gain: 0.12, delay: 0.1 }); },
   crow: () => { tone(500, 0.25, { type: 'sawtooth', gain: 0.08, slide: 300 }); tone(800, 0.5, { type: 'sawtooth', gain: 0.08, slide: -350, delay: 0.25 }); },
+  fail: () => tone(260, 0.25, { type: 'sawtooth', gain: 0.1, slide: -120 }),
+  honk: () => { tone(440, 0.12, { type: 'square', gain: 0.07 }); tone(440, 0.14, { type: 'square', gain: 0.07, delay: 0.17 }); },
+  bus: () => { tone(180, 0.4, { type: 'sawtooth', gain: 0.05, slide: 70 }); noise(0.3, { gain: 0.12, freq: 300 }); },
+  whoosh: () => noise(0.18, { gain: 0.14, freq: 1200 }),
+  speech: () => tone(700, 0.05, { type: 'triangle', gain: 0.05 }),
 };
 
 export function sfx(name) {

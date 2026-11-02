@@ -22,7 +22,7 @@ func testBalance() Balance {
 	return finalize(Balance{Name: "test", DigCooldown: 300 * time.Millisecond, DigDailyLimit: 120, DigMinDuration: 50 * time.Millisecond,
 		ManaDrainPerSec: 0.01, ManaPerDig: 1, HungerSlowSec: 300, HungerExhaustSec: 600,
 		RescueDuration: time.Second, RescueReward: 5, TutorialReward: 100, ShowcaseEvery: 60 * time.Second,
-		BuildDuration: time.Second})
+		BuildDuration: time.Second, StarterThoc: -1, TugSpeed: 10, BusLoopSpeed: 45, BusLoopDwell: 2 * time.Second, JoinGiftsOff: true}) // quà khởi nghiệp có test riêng; tắt để các test đếm thóc giữ nguyên
 }
 
 type env struct {
@@ -439,11 +439,41 @@ func (e *env) warp(c *client, to string) {
 func (c *client) dig(spot string) msg {
 	c.t.Helper()
 	r := c.mustOK("dig_start", msg{"id": spot})
-	time.Sleep(80 * time.Millisecond)
-	id := r["data"].(map[string]any)["id"]
-	out := c.mustOK("dig_stop", msg{"id": id, "elapsed": 0.07})
+	out := c.mustOK("dig_finish", c.tugPlan(r, true))
 	time.Sleep(320 * time.Millisecond) // chờ hồi đất của bộ cân bằng test
 	return out
+}
+
+// tugPlan chơi giằng co bằng chính mô phỏng của máy chủ (PlanTug, phản xạ tức thì) và chờ đúng thời gian
+// thật trước khi gửi; wait=false gửi ngay để thử chặn "xong sớm hơn đồng hồ".
+func (c *client) tugPlan(start msg, wait bool) msg {
+	c.t.Helper()
+	d := start["data"].(map[string]any)
+	var p TugParams
+	raw, _ := json.Marshal(d["params"])
+	json.Unmarshal(raw, &p)
+	bursts := TugBursts(uint32(d["seed"].(float64)), p)
+	var ev []TugEvent
+	var res TugResult
+	for _, th := range [][2]float64{{.4, .6}, {.3, .5}, {.45, .65}, {.2, .4}} {
+		ev = PlanTug(p, bursts, th[0], th[1], 0)
+		if res = SimulateTug(p, bursts, ev); res.Caught {
+			break
+		}
+	}
+	if wait {
+		lead := time.Duration(d["peckMs"].(float64)+d["revealMs"].(float64)) * time.Millisecond
+		time.Sleep(lead + time.Duration(res.End*float64(time.Second)) + 30*time.Millisecond)
+	}
+	evs := [][2]float64{}
+	for _, e := range ev {
+		h := 0.0
+		if e.Hold {
+			h = 1
+		}
+		evs = append(evs, [2]float64{e.T, h})
+	}
+	return msg{"id": d["id"], "ev": evs}
 }
 
 func TestEndToEnd(t *testing.T) {
@@ -513,34 +543,30 @@ func TestEndToEnd(t *testing.T) {
 	}
 	a.walkToItem("garden", "dat_a")
 	r0 := a.mustOK("dig_start", msg{"id": "dat_a"})
-	time.Sleep(10 * time.Millisecond)
-	if r := a.act("dig_stop", msg{"id": r0["data"].(map[string]any)["id"], "elapsed": 0}); r["ok"] == true {
-		t.Fatal("thao tác nhanh hơn ngưỡng tối thiểu phải bị từ chối")
+	if r := a.act("dig_finish", a.tugPlan(r0, false)); r["ok"] == true {
+		t.Fatal("xong giằng co sớm hơn đồng hồ máy chủ phải bị từ chối")
 	}
-	time.Sleep(50 * time.Millisecond)
+	a.mustOK("dig_finish", a.tugPlan(r0, true)) // gửi lại đúng lúc thì được
+	time.Sleep(350 * time.Millisecond)
 	mana0 := a.num("mana")
 	var commonLoot string
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 4; i++ {
 		res := a.dig("dat_a")
 		loot := res["data"].(map[string]any)["loot"].(map[string]any)
 		if !wormByID(loot["worm"].(string)).Rare {
 			commonLoot = loot["id"].(string)
 		}
 	}
-	// Đào ngay khi đất chưa hồi.
+	// Bắt đầu lại giữa chừng để gieo lại loài giun: lượt cũ tính như giun thoát nên đất chưa hồi, bị chặn.
 	a.mustOK("dig_start", msg{"id": "dat_a"})
-	time.Sleep(60 * time.Millisecond)
-	r1 := a.mustOK("dig_start", msg{"id": "dat_a"}) // lượt mới thay lượt cũ
-	time.Sleep(60 * time.Millisecond)
-	a.mustOK("dig_stop", msg{"id": r1["data"].(map[string]any)["id"], "elapsed": 0.05})
 	if r := a.act("dig_start", msg{"id": "dat_a"}); r["ok"] == true {
-		t.Fatal("đất chưa hồi phải chặn")
+		t.Fatal("bắt đầu lại để gieo lại giun phải bị chặn bởi hồi đất")
 	}
-	if a.num("dailyDigs") != 6 || a.num("thoc") != 20 {
-		t.Fatalf("6 lượt đào, nhiệm vụ đào 5 con trả 20 thóc: digs %v thóc %v", a.num("dailyDigs"), a.num("thoc"))
+	if a.num("dailyDigs") != 5 || a.num("thoc") != 20 {
+		t.Fatalf("5 lượt đào, nhiệm vụ đào 5 con trả 20 thóc: digs %v thóc %v", a.num("dailyDigs"), a.num("thoc"))
 	}
-	if a.num("mana") > mana0-6+0.5 {
-		t.Fatalf("mỗi lượt đào phải trừ 1 mana: %v → %v", mana0, a.num("mana"))
+	if a.num("mana") > mana0-4+0.5 {
+		t.Fatalf("mỗi lượt đào phải trừ mana: %v → %v", mana0, a.num("mana"))
 	}
 	if commonLoot != "" {
 		if r := a.act("show", msg{"id": commonLoot}); r["ok"] == true {
@@ -575,7 +601,7 @@ func TestEndToEnd(t *testing.T) {
 	if again["msg"] != r["msg"] || a.count("worms", wormID) != n0-1 {
 		t.Fatalf("retry phải trả kết quả cũ, không bán thêm: còn %v", a.count("worms", wormID))
 	}
-	if got := a.num("thoc") - before; got != float64(wormByID(wormID).Sell) {
+	if got := a.num("thoc") - before; got != float64(SellPrice(nil, wormByID(wormID), time.Now())) {
 		t.Fatalf("bán nhận %v thóc", got)
 	}
 	// Bán thêm 2 con hoàn thành nhiệm vụ bán 3 giun.
@@ -607,11 +633,11 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatal("thức ăn mua cất phải vào túi")
 	}
 
-	// --- Thưởng hướng dẫn: còn thiếu bước xã hội ---
+	// --- Thưởng hướng dẫn: còn thiếu bước chạy nhanh ---
 	a.goZone("ve_sanh", "lobby")
 	a.walkToItem("lobby", "ga_cu_cuc")
 	if r := a.act("claim_tutorial", nil); r["ok"] == true {
-		t.Fatal("thiếu bước xã hội")
+		t.Fatal("thiếu bước chạy nhanh")
 	}
 
 	// --- Người thứ hai vào cùng chuồng, chat, biểu cảm ---
@@ -637,13 +663,18 @@ func TestEndToEnd(t *testing.T) {
 	}
 	a.send(msg{"t": "emote", "e": "chao"})
 	b.expect("emote", 2*time.Second)
-	// Hoàn thành bước xã hội → nhận thưởng hướng dẫn đúng một lần.
-	time.Sleep(100 * time.Millisecond)
+	// Chạy nhanh là bước cuối: Cụ Cục tự gửi thưởng hướng dẫn qua Chim Chíp (PLAN_LOGIC_GAME 6), đúng một lần.
 	thoc := a.num("thoc")
-	a.mustOK("claim_tutorial", nil)
-	if a.num("thoc") != thoc+100 {
-		t.Fatal("thưởng hướng dẫn 100 thóc")
+	for i := 0; i < 6; i++ {
+		a.send(msg{"t": "in", "x": 0, "z": 1, "run": true})
+		time.Sleep(60 * time.Millisecond)
 	}
+	a.send(msg{"t": "in", "x": 0, "z": 0})
+	a.expectWhere("me", 3*time.Second, func(m msg) bool { return m["me"].(map[string]any)["tutorialClaimed"] == true })
+	if me := a.mustOK("title", msg{"id": ""})["me"].(map[string]any); me["thoc"].(float64) != thoc+100 {
+		t.Fatalf("thưởng hướng dẫn 100 thóc: %v → %v", thoc, me["thoc"])
+	}
+	a.walkToItem("lobby", "ga_cu_cuc")
 	if r := a.act("claim_tutorial", nil); r["ok"] == true {
 		t.Fatal("thưởng hướng dẫn chỉ một lần")
 	}

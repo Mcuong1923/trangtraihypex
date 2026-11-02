@@ -1,4 +1,4 @@
-// Mô hình low-poly theo bộ ảnh minh hoạ: gà đầu to, thân tròn, mào đỏ, chân cam.
+// Bộ nhân vật và phương tiện bo-2: hình khối mềm, vật liệu mờ, rig giữ tương thích gameplay.
 const T = window.THREE;
 
 export const FEATHER = { vang: 0xf4cf3f, kem: 0xf0e2b0, cam: 0xe9933a, nau: 0xb5743c, trang: 0xf5f2e9, xam: 0xb9b3a6 };
@@ -23,6 +23,29 @@ function mesh(geo, hex, shadow = true) {
   return m;
 }
 
+// Shared bevelled forms keep small props/vehicle panels from looking like raw cubes.
+function softBox(w, h, d, radius, color) {
+  const r = Math.min(radius, w / 2, h / 2, d / 2), geo = new T.BoxGeometry(w, h, d, 3, 3, 3);
+  const p = geo.attributes.position, n = geo.attributes.normal;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const cx = T.MathUtils.clamp(x, -w / 2 + r, w / 2 - r), cy = T.MathUtils.clamp(y, -h / 2 + r, h / 2 - r), cz = T.MathUtils.clamp(z, -d / 2 + r, d / 2 - r);
+    const v = new T.Vector3(x - cx, y - cy, z - cz).normalize();
+    p.setXYZ(i, cx + v.x * r, cy + v.y * r, cz + v.z * r); n.setXYZ(i, v.x, v.y, v.z);
+  }
+  geo.parameters.bevel = r;
+  return mesh(geo, color);
+}
+function link(g, a, b, radius, color) {
+  const start = new T.Vector3(...a), end = new T.Vector3(...b), diff = end.clone().sub(start);
+  const m = mesh(new T.CylinderGeometry(radius, radius, diff.length(), 8), color);
+  m.position.copy(start).add(end).multiplyScalar(.5); m.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), diff.normalize()); g.add(m); return m;
+}
+function cloth(color, hem = .19, top = .73, skirt = false) {
+  const points = [[.43, hem], [.53, hem + .08], [.56, .42], [.51, .59], [.38, top]].map(([r, y]) => new T.Vector2(skirt && y < .35 ? r * 1.2 : r, y));
+  const m = mesh(new T.LatheGeometry(points, 24), color); m.scale.z = 1.05; return m;
+}
+
 export function buildChicken({ color = 'vang', comb = 'don', tail: tailKind = 'quat', eyes = 'tron', bodyHex } = {}) {
   const hex = bodyHex ?? FEATHER[color] ?? FEATHER.vang;
   const g = new T.Group();
@@ -30,8 +53,9 @@ export function buildChicken({ color = 'vang', comb = 'don', tail: tailKind = 'q
   g.add(rig);
   const parts = { rig };
 
-  const body = mesh(new T.SphereGeometry(0.5, 24, 18), hex);
-  body.scale.set(1, 0.92, 1.08); body.position.y = 0.55; rig.add(body);
+  const profile = [[0,.16],[.25,.18],[.43,.25],[.53,.4],[.55,.57],[.5,.76],[.4,.94],[.28,1.08],[0,1.1]].map(([r,y]) => new T.Vector2(r,y));
+  const body = mesh(new T.LatheGeometry(profile, 28), hex);
+  body.scale.z = 1.06; rig.add(body);
   parts.body = body;
 
   // Ba kiểu đuôi (mục 5): quạt, nhọn, xoăn.
@@ -48,15 +72,15 @@ export function buildChicken({ color = 'vang', comb = 'don', tail: tailKind = 'q
   }
   rig.add(tail);
 
-  const head = new T.Group(); head.position.set(0, 1.02, 0.08); rig.add(head); parts.head = head;
-  head.add(mesh(new T.SphereGeometry(0.34, 24, 18), hex));
+  const head = new T.Group(); head.position.set(0, 1.06, 0.14); rig.add(head); parts.head = head;
+  head.add(mesh(new T.SphereGeometry(0.35, 24, 18), hex));
   for (const sx of [-1, 1]) head.add(eyeMesh(eyes, sx));
-  const beak = mesh(new T.ConeGeometry(0.1, 0.22, 6), 0xe8922b, false);
+  const beak = mesh(new T.ConeGeometry(0.105, 0.19, 12), 0xe8922b, false);
   beak.rotation.x = Math.PI / 2; beak.position.set(0, -0.02, 0.37); head.add(beak);
 
   const combHex = 0xe0401f;
   const cg = new T.Group(); cg.position.set(0, 0.33, 0.05); head.add(cg);
-  const blob = (x, s) => { const b = mesh(new T.SphereGeometry(0.1 * s, 8, 8), combHex, false); b.position.x = x; b.scale.y = 1.3; cg.add(b); };
+  const blob = (x, s) => { const b = mesh(new T.SphereGeometry(0.1 * s, 12, 10), combHex, false); b.position.x = x; b.scale.y = 1.3; cg.add(b); };
   if (comb === 'kep') { blob(-0.09, 1); blob(0.09, 1); blob(0, 0.8); }
   else if (comb === 'ro') { for (let i = 0; i < 3; i++) { const c = mesh(new T.ConeGeometry(0.07, 0.2, 5), combHex, false); c.position.set((i - 1) * 0.12, 0.03, 0); cg.add(c); } }
   else { blob(0, 1.1); blob(-0.08, 0.7); blob(0.08, 0.7); }
@@ -65,8 +89,8 @@ export function buildChicken({ color = 'vang', comb = 'don', tail: tailKind = 'q
   const detail = [wattle];
 
   parts.wings = [-1, 1].map((sx) => {
-    const w = mesh(new T.SphereGeometry(0.22, 10, 8), hex);
-    w.scale.set(0.45, 0.9, 1); w.position.set(sx * 0.46, 0.55, 0); rig.add(w);
+    const w = mesh(new T.SphereGeometry(0.24, 16, 12), hex);
+    w.scale.set(0.48, 1.05, 1.08); w.position.set(sx * 0.5, 0.58, .06); w.rotation.x = -.2; rig.add(w);
     return w;
   });
   parts.legs = [-1, 1].map((sx) => {
@@ -177,16 +201,15 @@ function addCosmetic(grp, c) {
       add(mesh(new T.BoxGeometry(0.1, 0.24, 0.05), col), 0.1, -0.42, 0.25);
       break;
     case 'shirt':
-      add(mesh(new T.CylinderGeometry(0.52, 0.55, 0.4, 16), col), 0, 0.44, 0);
+      grp.add(cloth(col));
       break;
     case 'vest':
-      add(mesh(new T.CylinderGeometry(0.53, 0.56, 0.44, 16), col), 0, 0.46, 0);
+      grp.add(cloth(col, .18, .78));
       add(mesh(new T.BoxGeometry(0.14, 0.34, 0.06), 0xf4f0e6), 0, 0.5, 0.5);
       add(mesh(new T.ConeGeometry(0.05, 0.14, 4), 0xb33a2b), 0, 0.55, 0.54).rotation.x = Math.PI;
       break;
     case 'dress':
-      add(mesh(new T.CylinderGeometry(0.5, 0.55, 0.32, 16), col), 0, 0.5, 0);
-      add(mesh(new T.ConeGeometry(0.74, 0.5, 16, 1, true), col), 0, 0.22, 0);
+      grp.add(cloth(col, .14, .78, true));
       break;
     case 'beanie':
       add(mesh(new T.SphereGeometry(0.34, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2), col), 0, 0.22, 0);
@@ -194,13 +217,14 @@ function addCosmetic(grp, c) {
       add(mesh(new T.SphereGeometry(0.08, 8, 6), 0xf4f0e6), 0, 0.58, 0);
       break;
     case 'overall':
-      add(mesh(new T.CylinderGeometry(0.53, 0.56, 0.36, 16), col), 0, 0.4, 0);
+      grp.add(cloth(col, .18, .68));
       add(mesh(new T.BoxGeometry(0.32, 0.22, 0.06), col), 0, 0.64, 0.46);
       for (const sx of [-1, 1]) add(mesh(new T.BoxGeometry(0.06, 0.3, 0.06), col), sx * 0.16, 0.74, 0.4);
       break;
     case 'pack':
-      add(mesh(new T.BoxGeometry(0.42, 0.42, 0.22), col), 0, 0.6, -0.55);
-      add(mesh(new T.BoxGeometry(0.3, 0.14, 0.06), 0x5c3a1f), 0, 0.5, -0.67);
+      add(softBox(.48, .46, .23, .06, col), 0, .62, -.53);
+      add(softBox(.46, .15, .055, .025, col), 0, .78, -.66);
+      add(softBox(.07, .09, .025, .015, 0xd8b05b), 0, .68, -.69);
       break;
     case 'wings':
       for (const sx of [-1, 1]) { const w = add(mesh(new T.SphereGeometry(0.3, 10, 8), col), sx * 0.3, 0.85, -0.45); w.scale.set(0.9, 0.5, 0.15); w.rotation.z = sx * 0.5; }
@@ -210,30 +234,41 @@ function addCosmetic(grp, c) {
 
 export function buildPig() {
   const g = new T.Group();
-  const body = mesh(new T.SphereGeometry(0.55, 14, 12), 0xf0a9b0); body.scale.set(1.1, 0.9, 1); body.position.y = 0.6; g.add(body);
-  const head = mesh(new T.SphereGeometry(0.4, 14, 12), 0xf3b4bb); head.position.set(0, 1.05, 0.1); g.add(head);
+  const body = mesh(new T.SphereGeometry(0.55, 24, 16), 0xefa1a0); body.scale.set(1.1, 0.9, 1); body.position.y = 0.6; g.add(body);
+  const head = mesh(new T.SphereGeometry(0.4, 24, 16), 0xf3b0a6); head.position.set(0, 1.05, 0.1); g.add(head);
   const snout = mesh(new T.CylinderGeometry(0.14, 0.14, 0.12, 10), 0xe8969e); snout.rotation.x = Math.PI / 2; snout.position.set(0, 1.0, 0.48); g.add(snout);
   for (const sx of [-1, 1]) {
     const ear = mesh(new T.ConeGeometry(0.12, 0.2, 5), 0xe8969e); ear.position.set(sx * 0.2, 1.38, 0.05); g.add(ear);
     const eye = mesh(new T.SphereGeometry(0.04, 8, 8), 0x201510, false); eye.position.set(sx * 0.14, 1.1, 0.37); g.add(eye);
   }
-  const overall = mesh(new T.CylinderGeometry(0.57, 0.62, 0.55, 16), 0x3f6b4e); overall.position.y = 0.48; g.add(overall);
-  const hat = mesh(new T.CylinderGeometry(0.46, 0.46, 0.03, 16), 0xd9b65a); hat.position.set(0, 1.42, 0.05); g.add(hat);
-  const crown = mesh(new T.CylinderGeometry(0.24, 0.27, 0.2, 16), 0xcaa64a); crown.position.set(0, 1.52, 0.05); g.add(crown);
+  const overall = cloth(0x546c3d, .19, .8); g.add(overall);
+  const bib = softBox(.35,.27,.06,.035,0x546c3d); bib.position.set(0,.77,.46); g.add(bib);
+  for (const sx of [-1,1]) {
+    const arm = mesh(new T.SphereGeometry(.15,16,12),0xefa1a0); arm.scale.set(.8,1.5,.9); arm.position.set(sx*.56,.65,.12); arm.rotation.z=-sx*.3; g.add(arm);
+    const foot = softBox(.18,.15,.27,.04,0x875b4b); foot.position.set(sx*.23,.09,.13); g.add(foot);
+    const button=mesh(new T.SphereGeometry(.035,8,6),0xd9ad55,false); button.position.set(sx*.13,.83,.5);g.add(button);
+    const nostril=mesh(new T.SphereGeometry(.025,8,6),0x9f5e54,false);nostril.position.set(sx*.055,1.015,.548);g.add(nostril);
+  }
   return g;
 }
 
 export function buildDog() {
-  const g = new T.Group();
-  const body = mesh(new T.SphereGeometry(0.45, 14, 12), 0x4a3b33); body.scale.set(1.2, 0.85, 1); body.position.y = 0.55; g.add(body);
-  const head = mesh(new T.SphereGeometry(0.33, 14, 12), 0x5a4a40); head.position.set(0, 0.98, 0.2); g.add(head);
-  const snout = mesh(new T.BoxGeometry(0.2, 0.16, 0.22), 0x4a3b33); snout.position.set(0, 0.9, 0.48); g.add(snout);
-  const nose = mesh(new T.SphereGeometry(0.05, 6, 6), 0x111111, false); nose.position.set(0, 0.94, 0.6); g.add(nose);
-  for (const sx of [-1, 1]) {
-    const ear = mesh(new T.ConeGeometry(0.12, 0.26, 5), 0x3a2e28); ear.rotation.z = sx * 0.3; ear.position.set(sx * 0.22, 1.24, 0.12); g.add(ear);
-    const eye = mesh(new T.SphereGeometry(0.04, 8, 8), 0xffffff, false); eye.position.set(sx * 0.12, 1.04, 0.47); g.add(eye);
+  const g = new T.Group(), fur = 0x302c28;
+  const body = mesh(new T.SphereGeometry(.4,24,16),fur); body.scale.set(.95,1.15,1); body.position.set(0,.53,-.03);g.add(body);
+  const head = mesh(new T.SphereGeometry(.33,24,16),fur);head.position.set(0,1.04,.18);g.add(head);
+  for(const sx of [-1,1]){
+    const ear=mesh(new T.ConeGeometry(.14,.34,12),fur);ear.position.set(sx*.23,1.32,.1);ear.rotation.z=-sx*.22;g.add(ear);
+    const inner=mesh(new T.ConeGeometry(.08,.21,10),0x755653);inner.position.set(sx*.23,1.34,.17);inner.rotation.z=-sx*.22;g.add(inner);
+    const cheek=mesh(new T.SphereGeometry(.125,16,12),0x84776c);cheek.position.set(sx*.075,.94,.45);g.add(cheek);
+    const eye=mesh(new T.SphereGeometry(.045,12,10),0x0b1010,false);eye.position.set(sx*.125,1.11,.46);g.add(eye);
+    const glint=mesh(new T.SphereGeometry(.012,6,6),0xfff8df,false);glint.position.set(sx*.125-.01,1.125,.5);g.add(glint);
+    const leg=mesh(new T.SphereGeometry(.13,16,12),fur);leg.scale.set(1,1.8,1);leg.position.set(sx*.22,.23,.2);g.add(leg);
+    const haunch=mesh(new T.SphereGeometry(.2,16,12),fur);haunch.position.set(sx*.3,.2,-.13);g.add(haunch);
   }
-  const whistle = mesh(new T.CylinderGeometry(0.04, 0.04, 0.16, 6), 0xd0d0d0); whistle.rotation.z = Math.PI / 2; whistle.position.set(0.15, 0.78, 0.45); g.add(whistle);
+  const nose=mesh(new T.SphereGeometry(.07,12,10),0x181819);nose.scale.y=.7;nose.position.set(0,1.0,.55);g.add(nose);
+  const tongue=mesh(new T.SphereGeometry(.055,12,10),0xc97a78);tongue.scale.set(.8,1.3,.6);tongue.position.set(0,.88,.52);g.add(tongue);
+  const collar=mesh(new T.TorusGeometry(.265,.04,8,24),0x967331);collar.rotation.x=Math.PI/2;collar.position.set(0,.8,.07);g.add(collar);
+  const medal=mesh(new T.CylinderGeometry(.085,.085,.025,16),0xe0b35c);medal.rotation.x=Math.PI/2;medal.position.set(0,.72,.36);g.add(medal);
   return g;
 }
 
@@ -249,8 +284,9 @@ export function buildCow() {
     const horn = mesh(new T.ConeGeometry(0.05, 0.18, 6), 0xe8dcc0); horn.position.set(sx * 0.26, 1.6, 0); horn.rotation.z = -sx * 0.5; g.add(horn);
     const ear = mesh(new T.SphereGeometry(0.1, 8, 6), 0xf4f1ea); ear.scale.set(1.5, 0.6, 0.6); ear.position.set(sx * 0.45, 1.36, 0); g.add(ear);
   }
-  const overall = mesh(new T.CylinderGeometry(0.57, 0.6, 0.55, 16), 0x2f5f9e); overall.position.y = 0.48; g.add(overall);
-  const cap = mesh(new T.SphereGeometry(0.3, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), 0x2f5f9e); cap.position.set(0, 1.5, 0.04); g.add(cap);
+  const overall = mesh(new T.CylinderGeometry(0.57, 0.6, 0.55, 24), 0x7a674d); overall.position.y = 0.48; g.add(overall);
+  const cap = mesh(new T.SphereGeometry(0.35, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), 0xd8ad48); cap.position.set(0, 1.5, 0.04); g.add(cap);
+  const brim=mesh(new T.CylinderGeometry(.43,.43,.05,24),0xd8ad48);brim.position.set(0,1.5,.08);g.add(brim);
   const hammer = mesh(new T.BoxGeometry(0.06, 0.4, 0.06), 0x7b4f2d); hammer.position.set(0.6, 0.8, 0.2); hammer.rotation.z = 0.5; g.add(hammer);
   const head2 = mesh(new T.BoxGeometry(0.2, 0.08, 0.1), 0x8a8a8a); head2.position.set(0.7, 0.98, 0.2); head2.rotation.z = 0.5; g.add(head2);
   return g;
@@ -337,7 +373,19 @@ export function buildDecor(kind, ownerName) {
 export function buildElder(cosmetics) {
   const g = buildChicken({ color: 'kem' });
   g.scale.setScalar(1.25);
-  dress(g, { head: 'mu_rom' }, null, cosmetics);
+  dress(g, {}, {shirt:'none'}, cosmetics);
+  const scarf=mesh(new T.TorusGeometry(.28,.07,8,24),0x9a4933);scarf.rotation.x=Math.PI/2;scarf.position.set(0,-.28,.02);g.userData.parts.head.add(scarf);
+  return g;
+}
+
+// Ông Chủ Đầu Tư (PLAN_LOGIC_GAME 13.2): gà trống bụng phệ, vest, mũ phớt, cầm bản đồ cuộn.
+export function buildInvestor(cosmetics) {
+  const g = buildChicken({ color: 'trang', comb: 'kep' });
+  g.scale.setScalar(1.12);
+  dress(g, { body: 'vest', head: 'mu_phot' }, { shirt: 'none' }, cosmetics);
+  const belly = mesh(new T.SphereGeometry(0.3, 16, 12), 0x2d3a52); belly.scale.set(1.1, 0.9, 0.7); belly.position.set(0, 0.5, 0.32); g.userData.parts.rig.add(belly);
+  const scroll = mesh(new T.CylinderGeometry(0.06, 0.06, 0.5, 10), 0xe9dcc0); scroll.rotation.z = Math.PI / 2; scroll.position.set(0.5, 0.7, 0.25); g.userData.parts.rig.add(scroll);
+  const tie = mesh(new T.ConeGeometry(0.06, 0.22, 4), 0xc8343a); tie.rotation.x = Math.PI; tie.position.set(0, 0.86, 0.5); g.userData.parts.rig.add(tie);
   return g;
 }
 
@@ -363,7 +411,7 @@ export function label(text, { bg = 'rgba(61,43,26,.86)', fg = '#fff', scale = 0.
     labelCache.set(key, tex);
   }
   w = tex.userData.w;
-  const sp = new T.Sprite(new T.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false, transparent: true }));
+  const sp = new T.Sprite(new T.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false, transparent: true, toneMapped: false }));
   sp.scale.set((w / 72) * scale, scale, 1);
   sp.renderOrder = 10;
   return sp;
@@ -395,6 +443,10 @@ export function buildDuck() {
   for (const sx of [-1, 1]) { const eye = mesh(new T.SphereGeometry(0.045, 8, 8), 0x201510, false); eye.position.set(sx * 0.13, 1.06, 0.5); g.add(eye); }
   const scarf = mesh(new T.TorusGeometry(0.26, 0.07, 8, 16), 0xe2577a); scarf.rotation.x = Math.PI / 2; scarf.position.set(0, 0.78, 0.18); g.add(scarf);
   const apron = mesh(new T.BoxGeometry(0.6, 0.45, 0.06), 0x8ec6d9); apron.position.set(0, 0.48, 0.6); g.add(apron);
+  // Mũ rơm của Vịt Bông (ảnh B02-06).
+  const brim = mesh(new T.CylinderGeometry(0.42, 0.42, 0.035, 20), 0xdcb86e); brim.position.set(0, 1.27, 0.22); brim.rotation.x = -0.12; g.add(brim);
+  const crown = mesh(new T.CylinderGeometry(0.2, 0.24, 0.2, 16), 0xdcb86e); crown.position.set(0, 1.38, 0.21); crown.rotation.x = -0.12; g.add(crown);
+  const band = mesh(new T.CylinderGeometry(0.245, 0.245, 0.06, 16), 0x7a5a3a); band.position.set(0, 1.31, 0.215); band.rotation.x = -0.12; g.add(band);
   return g;
 }
 
@@ -452,52 +504,157 @@ export function buildChick(color = '#f4cf3f') {
   return g;
 }
 
-function wheel(r, w) {
-  const m = mesh(new T.CylinderGeometry(r, r, w, 14), 0x2b2b2b);
-  m.rotation.z = Math.PI / 2;
-  return m;
-}
-
-// Xe cá nhân (mục 8.4). Gốc toạ độ ở vị trí người lái; trục z hướng về phía trước.
-export function buildVehicle(kind) {
+function wheel(r, w, spokes = false) {
   const g = new T.Group();
-  const add = (m, x, y, z) => { m.position.set(x, y, z); g.add(m); return m; };
-  if (kind === 'xe_dap') {
-    add(wheel(0.32, 0.06), 0, 0.32, 0.55);
-    add(wheel(0.32, 0.06), 0, 0.32, -0.75);
-    add(mesh(new T.BoxGeometry(0.06, 0.06, 1.3), 0x3f86c9), 0, 0.55, -0.1);
-    add(mesh(new T.BoxGeometry(0.4, 0.05, 0.05), 0x2b2b2b), 0, 0.95, 0.5);
-    add(mesh(new T.BoxGeometry(0.28, 0.06, 0.32), 0x7b4f2d), 0, 0.6, -0.72); // ghế sau chở bạn
-  } else if (kind === 'xe_may') {
-    add(wheel(0.3, 0.12), 0, 0.3, 0.7);
-    add(wheel(0.3, 0.12), 0, 0.3, -0.8);
-    add(mesh(new T.BoxGeometry(0.4, 0.35, 1.5), 0xd64b3a), 0, 0.55, -0.05);
-    add(mesh(new T.BoxGeometry(0.36, 0.1, 1.1), 0x2b2b2b), 0, 0.77, -0.3);
-    add(mesh(new T.BoxGeometry(0.55, 0.05, 0.05), 0x9a9a9a), 0, 1.0, 0.65);
-    add(mesh(new T.SphereGeometry(0.09, 8, 6), 0xffe066), 0, 0.8, 0.85);
-  } else if (kind === 'o_to') {
-    const body = add(mesh(new T.BoxGeometry(1.6, 0.55, 2.5), 0xe7a73a), 0, 0.55, -0.2);
-    body.receiveShadow = true;
-    add(mesh(new T.BoxGeometry(1.4, 0.5, 1.4), 0xf2c26a), 0, 1.05, -0.35);
-    add(mesh(new T.BoxGeometry(1.42, 0.38, 0.05), 0x9ed3e8), 0, 1.07, 0.36);
-    for (const [x, z] of [[-0.75, 0.6], [0.75, 0.6], [-0.75, -1.0], [0.75, -1.0]]) add(wheel(0.28, 0.18), x, 0.28, z);
-    for (const sx of [-1, 1]) add(mesh(new T.SphereGeometry(0.09, 8, 6), 0xffe066), sx * 0.55, 0.6, 1.06);
+  const tire = mesh(new T.TorusGeometry(r * .84, r * .16, 8, 28), 0x292a27);
+  tire.rotation.y = Math.PI / 2; tire.scale.z = w / (r * .32); g.add(tire);
+  const hub = mesh(new T.CylinderGeometry(r * .24, r * .24, w + .02, 16), 0x9a9a87);hub.rotation.z = Math.PI / 2;g.add(hub);
+  if (spokes) {
+    const rim = mesh(new T.TorusGeometry(r * .82, .018, 6, 28), 0xb0ae99);rim.rotation.y=Math.PI/2;g.add(rim);
+    const sg = new T.CylinderGeometry(.008,.008,r*1.6,5), inst=new T.InstancedMesh(sg,mat(0xb8b9a5),10), dummy=new T.Object3D();
+    for(let i=0;i<10;i++){dummy.rotation.x=i*Math.PI/10;dummy.updateMatrix();inst.setMatrixAt(i,dummy.matrix);}g.add(inst);
+  } else {
+    const rim=mesh(new T.CylinderGeometry(r*.58,r*.58,w*.93,20),0x6c6e66);rim.rotation.z=Math.PI/2;g.add(rim);
   }
-  g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  g.userData.wheel = true;
   return g;
 }
 
-// Xe buýt tuyến Chim Chíp (ảnh 9): tài xế NPC riêng, 8 ghế khách.
+// Compact static body pieces into one draw per material; wheel groups remain articulated.
+function batchBody(g) {
+  g.updateMatrixWorld(true);
+  const buckets = new Map(), remove = [];
+  g.traverse(o => {
+    if(!o.isMesh || o.isInstancedMesh || o.parent !== g || o.material.transparent) return;
+    const key=o.material.uuid;
+    if(!buckets.has(key)) buckets.set(key,{material:o.material,positions:[],normals:[],uvs:[]});
+    const b=buckets.get(key), geo=o.geometry.index?o.geometry.toNonIndexed():o.geometry.clone();
+    geo.applyMatrix4(o.matrix); const ps=geo.attributes.position, ns=geo.attributes.normal, uv=geo.attributes.uv;
+    for(let i=0;i<ps.count;i++){b.positions.push(ps.getX(i),ps.getY(i),ps.getZ(i));b.normals.push(ns.getX(i),ns.getY(i),ns.getZ(i));b.uvs.push(uv?uv.getX(i):0,uv?uv.getY(i):0);}
+    geo.dispose();remove.push(o);
+  });
+  remove.forEach(o=>g.remove(o));
+  for(const b of buckets.values()){
+    const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(b.positions,3));geo.setAttribute('normal',new T.Float32BufferAttribute(b.normals,3));geo.setAttribute('uv',new T.Float32BufferAttribute(b.uvs,2));geo.computeBoundingSphere();
+    const m=new T.Mesh(geo,b.material);m.castShadow=true;m.receiveShadow=true;g.add(m);
+  }
+}
+
+// Vehicles keep the original gameplay origin and +z forward direction.
+export function buildVehicle(kind) {
+  const g = new T.Group(), wheels=[];
+  const add = (m,x,y,z) => {m.position.set(x,y,z);g.add(m);return m;};
+  const addWheel=(r,w,x,z,spokes=false)=>{const m=add(wheel(r,w,spokes),x,r,z);wheels.push(m);return m;};
+  if(kind==='xe_dap'){
+    const blue=0x39637c, metal=0xaaa994;
+    addWheel(.34,.065,0,.64,true);addWheel(.34,.065,0,-.76,true);
+    for(const [a,b] of [[[0,.34,-.76],[0,.73,-.35]],[[0,.73,-.35],[0,.34,-.05]],[[0,.34,-.05],[0,.34,-.76]],[[0,.73,-.35],[0,.8,.42]],[[0,.8,.42],[0,.34,-.05]],[[0,.8,.42],[0,.34,.64]]])link(g,a,b,.025,blue);
+    for(const sx of [-1,1])link(g,[sx*.045,.8,.42],[sx*.045,.34,.64],.022,blue);
+    link(g,[0,.75,-.35],[0,.88,-.35],.023,metal);add(softBox(.25,.07,.28,.03,0x78533b),0,.88,-.34);
+    link(g,[0,.78,.42],[0,1.02,.4],.022,metal);link(g,[-.25,1.02,.4],[.25,1.02,.4],.022,metal);
+    for(const sx of [-1,1])link(g,[sx*.18,1.02,.4],[sx*.3,1.02,.4],.03,0x3b3832);
+    add(softBox(.29,.08,.38,.025,0x9c6c46),0,.65,-.79);
+    const back=add(softBox(.3,.3,.06,.03,blue),0,.85,-.98);back.rotation.x=-.16;
+    for(const sx of [-1,1])link(g,[sx*.12,.62,-.81],[sx*.07,.36,-.76],.015,metal);
+    const basket=add(softBox(.42,.28,.32,.035,0x8a643c),0,.88,.67);
+    add(softBox(.35,.025,.25,.015,0x51402a),0,1.025,.67);
+    for(let i=-2;i<=2;i++)link(g,[i*.075,.78,.838],[i*.075,1,.838],.008,0xd2ab68);
+    const pedal=add(mesh(new T.CylinderGeometry(.06,.06,.22,12),metal),0,.35,-.05);pedal.rotation.z=Math.PI/2;
+    for(const sx of [-1,1])add(softBox(.1,.035,.12,.01,0x34342f),sx*.14,.34,-.05);
+  }else if(kind==='xe_may'){
+    const red=0xb84d3b;
+    addWheel(.3,.15,0,.7);addWheel(.3,.15,0,-.8);
+    add(softBox(.52,.39,.67,.13,red),0,.51,-.62);
+    add(softBox(.45,.1,.65,.04,0x777267),0,.34,.02);
+    const apron=add(softBox(.51,.64,.14,.06,red),0,.71,.49);apron.rotation.x=-.15;
+    add(softBox(.45,.12,1.08,.06,0x383a35),0,.78,-.33);
+    add(softBox(.34,.12,.42,.06,red),0,.5,.72);
+    link(g,[0,.78,.54],[0,1.03,.6],.055,red);link(g,[-.34,1.03,.6],[.34,1.03,.6],.035,0x6f716b);
+    const lamp=add(mesh(new T.CylinderGeometry(.105,.105,.13,20),0xefddb0),0,1.04,.67);lamp.rotation.x=Math.PI/2;
+    for(const sx of [-1,1]){
+      link(g,[sx*.25,1.04,.6],[sx*.35,1.23,.55],.012,0x9e9e8e);
+      add(softBox(.12,.085,.03,.025,0x9caaa6),sx*.35,1.24,.55);
+      add(softBox(.12,.06,.3,.02,0xaaa68f),sx*.27,.3,-.62);
+    }
+    add(softBox(.15,.12,.025,.025,0xe58a63),0,.65,-.98);
+  }else if(kind==='o_to'){
+    const blue=0x56788a, glass=0x617773, trim=0x414a47;
+    add(softBox(1.6,.55,2.5,.12,blue),0,.59,-.2);
+    // Open cabin uses real pillars, roof and tinted windows, so riders can sit inside.
+    add(softBox(1.42,.12,1.52,.07,blue),0,1.48,-.4);
+    for(const sx of [-1,1]){
+      for(const z of [-1.08,-.38,.32])link(g,[sx*.68,.83,z],[sx*.62,1.44,z-.04],.045,blue);
+      add(softBox(.045,.38,1.32,.02,glass),sx*.685,1.14,-.4);
+      add(softBox(.045,.07,.16,.015,0xc2bba0),sx*.81,.82,-.38);
+      add(softBox(.18,.12,.1,.025,blue),sx*.83,1.12,.23);
+      add(softBox(.08,.11,.16,.02,0xc06a4b),sx*.66,.62,-1.45);
+      const light=add(mesh(new T.CylinderGeometry(.13,.13,.04,24),0xffd68a),sx*.53,.68,1.07);light.rotation.x=Math.PI/2;
+    }
+    const front=add(softBox(1.25,.43,.035,.015,glass),0,1.17,.3);front.rotation.x=-.14;
+    add(softBox(1.24,.4,.035,.015,glass),0,1.18,-1.12);
+    for(const [x,z]of[[-.75,.6],[.75,.6],[-.75,-1],[.75,-1]])addWheel(.29,.2,x,z);
+    add(softBox(1.55,.13,.11,.025,0xaaa58f),0,.39,1.1);
+    add(softBox(.53,.22,.03,.015,trim),0,.61,1.072);
+    for(let i=0;i<4;i++)add(softBox(.48,.012,.01,.003,0x747c72),0,.54+i*.045,1.095);
+    add(softBox(.3,.12,.015,.008,0xc1bda6),0,.4,1.165);
+    for(const x of [-.36,.36])for(const z of [-.75,-.05]){add(softBox(.45,.13,.43,.04,0x5f5b4c),x,.76,z);add(softBox(.45,.37,.12,.04,0x5f5b4c),x,1,z-.17);}
+    const steer=add(mesh(new T.TorusGeometry(.15,.018,6,20),0x3b3f39),-.36,1.02,.22);steer.rotation.x=-.55;
+  }
+  g.userData.wheels=wheels;
+  batchBody(g);
+  return g;
+}
+
+// Chim Chíp bus: olive body, cream stripe, visible cabin, eight passenger seats.
 export function buildBus() {
-  const g = new T.Group();
-  const add = (m, x, y, z) => { m.position.set(x, y, z); g.add(m); return m; };
-  add(mesh(new T.BoxGeometry(2.0, 1.4, 4.4), 0xe7c23a), 0, 1.05, 0);
-  add(mesh(new T.BoxGeometry(2.02, 0.5, 3.6), 0x9ed3e8), 0, 1.35, -0.2);
-  add(mesh(new T.BoxGeometry(2.04, 0.12, 4.42), 0x3f86c9), 0, 0.6, 0);
-  add(mesh(new T.BoxGeometry(1.9, 0.1, 4.3), 0xd6aa2a), 0, 1.8, 0);
-  for (const [x, z] of [[-1, 1.4], [1, 1.4], [-1, -1.4], [1, -1.4]]) add(wheel(0.36, 0.24), x, 0.36, z);
-  const sign = label('🐦 Chim Chíp', { bg: 'rgba(63,134,201,.9)', scale: 0.55 });
-  sign.position.set(0, 2.15, 0); g.add(sign);
-  g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  const g=new T.Group(),wheels=[],olive=0x697648,cream=0xc3ba83,trim=0x595b43;
+  const add=(m,x,y,z)=>{m.position.set(x,y,z);g.add(m);return m;};
+  add(softBox(2,.85,4.6,.12,olive),0,.83,0);
+  add(softBox(2.06,.13,4.66,.06,cream),0,1.03,0);
+  add(softBox(2.08,.22,4.7,.1,olive),0,2.25,0);
+  add(softBox(1.88,.08,4.38,.025,0x625e46),0,1.23,0);
+  const glassMat=mat(0x80928b,{transparent:true,opacity:.32,roughness:.25,metalness:.1,depthWrite:false});
+  for(const sx of [-1,1]){
+    for(let i=0;i<6;i++){
+      const z=-1.94+i*.72;
+      add(softBox(.075,1.02,.065,.018,trim),sx*.99,1.68,z-.36);
+      // Leave the boarding doorway open on the right near the front.
+      if(sx===1&&i===5)continue;
+      const win=add(softBox(.025,.86,.63,.012,0x80928b),sx*1.005,1.69,z);win.material=glassMat;
+      add(softBox(.08,.045,.67,.01,trim),sx*1.01,1.24,z);
+    }
+    for(const z of[-1.45,1.45]){const w=add(wheel(.4,.24),sx*1.01,.4,z);wheels.push(w);}
+    add(softBox(.06,.14,4.32,.02,0x565b40),sx*1.025,.48,0);
+    link(g,[sx*.96,1.89,2.02],[sx*1.22,1.89,2.18],.025,trim);
+    add(softBox(.14,.28,.075,.025,trim),sx*1.23,1.79,2.2);
+    const lamp=add(softBox(.33,.25,.06,.04,0xffd995),sx*.66,.79,2.32);lamp.material=mat(0xffd995,{emissive:0xd6983d,emissiveIntensity:.35});
+    add(softBox(.11,.12,.025,.015,0xd68c4b),sx*.85,.66,2.33);
+  }
+  for(const x of [-.95,0,.95])add(softBox(.055,.95,.075,.01,trim),x,1.68,2.28);
+  for(const sx of [-1,1]){
+    const glass=add(softBox(.86,.84,.02,.01,0x80928b),sx*.475,1.68,2.31);glass.material=glassMat;
+    const wiper=link(g,[sx*.5,1.28,2.335],[sx*.22,1.48,2.335],.014,0x313a32);
+  }
+  add(softBox(1.97,.16,.14,.035,0x77755d),0,.42,2.35);
+  add(softBox(.8,.27,.035,.02,0x383f30),0,.77,2.325);
+  for(let i=0;i<4;i++)add(softBox(.75,.02,.02,.005,0x85876d),0,.68+i*.06,2.35);
+  add(softBox(.36,.14,.025,.01,0xb8b498),0,.43,2.43);
+  add(softBox(.5,.08,.42,.025,0x46533d),-.4,2.39,-.9);
+  add(softBox(.5,.08,.42,.025,0x46533d),.4,2.39,.9);
+  for(const x of[-.5,.5])for(const z of[-1.65,-.93,-.21,.51]){
+    add(softBox(.55,.15,.46,.035,0x736547),x,1.05,z);
+    add(softBox(.55,.55,.12,.04,0x736547),x,1.34,z-.22);
+  }
+  // Boarding steps and threshold sit on the right, away from the driver's seat.
+  add(softBox(.35,.12,.64,.025,0x8a8064),1.05,.45,1.75);
+  add(softBox(.26,.12,.62,.025,0xa49a7a),1.15,.3,1.75);
+  const driver=buildChicken({color:'kem'});driver.scale.setScalar(.62);driver.position.set(-.45,1.02,1.57);g.add(driver);
+  addCosmetic(driver.userData.parts.slots.head,{kind:'cap',color:0x3a4b47});
+  const steering=add(mesh(new T.TorusGeometry(.22,.025,8,24),trim),-.45,1.46,2.03);steering.rotation.x=-.45;
+  const cv=document.createElement('canvas');cv.width=512;cv.height=100;const ctx=cv.getContext('2d');
+  ctx.fillStyle='#51462f';ctx.fillRect(0,0,512,100);ctx.strokeStyle='#c1a772';ctx.lineWidth=5;ctx.strokeRect(5,5,502,90);ctx.font='600 50px system-ui';ctx.textAlign='center';ctx.fillStyle='#e4d3a5';ctx.fillText('CHIM CHÍP',256,69);
+  const signMat=new T.MeshBasicMaterial({map:new T.CanvasTexture(cv)}),sign=new T.Mesh(new T.PlaneGeometry(1.4,.27),signMat);sign.position.set(0,2.12,2.365);g.add(sign);
+  g.userData.wheels=wheels;
+  batchBody(g);
   return g;
 }

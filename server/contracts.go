@@ -16,26 +16,29 @@ import (
 // Tiền trả/hoàn đi qua hàng chờ "credit" bền vững: phòng đang giữ tài khoản người nhận sẽ cộng vào ví.
 
 type Contract struct {
-	ID         string    `json:"id"`
-	Owner      string    `json:"owner"`
-	OwnerName  string    `json:"ownerName"`
-	Worker     string    `json:"worker,omitempty"`
-	WorkerName string    `json:"workerName,omitempty"`
-	Roof       string    `json:"roof"`
-	Price      int       `json:"price"`
-	State      string    `json:"state"` // open | taken | done | expired | cancelled
-	Progress   int       `json:"progress"`
-	Need       int       `json:"need"`
-	CreatedAt  time.Time `json:"createdAt"`
-	Deadline   time.Time `json:"deadline"`
-	LastWork   time.Time `json:"lastWork"`
+	ID         string         `json:"id"`
+	Owner      string         `json:"owner"`
+	OwnerName  string         `json:"ownerName"`
+	Worker     string         `json:"worker,omitempty"`
+	WorkerName string         `json:"workerName,omitempty"`
+	Roof       string         `json:"roof"`
+	Material   string         `json:"material,omitempty"` // vật liệu chủ đã gom (PLAN_LOGIC_GAME 13.3)
+	Items      map[string]int `json:"items,omitempty"`    // vật liệu đang giữ cùng ký quỹ, hoàn lại nếu huỷ/quá hạn
+	Price      int            `json:"price"`
+	State      string         `json:"state"` // open | taken | done | expired | cancelled
+	Progress   int            `json:"progress"`
+	Need       int            `json:"need"`
+	CreatedAt  time.Time      `json:"createdAt"`
+	Deadline   time.Time      `json:"deadline"`
+	LastWork   time.Time      `json:"lastWork"`
 }
 
 type Credit struct {
-	Amount int    `json:"amount"`
-	Reason string `json:"reason"`
-	Ref    string `json:"ref"`
-	Note   string `json:"note"`
+	Items  map[string]int `json:"items,omitempty"` // vật liệu hoàn lại
+	Amount int            `json:"amount"`
+	Reason string         `json:"reason"`
+	Ref    string         `json:"ref"`
+	Note   string         `json:"note"`
 }
 
 type ContractStore struct {
@@ -62,6 +65,16 @@ func OpenContracts(dir string) (*ContractStore, error) {
 }
 
 func (c *ContractStore) saveLocked() error { return writeAtomic(c.path, c) }
+
+// SetMaterials ghi vật liệu chủ đã giữ cho hợp đồng (hoàn lại khi huỷ/quá hạn).
+func (c *ContractStore) SetMaterials(id, material string, items map[string]int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if k := c.Contracts[id]; k != nil {
+		k.Material, k.Items = material, items
+		c.saveLocked()
+	}
+}
 
 func (c *ContractStore) creditLocked(id string, cr Credit) {
 	c.Credits[id] = append(c.Credits[id], cr)
@@ -225,7 +238,7 @@ func (c *ContractStore) Cancel(id, by string) (*Contract, error) {
 		return nil, errors.New("Không huỷ được hợp đồng này.")
 	}
 	k.State = "cancelled"
-	c.creditLocked(k.Owner, Credit{Amount: k.Price, Reason: "contract_refund", Ref: k.ID, Note: "Hoàn ký quỹ hợp đồng xây chuồng"})
+	c.creditLocked(k.Owner, Credit{Amount: k.Price, Items: k.Items, Reason: "contract_refund", Ref: k.ID, Note: "Hoàn ký quỹ và vật liệu hợp đồng xây chuồng"})
 	if err := c.saveLocked(); err != nil {
 		return nil, err
 	}
@@ -241,7 +254,7 @@ func (c *ContractStore) Expire(now time.Time) []*Contract {
 	for _, k := range c.Contracts {
 		if (k.State == "open" || k.State == "taken") && now.After(k.Deadline) {
 			k.State = "expired"
-			c.creditLocked(k.Owner, Credit{Amount: k.Price, Reason: "contract_refund", Ref: k.ID, Note: "Hợp đồng quá hạn, hoàn ký quỹ"})
+			c.creditLocked(k.Owner, Credit{Amount: k.Price, Items: k.Items, Reason: "contract_refund", Ref: k.ID, Note: "Hợp đồng quá hạn, hoàn ký quỹ và vật liệu"})
 			cp := *k
 			out = append(out, &cp)
 		}
@@ -261,6 +274,9 @@ func (r *Room) applyCredits(p *Player, now time.Time) {
 	snap, _ := json.Marshal(p.acc)
 	for _, c := range cs {
 		_ = p.acc.addThoc(c.Amount, c.Reason, c.Ref, now)
+		for id, n := range c.Items {
+			p.acc.Items[id] += n // hoàn vật liệu kể cả khi kho đã đầy: không để mất tài sản
+		}
 	}
 	if err := r.hub.store.Save(p.acc); err != nil {
 		restore(p.acc, snap)
@@ -303,7 +319,20 @@ func (r *Room) contractAct(p *Player, m *inMsg, reply func(ActResult), fail func
 			fail(fmt.Errorf("Tiền công từ %d đến %d thóc.", ContractMinPrice, ContractMaxPrice))
 			return
 		}
+		material := m.Mode
+		if material == "" {
+			material = "go"
+		}
+		rc, ok := HouseDesigns[0].Recipes[material]
+		if !ok {
+			fail(errors.New("Chọn vật liệu: rơm, gỗ hoặc gạch."))
+			return
+		}
 		txn(func() (ActResult, error) {
+			// Chủ phải gom đủ vật liệu: giữ cùng ký quỹ, thợ chỉ góp công (PLAN_LOGIC_GAME 13.3).
+			if err := p.acc.takeItems(rc.Items); err != nil {
+				return ActResult{}, err
+			}
 			if err := p.acc.addThoc(-m.I, "contract_escrow", "new", now); err != nil {
 				return ActResult{}, err
 			}
@@ -311,6 +340,7 @@ func (r *Room) contractAct(p *Player, m *inMsg, reply func(ActResult), fail func
 			if err != nil {
 				return ActResult{}, err
 			}
+			cs.SetMaterials(k.ID, material, rc.Items)
 			return ActResult{Msg: fmt.Sprintf("Đã đăng hợp đồng: giữ %d thóc ký quỹ, hạn %s.", k.Price, humanDur(b.ContractTTL))}, nil
 		})
 	case "contract_take":
@@ -359,7 +389,11 @@ func (r *Room) contractAct(p *Player, m *inMsg, reply func(ActResult), fail func
 			return
 		}
 		// Nghiệm thu tự động: dựng chuồng theo mẫu, trả công qua hàng chờ (đã ghi trong Work).
-		h.Coop = &CoopJob{Roof: k.Roof, State: "done", StartAt: now, DoneAt: now}
+		mat := k.Material
+		if mat == "" {
+			mat = "go"
+		}
+		h.Coop = &CoopJob{Roof: k.Roof, Design: "chuong_nho", Material: mat, State: "done", StartAt: now, DoneAt: now}
 		if err := r.hub.store.Homes.Save(h); err != nil {
 			h.Coop = nil
 		}

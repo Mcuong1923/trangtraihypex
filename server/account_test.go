@@ -26,7 +26,8 @@ func TestWormTableSumsToOne(t *testing.T) {
 }
 
 func TestRollWormBoundaries(t *testing.T) {
-	cases := map[float64]string{0: "dat", 0.7499: "dat", 0.75: "beo", 0.9499: "beo", 0.95: "sang", 0.9899: "sang", 0.99: "vang", 0.9989: "vang", 0.999: "cauvong", 0.99999: "cauvong"}
+	// Bảng sau khi bù giun thoát (PLAN_LOGIC_GAME 4.4): 74,22 / 20 / 4,6 / 1,05 / 0,13 %.
+	cases := map[float64]string{0: "dat", 0.7421: "dat", 0.7423: "beo", 0.9421: "beo", 0.9423: "sang", 0.9881: "sang", 0.9883: "vang", 0.9986: "vang", 0.9988: "cauvong", 0.99999: "cauvong"}
 	for r, want := range cases {
 		if got := RollWorm(r).ID; got != want {
 			t.Errorf("RollWorm(%v) = %s, cần %s", r, got, want)
@@ -48,13 +49,14 @@ func TestRollWormDistribution(t *testing.T) {
 			t.Errorf("%s: %.4f, kỳ vọng %.4f", w.ID, got, w.Prob)
 		}
 	}
-	// Kỳ vọng thu nhập 20 lượt nếu bán hết = 192 thóc (mục 8.2).
+	// Kỳ vọng thu nhập 20 lượt nếu bán hết: 192 thóc ở PLAN.md 8.2, nay 203,5 vì đã bù phần giun hiếm
+	// thoát khi giằng co (người chơi trung bình nhận lại khoảng 192).
 	ev := 0.0
 	for _, w := range Worms {
 		ev += w.Prob * float64(w.Sell)
 	}
-	if math.Abs(ev*20-192) > 0.5 {
-		t.Errorf("kỳ vọng 20 lượt = %.1f, plan ghi 192", ev*20)
+	if math.Abs(ev*20-203.5) > 0.5 {
+		t.Errorf("kỳ vọng 20 lượt = %.1f, cần 203,5", ev*20)
 	}
 }
 
@@ -99,8 +101,14 @@ func TestHungerStages(t *testing.T) {
 	if a.HungerStage(b) != 4 {
 		t.Fatal("10 phút tại 0 phải kiệt sức")
 	}
-	if err := a.CanDig(t0, b); err == nil {
-		t.Fatal("kiệt sức không được đào")
+	// Kiệt sức vẫn đào được (không có ngõ cụt), nhưng chỉ ra hai bậc giun đầu.
+	if err := a.CanDig(t0, b); err != nil {
+		t.Fatalf("kiệt sức vẫn phải đào được: %v", err)
+	}
+	for _, r := range []float64{0, 0.5, 0.84, 0.86, 0.9999} {
+		if w := RollDigWorm(RegionHypex, r, t0, true, 0, 1); wormTier(w) > 1 {
+			t.Fatalf("kiệt sức ra giun %s", w.Name)
+		}
 	}
 	// Ăn dưới 20: giữ phạt, bộ đếm không reset.
 	a.restoreMana(10)
@@ -179,9 +187,9 @@ func TestDailyQuestsPayOnce(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		a.SellWorm("dat", t0)
 	}
-	// 5 × 5 thóc + 20 thưởng nhiệm vụ bán 3 giun (chỉ trả một lần).
-	if a.Thoc != 45 {
-		t.Fatalf("thóc %d, cần 45", a.Thoc)
+	// 5 × giá bán (có thể là loài được Lợn Ủn thu giá cao trong ngày) + 20 thưởng nhiệm vụ bán 3 giun (một lần).
+	if want := 5*SellPrice(a, wormByID("dat"), t0) + 20; a.Thoc != want {
+		t.Fatalf("thóc %d, cần %d", a.Thoc, want)
 	}
 	if len(a.TakeLedger()) != 6 {
 		t.Fatal("mỗi biến động ví phải có một dòng sổ cái")
@@ -307,11 +315,5 @@ func TestValidateName(t *testing.T) {
 	}
 	if _, err := ValidateName("Admin Gà"); err == nil {
 		t.Fatal("tên mạo danh quản trị phải bị chặn")
-	}
-}
-
-func TestMarkerPos(t *testing.T) {
-	if markerPos(0, 0.8) != 0 || math.Abs(markerPos(1.25, 0.8)-1) > 1e-9 || math.Abs(markerPos(2.5, 0.8)) > 1e-9 {
-		t.Fatal("sóng tam giác canh lực")
 	}
 }

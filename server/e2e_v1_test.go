@@ -270,8 +270,27 @@ func TestCommunityRules(t *testing.T) {
 		t.Fatal("túi đầy phải dừng lượt đào trước khi bắt đầu")
 	}
 	orders := OrdersFor(DayKey(t0))
-	if len(orders) != 3 || orders[0].Worm != "dat" || orders[1].ID == orders[2].ID {
-		t.Fatalf("3 đơn/ngày, có đơn giun đất cho người mới: %+v", orders)
+	if len(orders) != 4 || orders[0].Worm != "dat" || orders[1].ID == orders[2].ID || len(orders[3].Gift) == 0 {
+		t.Fatalf("3 đơn giun/ngày (có đơn giun đất cho người mới) + 1 nhiệm vụ NPC có quà: %+v", orders)
+	}
+	// Nhiệm vụ NPC (PLAN_LOGIC_GAME 16): thiếu hàng thì không trừ gì; đủ thì nhận thóc và quà vật phẩm.
+	q := orders[3]
+	if _, _, err := a.DeliverOrder(q.ID, t0); err == nil {
+		t.Fatal("thiếu hàng không giao được")
+	}
+	if q.Item != "" {
+		a.Items[q.Item] = q.N
+	} else {
+		a.Worms[q.Worm] = q.N
+	}
+	thoc0 := a.Thoc
+	if _, _, err := a.DeliverOrder(q.ID, t0); err != nil || a.Thoc != thoc0+q.Reward {
+		t.Fatalf("giao nhiệm vụ NPC: %v", err)
+	}
+	for id, n := range q.Gift {
+		if a.Items[id] < n {
+			t.Fatalf("quà %s ×%d phải vào kho", id, n)
+		}
 	}
 	a.Worms["dat"] = 10
 	thoc := a.Thoc

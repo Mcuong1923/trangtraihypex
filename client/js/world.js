@@ -1,9 +1,9 @@
 // Dựng cảnh 3D các khu từ dữ liệu zone của máy chủ. Vị trí tương tác lấy từ server;
 // phần trang trí (ổ rơm, bao thóc, sạp…) là của client theo bộ ảnh minh hoạ.
-import { mat, buildPig, buildDog, buildElder, buildCow, buildCoop, buildDecor, buildDuck, buildBird, buildGoat, buildFrog, buildBus, buildVehicle, label } from './models.js';
+import { mat, buildPig, buildDog, buildElder, buildCow, buildCoop, buildDecor, buildDuck, buildBird, buildGoat, buildFrog, buildBus, buildVehicle, buildInvestor, label } from './models.js';
 
 import {CameraController} from './camera.js';
-import {buildScenery, updateScenery, gateArch, occluder} from './scenery.js';
+import {buildScenery, updateScenery, gateArch, occluder, fadeTrees, setNightGlow} from './scenery.js';
 import {toLocal} from './navigation.js';
 
 const T = window.THREE;
@@ -14,28 +14,34 @@ export class World {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = T.PCFSoftShadowMap;
-    // Giữ output tuyến tính: màu vật liệu khai báo theo hex sRGB như bảng màu ảnh minh hoạ,
-    // bật sRGBEncoding sẽ chuyển gamma hai lần và làm cảnh bạc trắng.
+    // Output vẫn tuyến tính (màu khai báo theo hex sRGB như bảng màu ảnh minh hoạ); ACES nén vùng sáng
+    // cho tông ấm, có chiều sâu như bộ ảnh 2 thay vì bạc trắng khi nhiều nguồn sáng cộng lại.
+    this.renderer.toneMapping = T.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = .66;
     container.appendChild(this.renderer.domElement);
 
     this.scene = new T.Scene();
-    this.scene.background = new T.Color(0xcbdcc4);
-    // Fog hides the far plane, so distant chunks of the big map are never drawn.
-    this.scene.fog = new T.Fog(0xcbdcc4, 60, 150);
-    this.camera = new T.PerspectiveCamera(45, 1, 0.1, 160);
+    this.scene.background = skyTexture();
+    // Fog hides the far plane, so distant chunks of the big map are never drawn; its haze matches the horizon.
+    this.scene.fog = new T.FogExp2(0xcbd8d4, .0115);
+    this.camera = new T.PerspectiveCamera(45, 1, 0.1, 330);
  this.controls=new CameraController(this.camera);
  this.routeGroup=new T.Group();this.scene.add(this.routeGroup);
     // yaw 0 = camera đứng phía lối vào (+z) nhìn vào trong, như góc chụp của bộ ảnh minh hoạ.
     this.camYaw = 0; this.camTargetYaw = 0; this.camDist = 15;
 
-    // Tổng cường độ ~1 trên mặt hướng lên để giữ đúng tông đất nâu/cỏ xanh của ảnh minh hoạ.
-    const sun = new T.DirectionalLight(0xfff2d0, 0.72);
+    // Nắng chiều ấm + trời xanh dịu: mặt hướng lên ~1,4 lần màu gốc trước tone mapping, mặt khuất ~0,6.
+    const sun = new T.DirectionalLight(0xffd9a6, 1.0);
     sun.position.set(-18, 38, 20); sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     // The shadow box travels with the chicken across the big map (see update()).
     Object.assign(sun.shadow.camera, { left: -45, right: 45, top: 45, bottom: -45, near: 1, far: 130 });
-    this.scene.add(sun, sun.target, new T.HemisphereLight(0xdfeaff, 0x8a6b3a, 0.38), new T.AmbientLight(0xffffff, 0.1));
+    this.hemi = new T.HemisphereLight(0xe2e6f0, 0x6b5333, 0.42); this.amb = new T.AmbientLight(0xffeed7, 0.12);
+    this.scene.add(sun, sun.target, this.hemi, this.amb);
+    // Dãy núi xa mờ sương ở chân trời, luôn đi theo người chơi nên không bao giờ tới gần được.
+    this.horizon = mountains(); this.scene.add(this.horizon);
 
+    sun.shadow.bias = -.00025; sun.shadow.normalBias = .035;
     this.sun = sun;
     this.reducedMotion = false;
     this.zones = {};   // id → { group, data (world coords), local (area coords), npcs: [] }
@@ -50,6 +56,9 @@ export class World {
     const dpr = window.devicePixelRatio || 1;
     this.renderer.setPixelRatio(q === 'low' ? 1 : q === 'mid' ? Math.min(dpr, 1.5) : Math.min(dpr, 2));
     this.renderer.shadowMap.enabled = q !== 'low';
+    this.lowQuality = q === 'low';
+    // Warm, slightly richer grade like the bo-2 renders; skipped on the low preset to save a compositing pass.
+    this.renderer.domElement.style.filter = q === 'low' ? '' : 'saturate(1.14) contrast(1.05)';
     this.sun.castShadow = q !== 'low';
     const size = q === 'high' ? 2048 : 1024;
     if (this.sun.shadow.mapSize.x !== size) { this.sun.shadow.mapSize.set(size, size); this.sun.shadow.map?.dispose(); this.sun.shadow.map = null; }
@@ -101,6 +110,8 @@ export class World {
       case 'npc_duck': obj = buildDuck(); break;
       case 'npc_bird': obj = buildBird(); break;
       case 'npc_goat': obj = buildGoat(); break;
+      case 'npc_investor': obj = buildInvestor(cosmetics); break;
+      case 'bed': obj = new T.Group(); break;
       case 'npc_frog': obj = buildFrog(); break;
       case 'bus_stop': obj = busStop(); break;
       case 'parking': obj = parkingSign(); break;
@@ -119,6 +130,8 @@ export class World {
       default: obj = new T.Group();
     }
     obj.position.set(it.x, it.y||0, it.z);
+    // Stall keepers stand behind their counter; the interaction point stays where customers queue.
+    const off = z.scenery?.offsets?.[it.kind]; if (off) { obj.position.set(it.x + off[0], off[2] || it.y || 0, it.z + off[1]); if (off[3]) obj.scale.setScalar(off[3]); }
     obj.userData.baseY = it.y || 0;
     if (it.kind === 'npc_elder' && it.y) {
       // Seated in the big nest on the stage, facing the hall.
@@ -126,6 +139,7 @@ export class World {
       obj.userData.parts?.legs?.forEach(l => l.rotation.x = -1.2);
     }
     if (it.kind.startsWith('npc') || it.kind === 'pk' || it.kind === 'shop_sell') { obj.rotation.y = it.kind === 'npc_cow' ? -0.6 : 0; if (it.kind !== 'npc_bird') z.npcs.push(obj); }
+    if (it.kind === 'bed') obj.userData.bed = true;
     if (it.kind !== 'gate') {
       const lab = label(`${it.emo ? it.emo + ' ' : ''}${it.label}`, it.kind === 'dig' ? { bg: 'rgba(92,58,31,.75)', scale: 0.62 } : {});
       lab.position.set(0, it.kind === 'dig' ? 1.25 : (it.kind === 'npc_elder' ? 1.95 : 2.35), 0);
@@ -186,29 +200,10 @@ export class World {
     const z = { group, data, npcs: [] };
     this.zones.guildhall = z;
     this.scene.add(group);
-    const W = data.halfX * 2 + 1.2, D = data.halfZ * 2 + 1.2;
-    ground(group, W, D, 0xa8865a);
-    tufts(group, 14, data.halfX, data.halfZ);
-    fence(group, W, D);
-    // Bàn họp và bản vẽ chuồng mẫu.
-    box(group, 3.2, 0.14, 2.0, 0x8a5a30, 0, 0.75, -0.6);
-    for (const [x, zz] of [[-1.4, -1.4], [1.4, -1.4], [-1.4, 0.2], [1.4, 0.2]]) box(group, 0.14, 0.75, 0.14, 0x6b4423, x, 0.37, zz);
-    const paper = new T.Mesh(new T.BoxGeometry(1.6, 0.02, 1.1), mat(0xe8dcc0)); paper.position.set(0, 0.83, -0.6); group.add(paper);
-    for (const [x, zz] of [[-1.1, -1.2], [1.0, -0.2]]) { const st = new T.Mesh(new T.DodecahedronGeometry(0.16), mat(0x9a9a9a)); st.position.set(x, 0.92, zz); group.add(st); }
-    for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; nest(group, Math.sin(a) * 2.9, -0.6 + Math.cos(a) * 2.2); }
-    // Lán vật liệu phía sau, đống gỗ và đá, xe cút kít.
-    box(group, 6, 0.15, 2.4, 0x8a5a30, 0, 0.2, -7);
-    for (const sx of [-1, 1]) box(group, 0.2, 2.4, 0.2, 0x6b4423, sx * 2.8, 1.2, -6);
-    for (let i = 0; i < 4; i++) box(group, 1.6, 0.18, 0.3, 0xa47447, -1.6, 0.4 + i * 0.18, -7 + (i % 2) * 0.2);
-    for (let i = 0; i < 4; i++) { const st = new T.Mesh(new T.DodecahedronGeometry(0.3), mat(0x9a9a9a)); st.position.set(1.4 + (i % 2) * 0.5, 0.45, -7 + Math.floor(i / 2) * 0.5); group.add(st); }
-    for (let i = 0; i < 5; i++) box(group, 2.2, 0.2, 0.3, 0x9c6b36, 7.2, 0.12 + (i % 3) * 0.2, 1.6 + i * 0.35);
-    box(group, 1.3, 0.3, 0.8, 0x7b4f2d, -7.4, 0.5, 1.2);
-    const wh = new T.Mesh(new T.TorusGeometry(0.28, 0.07, 8, 14), mat(0x2b2b2b)); wh.position.set(-6.7, 0.3, 1.2); wh.rotation.y = Math.PI / 2; group.add(wh);
-    hay(group, -8.6, -6.4, 1.0);
-    for (let i = 0; i < 3; i++) box(group, 0.55, 0.45, 0.42, 0xe8dcc0, -8.8, 0.25 + (i > 1 ? 0.42 : 0), -4 + (i % 2) * 0.6);
-    barrel(group, -7.8, -4.4);
+    // Hall, planning table, nests, banner and task board from the bo-2 builder; projects add on top.
+    z.scenery = buildScenery('guildhall', group, data, cosmetics);
     const p = hall.projects || {};
-    if (p.nha_hoi_2) { box(group, 6.4, 0.14, 2.8, 0xb8433a, 0, 2.6, -6.6); box(group, 3.6, 0.3, 1.4, 0x8a5a30, 0, 0.35, 5.4); }
+    if (p.nha_hoi_2) { box(group, 6.4, 0.14, 2.8, 0xb8433a, 0, 2.6, -6.6); box(group, 3.6, 0.3, 1.4, 0x8a5a30, 0, 0.35, 5.6); }
     if (p.co_hoi) {
       const col = parseInt(String(hall.color || '#d64b3a').slice(1), 16);
       for (const sx of [-1, 1]) { box(group, 0.1, 3.4, 0.1, 0x5c3a1f, sx * 4.2, 1.7, -3.6); const f = new T.Mesh(new T.BoxGeometry(1.2, 0.8, 0.04), mat(col)); f.position.set(sx * 4.2 + sx * 0.62, 3.0, -3.6); group.add(f); }
@@ -218,7 +213,7 @@ export class World {
       const l = new T.Mesh(new T.SphereGeometry(0.24, 10, 8), mat(0xe2452e, { emissive: 0x8a1f0a })); l.position.set(x, 2.15, zz); group.add(l);
     }
     const sign = label(`${hall.emblem || '🏰'} ${hall.name}`, { bg: 'rgba(61,43,26,.86)', scale: 0.9 });
-    sign.position.set(0, 2.6, -0.6); group.add(sign);
+    sign.position.set(0, 3.2, -0.6); group.add(sign);
     for (const it of data.items) this.placeItem(z, it, cosmetics);
   }
 
@@ -307,20 +302,85 @@ export class World {
     for (const o of list) {
       if (!o.userData.box) { o.updateMatrixWorld(true); o.userData.box = new T.Box3().setFromObject(o); o.userData.fade = 1; }
       let blocked = false;
-      for (const gp of goals) {
-        const d = cam.distanceTo(gp); ray.origin.copy(cam); ray.direction.copy(gp).sub(cam).normalize();
-        if (ray.intersectBox(o.userData.box, hit) && hit.distanceTo(cam) < d - .4) { blocked = true; break; }
+      if (o.userData.roof) {
+        // Mái che: chỉ mờ khi đoạn camera → gà cắt qua mặt mái; đứng dưới mái vẫn thấy trần thật.
+        blocked = roofBlocks(o, cam, goals[1]);
+      } else {
+        for (const gp of goals) {
+          const d = cam.distanceTo(gp); ray.origin.copy(cam); ray.direction.copy(gp).sub(cam).normalize();
+          if (ray.intersectBox(o.userData.box, hit) && hit.distanceTo(cam) < d - .4) { blocked = true; break; }
+        }
       }
-      const goal = blocked ? .16 : 1, prev = o.userData.fade;
+      const goal = blocked ? (o.userData.fadeHide ? 0 : .16) : 1, prev = o.userData.fade;
       o.userData.fade += (goal - prev) * Math.min(1, dt * 7);
       if (Math.abs(o.userData.fade - prev) < .002 && Math.abs(o.userData.fade - goal) < .01) continue;
       const f = o.userData.fade;
-      o.traverse(m => { if (m.isMesh) { m.material.transparent = f < .985; m.material.opacity = f; m.material.depthWrite = f >= .985; m.castShadow = f > .5; } });
+      o.visible = f > .02;
+      o.traverse(m => { if (!m.isMesh) return; m.userData.originalShadow ??= m.castShadow; m.castShadow = m.userData.originalShadow && f > .5; for (const q of Array.isArray(m.material) ? m.material : [m.material]) { q.userData.blend ??= q.transparent; q.transparent = q.userData.blend || f < .985; q.opacity = f * (q.userData.baseOpacity ??= q.opacity); q.depthWrite = !q.userData.blend && f >= .985; } });
     }
+  }
+  // ---------- Ngày/đêm và mưa (PLAN_LOGIC_GAME 16) ----------
+  // Máy chủ báo pha của ngày game và thời tiết; client tự chạy đồng hồ giữa hai lần báo rồi nội suy ánh sáng.
+  setClock(c) {
+    if (!c) return;
+    this.clock = { phase: c.phase, at: performance.now(), day: c.day || 2880, rain: !!c.rain };
+  }
+  phase() {
+    const c = this.clock;
+    return c ? (c.phase + (performance.now() - c.at) / 1000 / c.day) % 1 : 0.18;
+  }
+  updateSky(dt, target) {
+    const s = Math.sin(this.phase() * Math.PI * 2);
+    const light = smooth(-0.15, 0.3, s), dusk = Math.max(0, 1 - Math.abs(s) / 0.3) * 0.65;
+    this.rainK = (this.rainK || 0) + ((this.clock?.rain ? 1 : 0) - (this.rainK || 0)) * Math.min(1, dt * 0.6);
+    const rain = this.rainK;
+    const key = Math.round(light * 200) + ':' + Math.round(dusk * 100) + ':' + Math.round(rain * 100);
+    if (key !== this.skyKey) {
+      this.skyKey = key;
+      const stops = SKY.day.map((d, i) => {
+        let c = mix(SKY.night[i], d, light);
+        c = mix(c, SKY.dusk[i], dusk);
+        return mix(c, mix(SKY.rainNight[i], SKY.rain[i], light), rain * 0.75);
+      });
+      paintSky(this.scene.background, stops);
+      this.scene.fog.color.setRGB(stops[2][0], stops[2][1], stops[2][2]);
+      this.scene.fog.density = .0115 + rain * .009;
+      this.sun.intensity = (0.16 + 0.84 * light) * (1 - 0.62 * rain);
+      this.sun.color.setHex(0x9fb4ff).lerp(new T.Color(dusk > 0.2 && light > 0.3 ? 0xffa86a : 0xffd9a6), light); // trăng xanh nhạt → nắng
+      this.hemi.intensity = (0.24 + 0.18 * light) * (1 - 0.25 * rain);
+      this.hemi.color.setHex(0x4d5d8f).lerp(new T.Color(0xe2e6f0), light);
+      this.amb.intensity = 0.21 - 0.09 * light;
+      this.amb.color.setHex(0x8494c8).lerp(new T.Color(0xffeed7), light);
+      this.renderer.toneMappingExposure = .66 + (1 - light) * .2;
+      for (const [m, day, night] of this.horizon.userData.mats) m.color.setHex(night).lerp(new T.Color(day), light);
+      setNightGlow(1 - light);
+    }
+    this.updateRain(dt, target, rain);
+  }
+  // Mưa nhẹ: các vệt nước rơi quanh gà, đi theo người chơi; ẩn hẳn khi tạnh.
+  updateRain(dt, target, k) {
+    if (k < 0.02) { if (this.rain) this.rain.visible = false; return; }
+    if (!this.rain) {
+      const n = this.lowQuality ? 500 : 1400, pos = new Float32Array(n * 6);
+      const geo = new T.BufferGeometry(); geo.setAttribute('position', new T.BufferAttribute(pos, 3));
+      this.rain = new T.LineSegments(geo, new T.LineBasicMaterial({ color: 0xdde8f2, transparent: true, opacity: 0, depthWrite: false }));
+      this.rain.frustumCulled = false; this.rain.userData.drops = Array.from({ length: n }, () => [Math.random() * 50 - 25, Math.random() * 22, Math.random() * 50 - 25]);
+      this.scene.add(this.rain);
+    }
+    const r = this.rain, P = r.geometry.attributes.position.array, fall = (this.reducedMotion ? 9 : 17) * dt;
+    r.visible = true; r.material.opacity = 0.75 * k; r.position.set(target.x, 0, target.z);
+    r.userData.drops.forEach((d, i) => {
+      d[1] -= fall; d[0] += fall * 0.12;
+      if (d[1] < 0) { d[0] = Math.random() * 50 - 25; d[1] = 18 + Math.random() * 4; d[2] = Math.random() * 50 - 25; }
+      P.set([d[0], d[1], d[2], d[0] - 0.1, d[1] + 0.85, d[2]], i * 6);
+    });
+    r.geometry.attributes.position.needsUpdate = true;
   }
   update(dt,target,moving=false,vehicle=null){
     this.controls.update(dt,target,moving,this.reducedMotion,vehicle);
+    this.updateSky(dt, target);
     const t=performance.now()*.001;
+    this.horizon.position.set(target.x, 0, target.z);
     this.sun.position.set(target.x - 18, 38, target.z + 20); this.sun.target.position.set(target.x, 0, target.z); this.sun.target.updateMatrixWorld();
     for (const z of this.active) {
       // Far areas are hidden behind the fog; only nearby ones animate.
@@ -335,6 +395,7 @@ export class World {
       if (z.scenery) { z.scenery.reducedMotion = this.reducedMotion; updateScenery(z.scenery, dt, t, (this.actors || [target]).map((q) => toLocal(z.data, q.x, q.z))); }
       for (const child of z.group.children) { const it = child.userData.item, lab = child.userData.label; if (!lab || !it) continue; lab.visible = Math.hypot(it.x - target.x, it.z - target.z) < 5; if (lab.visible) fitLabel(lab, this.camera); }
       this.fadeOccluders(dt, target, z);
+      fadeTrees(z.scenery, z.group, this.camera.position, target);
     }
     if(this.marker&&performance.now()>this.markerUntil)this.marker.visible=false;
     this.renderer.render(this.scene,this.camera);
@@ -347,7 +408,7 @@ export class World {
 function localData(data, zones, world) {
   const L = (p) => ({ ...p, ...toLocal(data, p.x, p.z) });
   const out = { ...data, items: (data.items || []).map(L), spawns: (data.spawns || []).map(L), obstacles: (data.obstacles || []).map(L), entry: data.entry ? L(data.entry) : null };
-  if (data.outdoor) out.areas = Object.values(zones).filter((a) => !a.outdoor && a.id !== 'home' && a.id !== 'guildhall').map((a) => ({ id: a.id, title: a.title, cx: a.cx - (data.cx || 0), cz: a.cz - (data.cz || 0), halfX: a.halfX, halfZ: a.halfZ, entry: a.entry && { x: a.entry.x - (data.cx || 0), z: a.entry.z - (data.cz || 0) } })), out.hub = world?.hub || { x: 0, z: 0 };
+  if (data.outdoor) out.areas = Object.values(zones).filter((a) => !a.outdoor && a.id !== 'home' && a.id !== 'guildhall').map((a) => ({ id: a.id, title: a.title, cx: a.cx - (data.cx || 0), cz: a.cz - (data.cz || 0), halfX: a.halfX, halfZ: a.halfZ, entry: a.entry && { x: a.entry.x - (data.cx || 0), z: a.entry.z - (data.cz || 0) } })), out.hub = world?.hub || { x: 0, z: 0 }, out.roads = world?.roads || null, out.belt = world?.belt || 0;
   return out;
 }
 
@@ -361,6 +422,65 @@ export function fitLabel(sp, camera) {
   const d = sp.getWorldPosition(_lp).distanceTo(camera.position);
   const h = Math.min(1.1, Math.max(.2, .021 * d * 900 / window.innerHeight)) / parentScale;
   sp.scale.set(aspect * h, h, 1);
+}
+
+// A roof slope blocks the view when the camera→chicken segment passes from one side of its surface
+// to the other inside the slope's footprint (camera above the thatch, or outside the eaves looking in).
+const _inv = new T.Matrix4(), _p = new T.Vector3(), _a = new T.Vector3(), _b = new T.Vector3();
+function roofBlocks(o, cam, target) {
+  const { hx, hz, eave, ridge, side } = o.userData.roof;
+  _inv.copy(o.matrixWorld).invert(); _a.copy(cam).applyMatrix4(_inv); _b.copy(target).applyMatrix4(_inv);
+  const above = (q) => q.y - (ridge - (ridge - eave) * Math.abs(q.x) / hx);
+  const below = above(_b) < 0;
+  for (let i = 0; i <= 16; i++) {
+    _p.lerpVectors(_a, _b, i / 16);
+    if (_p.x * side < -.01 || Math.abs(_p.x) > hx || Math.abs(_p.z) > hz) continue;
+    if ((above(_p) > 0) === below) return true;
+  }
+  return false;
+}
+
+// ---------- Trời và chân trời ----------
+// Gradient trời xanh → mù sáng ở chân trời như bộ ảnh 2 (vẽ theo màn hình, không tốn hình học).
+// Bốn điểm màu trời (đỉnh → chân trời) cho trưa, đêm, hoàng hôn và mưa; điểm thứ ba cũng là màu sương.
+const hex = (h) => [(h >> 16 & 255) / 255, (h >> 8 & 255) / 255, (h & 255) / 255];
+const SKY = {
+  day: [0x6f9cc4, 0xa9c6d8, 0xcbd8d4, 0xd9dccd].map(hex),
+  night: [0x0b1430, 0x1a2747, 0x2a3752, 0x343f58].map(hex),
+  dusk: [0x4a5f93, 0xc78c74, 0xe8a979, 0xf0c591].map(hex),
+  rain: [0x7a8794, 0x9aa5ad, 0xaab3b6, 0xb5bcbc].map(hex),
+  rainNight: [0x141b2a, 0x222b3b, 0x2e3746, 0x363e4b].map(hex),
+};
+const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+function paintSky(tex, stops) {
+  const cv = tex.image, c = cv.getContext('2d'), g = c.createLinearGradient(0, 0, 0, 256);
+  const css = (v) => `rgb(${v.map((x) => Math.round(x * 255)).join(',')})`;
+  [0, .42, .72, 1].forEach((at, i) => g.addColorStop(at, css(stops[i])));
+  c.fillStyle = g; c.fillRect(0, 0, 4, 256);
+  tex.needsUpdate = true;
+}
+function skyTexture() {
+  const cv = document.createElement('canvas'); cv.width = 4; cv.height = 256;
+  const tex = new T.CanvasTexture(cv);
+  paintSky(tex, SKY.day);
+  return tex;
+}
+function mountains() {
+  const g = new T.Group(), rng = (() => { let n = 7; return () => (n = (n * 16807) % 2147483647) / 2147483647; })();
+  // Hai lớp: dãy xa xanh xám, đồi gần xanh rêu; không nhận sương để vẫn hiện rõ ở chân trời.
+  g.userData.mats = [];
+  for (const [r, col, hMin, hMax, n, night] of [[285, 0x9db3bd, 30, 60, 26, 0x252f45], [245, 0x7f977c, 16, 32, 32, 0x1f2a26]]) {
+    const m = new T.MeshStandardMaterial({ color: col, fog: false, flatShading: true, roughness: 1 });
+    g.userData.mats.push([m, col, night]);
+    for (let i = 0; i < n; i++) {
+      const a = (i + rng() * .6) / n * Math.PI * 2, h = hMin + rng() * (hMax - hMin), w = h * (1.3 + rng() * .9);
+      const peak = new T.Mesh(new T.ConeGeometry(w, h, 5 + Math.floor(rng() * 3), 1), m);
+      peak.position.set(Math.cos(a) * r, h / 2 - 4, Math.sin(a) * r); peak.rotation.y = rng() * 6; peak.scale.z = .6 + rng() * .5;
+      g.add(peak);
+    }
+  }
+  return g;
 }
 
 // ---------- Trang trí ----------

@@ -1,9 +1,11 @@
 /* Layout: canvas 3D full-bleed + HUD 2D phủ trên, bảng mở dạng sheet. Một thế giới nông trại ấm nên dùng một tông cố định. */
 :root{
-  --farm:#b7c98f; --panel:#fbf3e0; --panel-2:#f1e3c6; --ink:#3d2b1a; --ink-soft:#7a5c3e;
-  --wood:#7b4f2d; --wood-d:#5c3a1f; --grain:#e7a73a; --accent:#e0592b; --accent-d:#a63c18;
-  --good:#4e9a4e; --warn:#e0a500; --bad:#c7452a; --mana:#5bbd6b; --line:#cbb089;
-  --shadow:0 8px 24px rgba(60,40,20,.28);
+  /* Bảng màu gỗ–kem theo PLAN_GIAO_DIEN_BO_2.md mục 3.3 */
+  --farm:#8a9d5f; --panel:#f8f1df; --panel-2:#efe2c4; --ink:#3a2a18; --ink-soft:#7a5c3e;
+  --wood:#89582f; --wood-d:#51351f; --grain:#f5a332; --accent:#35614c; --accent-d:#27473a;
+  --good:#4e8a50; --warn:#e0a500; --bad:#d94d42; --mana:#d94d42; --line:#cbb089;
+  --straw:#c99a42; --earth:#65512f; --grass:#637442; --cream:#f4ebd5;
+  --shadow:0 8px 24px rgba(60,40,20,.32);
   --font:"Baloo 2","Nunito",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --font-ui:"Nunito",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   color-scheme:light;
@@ -12,6 +14,8 @@
 html,body{height:100%;margin:0}
 body{background:var(--farm);color:var(--ink);overflow:hidden;font:15px/1.4 var(--font-ui);-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 #app{position:fixed;inset:0;z-index:0}
+/* Soft vignette like the bo-2 renders: frames the scene, never blocks input. */
+#app::after{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 75% 70% at 50% 46%,transparent 55%,rgba(38,24,10,.32) 100%)}
 canvas{display:block;touch-action:none}
 button{font-family:inherit}
 [hidden]{display:none!important}
@@ -20,7 +24,7 @@ button{font-family:inherit}
 /* ---------- Màn vào game ---------- */
 .screen{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;overflow:auto;
   padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));
-  background:radial-gradient(circle at 50% 25%,#d7e6a4,#93a964)}
+  background:radial-gradient(circle at 50% 22%,#e8dcb8,#a9b87e 70%,#7e9660)}
 .card{background:var(--panel);border:3px solid var(--wood);border-radius:22px;box-shadow:var(--shadow);width:min(560px,100%);padding:22px;margin:auto}
 .brand{display:flex;gap:12px;align-items:center}
 .logo{width:56px;height:56px;border-radius:50%;background:var(--grain);display:grid;place-items:center;font-size:30px;border:3px solid var(--wood);flex:none}
@@ -196,26 +200,161 @@ kbd{background:var(--panel-2);border:1px solid var(--line);border-bottom-width:2
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 .reduce *{animation:none!important;transition:none!important}
 
-/* Hypex world redesign: quiet parchment HUD around a living 3D scene. */
-:root{--panel:#fff9ec;--panel-2:#f4eddb;--ink:#2d493b;--ink-soft:#738273;--accent:#df8152;--wood:#e4d9bf;--wood-d:#bba780;--line:#e7dfcb;--shadow:0 8px 32px #243d2420;--good:#658a58}
+/* Hypex world redesign: HUD gỗ–kem theo bộ ảnh 2 (mục 5). */
+:root{--panel:#f8f1df;--panel-2:#efe2c4;--ink:#3a2a18;--ink-soft:#7a5c3e;--accent:#35614c;--wood:#89582f;--wood-d:#51351f;--line:#cbb089;--shadow:0 8px 30px rgba(60,40,20,.30);--good:#4e8a50}
 #hud{pointer-events:none}#hud button,#hud input,#hud form,#joy{pointer-events:auto}
-.player-panel{position:absolute;left:24px;top:22px;width:258px;padding:14px;display:flex;gap:12px;align-items:center;border:1px solid #fff9;background:#fff9e8ee;box-shadow:0 8px 30px #334d2820;border-radius:23px;backdrop-filter:blur(15px)}
-.player-portrait{position:relative;display:grid;place-items:center;width:64px;height:70px;flex:none;border-radius:19px;background:linear-gradient(155deg,#f5d994,#e7b45d);font-size:38px;border:3px solid #fff8df}
-.player-portrait #lvTxt{position:absolute;bottom:-8px;white-space:nowrap;background:#587a53;color:#fff5df;border:2px solid #fff2d3;border-radius:12px;font-size:10px;padding:2px 7px}
-.player-copy{flex:1;min-width:0}.player-copy>small{font-size:8px;letter-spacing:1.4px;color:#929779}.player-copy>strong{display:block;font:800 19px var(--font);line-height:1.2}.player-copy .lab{font-size:9px;color:#7d866a;margin:5px 0 4px}.player-copy .track{height:7px;background:#e7e5cf;border:0;border-radius:8px;overflow:hidden}.player-copy .mana{background:linear-gradient(90deg,#84a969,#b7c97c)}.player-copy .xp-mini{position:relative;margin-top:5px}.xp-mini .track{height:3px}.xp-mini>span{display:none}.xp-mini .xp{background:#d7af62}
-.location-pill{position:absolute;top:24px;left:50%;transform:translateX(-50%);display:flex;gap:13px;align-items:center;padding:10px 18px;border:1px solid #ffffff50;border-radius:40px;background:#203c2dc7;color:#fff8e8;box-shadow:0 5px 20px #20332020;backdrop-filter:blur(16px);cursor:pointer;min-width:240px;text-align:left}.location-pill strong{display:block;font:700 15px var(--font)}.location-pill small{display:block;font-size:10px;color:#d1d9bf}.location-pill .net{background:#c9da85;box-shadow:0 0 0 4px #e0f3a115;width:6px;height:6px}.location-pill .chevron{margin-left:auto;color:#e2dbbb}
-.map-corner{position:absolute;top:22px;right:24px;width:178px;display:flex;flex-direction:column;align-items:stretch;gap:10px}.wallet{align-self:flex-end;display:flex;gap:10px;align-items:center;padding:9px 15px;background:#fff9e8ed;border:1px solid #fff8;border-radius:30px;box-shadow:var(--shadow);font-size:14px}.wallet small{font-size:8px;letter-spacing:1px;color:#989a80}.wallet strong{font-size:15px}
-#miniMapButton{position:relative;overflow:hidden;border:5px solid #fff7e2;border-radius:24px;background:#e2e9ca;padding:0;box-shadow:0 8px 25px #25432b25;cursor:pointer;height:164px}#minimapCanvas{width:100%;height:100%;object-fit:cover}.map-compass{position:absolute;top:7px;right:9px;font-size:10px;color:#647d59}.mini-label{position:absolute;bottom:0;left:0;right:0;display:flex;justify-content:space-between;padding:8px 9px;background:#fff8e9e8;font-size:10px;font-weight:800}.mini-label kbd{font-size:8px;background:#e5e9d3;border:0}.map-corner>small{align-self:center;font-size:10px;color:#405b3c;background:#fff8e1b3;border-radius:12px;padding:3px 10px}
-#routeCard{position:absolute;left:24px;top:155px;width:258px;border-radius:18px;background:#fff9e8e8;padding:13px;display:flex;gap:10px;align-items:center;box-shadow:var(--shadow)}.route-symbol{width:31px;height:38px;display:grid;place-items:center;border-radius:12px;background:#e3ead0;color:#668756;font-size:25px}#routeCard>div{flex:1}#routeCard small{font-size:7px;letter-spacing:1.3px;color:#899475}#routeCard strong{font:800 13px var(--font);display:block}#routeStep{display:block;font-size:9px;color:#7b846b}#routeDistance{font-size:10px;color:#b28b52}#cancelRoute{position:absolute;right:6px;top:3px;border:0;background:none;color:#8f9a80;font-size:15px}
-.sidebtns{left:auto;right:24px;top:auto;bottom:152px;transform:none;display:grid;grid-template-columns:repeat(2,48px);gap:10px}.iconbtn{width:48px;height:48px;border-radius:17px;background:#fff9e9ec;border:1px solid #fff9;box-shadow:0 4px 14px #31472c20;font-size:22px;transition:transform .18s,background .18s}.iconbtn:hover{transform:translateY(-3px);background:#fffdf2}.iconbtn>span:not(.dot){display:none}.sidebtns .iconbtn:nth-child(n+7){display:none}.tools-expanded .sidebtns .iconbtn{display:grid}.tools-expanded .sidebtns{grid-template-columns:repeat(3,48px)}.more-button{position:absolute;right:24px;bottom:98px;width:48px;height:38px;background:#345540e6;color:#f5edd4;border:1px solid #ffffff50;border-radius:15px;letter-spacing:3px}.emotes{top:auto;right:84px;bottom:98px;transform:none;flex-direction:row}.emotes .iconbtn{display:none;width:38px;height:38px;border-radius:14px;font-size:17px}.emotes .iconbtn:nth-child(-n+3){display:grid}.tools-expanded .emotes .iconbtn{display:grid}
-.camera-tools{position:absolute;bottom:30px;left:24px;display:flex;gap:5px;padding:5px;border-radius:19px;background:#fff9e8da;box-shadow:var(--shadow)}.camera-tools button{border:0;background:none;border-radius:12px;width:34px;height:34px;color:#57704b;font-size:22px;cursor:pointer}.camera-tools button:hover{background:#e4ead2}
-#quickChat{position:absolute;bottom:28px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;width:min(480px,40vw);padding:8px 14px;border-radius:22px;border:1px solid #fff9;background:#fff9e8e8;box-shadow:var(--shadow);backdrop-filter:blur(15px)}#quickChat>span{font-size:25px;color:#7b9166}#quickChat input{padding:5px;background:transparent;border:0;outline:none;font-size:12px;min-width:0;color:#45603f}#quickChat button{background:#69875d;color:#fff6e1;border:0;width:32px;height:32px;flex:none;border-radius:12px;font-size:20px;cursor:pointer}.control-hint{position:absolute;left:50%;bottom:88px;transform:translateX(-50%);font-size:10px;color:#f5f2dc;text-shadow:0 1px 4px #24361e;letter-spacing:.8px}.control-hint span{opacity:.7;letter-spacing:0}
-#interact{right:24px;bottom:28px;background:#e8a15e;border:2px solid #fff5d1;border-radius:22px;min-width:155px;color:#fffdf4;font:800 14px var(--font);padding:12px 19px;box-shadow:0 6px 20px #5b43152b}.areaName{top:100px;background:#f9efd8e8;color:#4d6742;border:1px solid #fff8;font-size:14px;border-radius:20px}.bubble{font-size:12px;border:1px solid #e6dcc8;background:#fffbee;color:#415b3d;box-shadow:0 3px 12px #283d2020;border-radius:13px}.toast{background:#34583eea;border:1px solid #dbe7c84d;border-radius:16px;font-size:12px}.sheet{border:1px solid #fff9;border-radius:26px;background:#fff9ec;box-shadow:0 22px 90px #172d2545}.sheet-h{border-color:#e9e2d0}.btn{border:1px solid #fff6;border-radius:15px;background:#64835b;color:#fffbed;box-shadow:0 4px 0 #486b42;font-size:13px}.btn:hover{filter:brightness(1.07)}.btn.sec,.mini.sec{background:#e8ecd7;color:#4e6845}.mini{border-radius:11px}.row{border-color:#e9e4d4}.x{background:#edf0df;border:0;color:#67805d;border-radius:12px}
+#hud .ic{width:1em;height:1em;flex:none}
+#hud .iconbtn svg,.more-button svg,.camera-tools svg,#quickChat svg,#homeBtn svg{display:block;pointer-events:none}
+.iconbtn svg{width:23px;height:23px}.more-button svg{width:22px;height:22px}.camera-tools svg{width:20px;height:20px}#quickChat svg{width:20px;height:20px}#homeBtn svg{width:16px;height:16px}
+/* Hồ sơ gà (trên trái): khung gỗ hai lớp, XP cam trên, Độ no đỏ dưới. */
+.player-panel{position:absolute;left:20px;top:20px;width:280px;padding:12px;display:flex;gap:12px;align-items:center;border-radius:20px;background:linear-gradient(160deg,#8a5a30,#59361d);box-shadow:0 12px 30px rgba(40,24,10,.45),inset 0 0 0 2px #b98a55,inset 0 0 0 5px #6a442a;color:#fff3dd}
+.player-portrait{--feather:#f4cf3f;--feather-shade:#d8a62c;position:relative;display:grid;place-items:center;width:68px;height:76px;flex:none;border-radius:16px;background:radial-gradient(circle at 50% 28%,#fff7e6,#f0dfae);border:2px solid #c9a05a;box-shadow:inset 0 0 10px #d9b972}
+.player-portrait .chick{width:56px;height:62px}
+.player-portrait #lvTxt{position:absolute;bottom:-10px;left:50%;transform:translateX(-50%);white-space:nowrap;background:#35614c;color:#fff5df;border:2px solid #f4ebd5;border-radius:12px;font-size:10px;font-weight:800;padding:2px 9px;box-shadow:0 3px 8px rgba(40,24,10,.35)}
+.player-copy{flex:1;min-width:0}
+.player-copy>small{font-size:8px;letter-spacing:1.5px;color:#ecd6a8;font-weight:800}
+.player-copy>strong{display:block;font:800 19px var(--font);line-height:1.15;color:#fff6e4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.player-copy .bar{background:transparent;border:0;padding:0;box-shadow:none}
+.player-copy .lab{font-size:9px;color:#f3e3c2;margin:6px 0 3px;font-weight:800}
+.player-copy .track{height:9px;background:rgba(30,18,8,.5);border:1px solid rgba(255,240,210,.28);border-radius:7px;overflow:hidden}
+.player-copy .xp{background:linear-gradient(90deg,#f5a332,#f7c04e)}
+.player-copy .mana{background:linear-gradient(90deg,#d94d42,#e87a52)}
+.player-copy .xp-mini{margin-top:0}
+/* Bảng tên khu (trên giữa): tấm gỗ treo, hai đèn nhỏ, chữ trắng. */
+.location-pill{position:absolute;top:20px;left:50%;transform:translateX(-50%);display:flex;gap:9px;align-items:center;padding:7px 16px;border-radius:14px;background:linear-gradient(160deg,#8a5a30,#59361d);color:#fff6e4;box-shadow:0 8px 22px rgba(40,24,10,.4),inset 0 0 0 2px #b98a55;cursor:pointer;min-width:250px;max-width:40vw;text-align:center}
+.location-pill .lamp{width:7px;height:7px;border-radius:50%;background:#ffd978;box-shadow:0 0 9px #ffcf5e;flex:none}
+.location-pill .net{background:#8fd68f;box-shadow:0 0 6px #8fd68f;width:7px;height:7px;border-radius:50%;flex:none}
+.location-pill .net.off{background:#e35b4c;box-shadow:0 0 6px #e35b4c}
+.location-pill .pill-copy{flex:1;min-width:0}
+.location-pill strong{display:block;font:800 16px var(--font);color:#fff6e4;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.location-pill small{display:block;font-size:10px;font-weight:700;color:#f0dcb2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Ví thóc + minimap (trên phải). */
+.map-corner{position:absolute;top:20px;right:20px;width:182px;display:flex;flex-direction:column;align-items:stretch;gap:9px}
+.chip-row{align-self:center;display:flex;gap:6px;align-items:center;margin-top:-2px}
+.sky-chip[hidden]{display:none}.sky-chip{display:grid;place-items:center;min-width:34px;height:28px;padding:0 9px;border-radius:12px;background:linear-gradient(160deg,#8a5a30,#59361d);box-shadow:0 6px 18px rgba(40,24,10,.38),inset 0 0 0 2px #b98a55;color:#fff6e4;font:800 11px var(--font);white-space:nowrap}
+.wallet{align-self:flex-end;display:flex;gap:8px;align-items:center;padding:7px 15px;background:linear-gradient(160deg,#8a5a30,#59361d);border-radius:14px;box-shadow:0 6px 18px rgba(40,24,10,.38),inset 0 0 0 2px #b98a55;color:#fff6e4;font-size:15px}
+.wallet .ic{width:18px;height:18px;color:#f5c14d}
+.wallet strong{font-size:16px;font-variant-numeric:tabular-nums;letter-spacing:.3px}
+.wallet small{font-size:8px;letter-spacing:1.5px;color:#f0dcb2;font-weight:800;margin-top:3px}
+#miniMapButton{position:relative;overflow:hidden;border:5px solid #7a4d28;border-radius:20px;background:#f4ebd5;padding:0;box-shadow:0 8px 22px rgba(40,24,10,.38),inset 0 0 0 2px #b98a55;cursor:pointer;height:158px}
+#minimapCanvas{width:100%;height:100%;object-fit:cover}
+.map-compass{position:absolute;top:7px;right:9px;font-size:10px;font-weight:800;color:#7a5c3e;background:#f8f1dfcc;border-radius:8px;padding:1px 6px}
+.mini-label{position:absolute;bottom:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:6px 9px;background:#59361de8;color:#f4ebd5;font-size:10px;font-weight:800}
+.mini-label kbd{font-size:8px;background:#89582f;border:0;color:#ffe9c2}
+.map-corner>small{align-self:center;font-size:10px;font-weight:800;color:#3a2a18;background:#f4ebd5d9;border-radius:12px;padding:3px 11px;box-shadow:0 3px 10px rgba(40,24,10,.22);text-align:center;max-width:100%}
+#routeCard{position:absolute;left:20px;top:200px;width:280px;border-radius:16px;background:linear-gradient(160deg,#8a5a30,#59361d);color:#fff6e4;padding:13px;display:flex;gap:10px;align-items:center;box-shadow:0 8px 22px rgba(40,24,10,.4),inset 0 0 0 2px #b98a55}.route-symbol{width:31px;height:38px;display:grid;place-items:center;border-radius:12px;background:#f4ebd5;color:#8a5a30;font-size:25px}#routeCard>div{flex:1;min-width:0}#routeCard small{font-size:7px;letter-spacing:1.3px;color:#f0dcb2}#routeCard strong{font:800 13px var(--font);display:block;color:#fff6e4}#routeStep{display:block;font-size:9px;color:#f3e3c2}#routeDistance{font-size:10px;color:#f5c14d}#cancelRoute{position:absolute;right:6px;top:3px;border:0;background:none;color:#f0dcb2;font-size:15px;cursor:pointer}
+/* Bộ công cụ (phải dưới): 6 nút kem 2×3 + nút xanh "…". */
+.tool-tray{position:absolute;right:20px;bottom:22px;display:flex;flex-direction:column;align-items:flex-end;gap:10px}
+.tool-grid{display:grid;grid-template-columns:repeat(2,48px);gap:10px}
+.tool-grid.extra{display:none}
+.tools-expanded .tool-grid.extra{display:grid}
+.iconbtn{position:relative;width:48px;height:48px;border-radius:15px;background:linear-gradient(160deg,#fff8ea,#f3e4c4);border:2px solid #89582f;box-shadow:0 4px 12px rgba(40,24,10,.30),inset 0 1px 0 #fff;color:#5b3a20;font-size:22px;cursor:pointer;display:grid;place-items:center;transition:transform .16s,box-shadow .16s,color .16s}
+.iconbtn:hover{transform:translateY(-2px);box-shadow:0 7px 16px rgba(40,24,10,.34),inset 0 1px 0 #fff;color:#3a2a18}
+.iconbtn .dot{position:absolute;top:-6px;right:-6px;background:#d94d42;color:#fff;border-radius:999px;font-size:.6rem;font-weight:900;padding:1px 6px;border:2px solid #fff}
+.more-button{width:48px;height:44px;border-radius:15px;background:linear-gradient(160deg,#35614c,#27473a);color:#f4ebd5;border:2px solid #1f382d;box-shadow:0 4px 12px rgba(40,24,10,.34),inset 0 1px 0 #5d8a74;cursor:pointer;display:grid;place-items:center;transition:transform .16s}
+.more-button:hover{transform:translateY(-2px)}
+.emotes{position:absolute;top:auto;right:86px;bottom:22px;transform:none;display:flex;flex-direction:row;gap:6px}
+.emotes .iconbtn{width:42px;height:42px;border-radius:13px;font-size:18px;display:none}
+.emotes .iconbtn:nth-child(-n+3){display:grid}
+.tools-expanded .emotes .iconbtn{display:grid}
+/* Công cụ góc dưới trái: camera, bản đồ, ẩn HUD. */
+.camera-tools{position:absolute;bottom:22px;left:20px;display:flex;gap:6px;padding:6px;border-radius:17px;background:#59361dcc;box-shadow:0 6px 18px rgba(40,24,10,.35),inset 0 0 0 2px #8a5a30;backdrop-filter:blur(8px)}
+.camera-tools button{border:0;background:transparent;border-radius:11px;width:36px;height:36px;color:#f4ebd5;font-size:20px;cursor:pointer;display:grid;place-items:center}
+.camera-tools button:hover{background:#89582f}
+/* Chat giữa dưới + hướng dẫn thao tác. */
+#quickChat{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;width:min(438px,44vw);height:50px;padding:0 7px 0 16px;border-radius:26px;background:#f8f1dfee;border:2px solid #89582f;box-shadow:0 8px 22px rgba(40,24,10,.32),inset 0 1px 0 #fff;backdrop-filter:blur(12px)}
+#quickChat input{flex:1;min-width:0;background:transparent;border:0;outline:none;font-size:14px;font-weight:600;color:#3a2a18;padding:5px 0}
+#quickChat input::placeholder{color:#a89474}
+#quickChat button{background:linear-gradient(160deg,#35614c,#27473a);color:#f4ebd5;border:0;width:38px;height:38px;flex:none;border-radius:13px;cursor:pointer;display:grid;place-items:center;box-shadow:inset 0 1px 0 #5d8a74}
+#quickChat button:hover{filter:brightness(1.08)}
+.control-hint{position:absolute;left:50%;bottom:80px;transform:translateX(-50%);font-size:10px;font-weight:700;color:#fff6e4;background:rgba(40,24,10,.4);border-radius:12px;padding:3px 12px;text-shadow:0 1px 3px rgba(0,0,0,.4);letter-spacing:.6px;white-space:nowrap}
+.control-hint span{opacity:.85;letter-spacing:0}
+#interact{right:20px;bottom:250px;background:linear-gradient(160deg,#35614c,#27473a);border:3px solid #f4ebd5;border-radius:20px;min-width:165px;color:#fffdf4;font:800 14px var(--font);padding:12px 20px;box-shadow:0 8px 22px rgba(40,24,10,.4)}
+.areaName{top:84px;background:linear-gradient(160deg,#8a5a30,#59361d);color:#fff6e4;border:2px solid #b98a55;font:800 14px var(--font);border-radius:16px;padding:6px 18px;box-shadow:0 8px 20px rgba(40,24,10,.35)}
+.bubble{font-size:12px;border:1px solid #cbb089;background:#fff8ea;color:#3a2a18;box-shadow:0 3px 12px rgba(40,24,10,.22);border-radius:13px}
+.toast{background:#3a2a18ee;border:1px solid #cbb0894d;border-radius:16px;font-size:12px}
+.sheet{border:2px solid #89582f;border-radius:22px;background:#f8f1df;box-shadow:0 22px 90px rgba(30,18,8,.5)}
+.sheet-h{border-color:#dcc49a}
+.btn{border:1px solid #fff6;border-radius:15px;background:#35614c;color:#fffbed;box-shadow:0 4px 0 #27473a;font-size:13px}
+.btn:hover{filter:brightness(1.07)}
+.btn.sec,.mini.sec{background:#f0e3c4;color:#5b3a20}
+.mini{border-radius:11px}
+.row{border-color:#dcc49a}.row.me{border-color:var(--grain);background:#fff1d2}
+.x{background:#f0e3c4;border:0;color:#5b3a20;border-radius:12px}
 body.map-open .sheet{width:min(1000px,94vw);max-height:92vh}body.map-open .sheet-h{padding:20px 26px}body.map-open .sheet-h h3{font:800 23px var(--font)}body.map-open .sheet-b{padding:0 25px 24px}.map-tabs{display:flex;align-items:center;gap:8px;margin:0 0 16px}.map-tabs button{border:0;background:#e9eddc;color:#7d8c6b;padding:9px 16px;border-radius:12px;font:800 12px var(--font);cursor:pointer}.map-tabs button.active{background:#496d4b;color:#fff5de}.map-tabs>span{margin-left:auto;font-size:8px;letter-spacing:1.5px;color:#8a9875}.map-layout{display:grid;grid-template-columns:minmax(0,1fr) 245px;gap:24px;align-items:center}.village-map{width:100%;max-height:66vh;border:1px solid #d4dec0;border-radius:22px}.map-poi{cursor:pointer;outline:none}.poi-glow{fill:#597c4b10}.poi-disc{fill:#fff9e7;stroke:#a5b38a;stroke-width:.35}.map-poi.here .poi-glow{fill:#6b925730}.map-poi.selected .poi-disc,.map-poi:hover .poi-disc,.map-poi:focus .poi-disc{fill:#f7d592;stroke:#b18c4d}.map-poi.selected .poi-glow{fill:#e6be6970}.eyebrow{font-size:8px;letter-spacing:1.8px;color:#98a284}.map-icon{margin-top:24px;font-size:46px;color:#6b8e57;background:#e6ebd3;width:78px;height:78px;border-radius:25px;display:grid;place-items:center}.map-detail h2{font:800 25px var(--font);line-height:1.15;margin:18px 0 10px}.map-detail p{color:#849074;font-size:12px;line-height:1.7}.map-facts{display:grid;grid-template-columns:1fr 1.5fr;gap:12px 8px;font-size:10px;padding:18px 0 24px;border-top:1px solid #e4e5d4;margin-top:20px}.map-facts span{color:#939c85}.map-facts b{font-weight:700}.map-detail>small{display:block;font-size:10px;color:#9a9f86;line-height:1.6;margin-top:16px}.region-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.region-card{border:1px solid #dde2ca;background:#f2f2df;text-align:left;border-radius:22px;overflow:hidden;padding:0 22px 24px;color:#45623e;cursor:pointer}.region-art{display:grid;place-items:center;height:160px;font-size:100px;margin:0 -22px 20px;background:linear-gradient(135deg,#a4be84,#d4dca4);color:#607c4d}.stream-art{background:linear-gradient(150deg,#b2c795,#95c5bf);color:#5c9a88}.region-card small{font-size:8px;letter-spacing:1.5px;color:#849774}.region-card h2{font-size:24px;margin:8px 0}.region-card p,.region-card b,.map-note{font-size:12px}.region-card b{color:#b0854c}.map-note{color:#89977e;margin:18px 0 0}
 .quiet-hud #hud>*{visibility:hidden}.quiet-hud #hud .camera-tools,.quiet-hud #hud .camera-tools *{visibility:visible}.quiet-hud .camera-tools button:not(#toggleHUD){display:none}
-@media(max-width:850px){.player-panel{left:12px;top:12px;width:210px;padding:10px}.player-portrait{width:49px;height:55px;font-size:29px}.player-copy>strong{font-size:16px}.player-copy>small{font-size:7px}.location-pill{top:12px;min-width:0;padding:8px 12px;max-width:230px}.location-pill strong{font-size:12px}.location-pill small{font-size:8px}.map-corner{right:12px;top:12px;width:133px;gap:6px}#miniMapButton{height:120px;border-width:4px;border-radius:19px}.wallet{padding:6px 11px;font-size:12px}.wallet small{display:none}#routeCard{left:12px;top:125px;width:210px}.sidebtns{right:12px;bottom:134px;grid-template-columns:repeat(2,40px);gap:7px}.iconbtn{width:40px;height:40px;font-size:20px;border-radius:14px}.more-button{right:12px;bottom:86px;width:40px}.emotes{right:65px;bottom:86px}.camera-tools{left:12px;bottom:18px}#interact{right:12px;bottom:20px;min-width:130px;font-size:12px;padding:10px}#quickChat{bottom:19px;width:38vw}.control-hint{bottom:74px;font-size:8px}.map-layout{grid-template-columns:minmax(0,1fr) 190px;gap:15px}.map-detail h2{font-size:19px}.map-icon{width:55px;height:55px;font-size:32px;margin-top:10px}}
-@media(pointer:coarse){.control-hint{display:none}#joy{width:105px;height:105px;left:22px;bottom:28px;background:#fff9e830;border:2px solid #fff8;box-shadow:0 0 0 8px #ffffff0c}#joyNub{width:43px;height:43px;margin:-21.5px;background:#fff6ded9;border:1px solid #fff9}.camera-tools{left:145px;bottom:27px;padding:3px}.camera-tools button{width:30px;height:30px;font-size:18px}#quickChat{display:none}.emotes{display:none}.sidebtns{bottom:120px}.location-pill{left:45%;max-width:190px}.map-corner>small{font-size:8px}}
-@media(max-width:600px){.location-pill{top:136px;left:12px;transform:none;max-width:210px}.map-corner{width:116px}.map-corner>small{display:none}#routeCard{top:196px;width:210px}.map-layout{display:block}.village-map{max-height:44vh}.map-detail{margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:5px 15px}.map-detail .map-icon,.map-detail .eyebrow,.map-detail .map-facts{display:none}.map-detail h2{margin:5px 0}.map-detail p{margin:0;font-size:10px}.map-detail .btn{grid-column:2;grid-row:1/3;align-self:center}.map-detail>small{grid-column:1/3;margin:0;font-size:9px}.map-tabs>span{display:none}.map-tabs button{padding:8px;font-size:11px}.region-grid{grid-template-columns:1fr}.region-art{height:80px;font-size:60px}.region-card h2{font-size:20px}body.map-open .sheet-b{padding:0 14px 16px}.camera-tools{left:135px}.tools-expanded .sidebtns{grid-template-columns:repeat(3,40px)}}
+/* Bo-2 HUD details: the zone plate hangs on two chains with a lantern each side, and every tool keeps
+   its own colour like the illustrated buttons (cream tile, tinted disc, coloured glyph). */
+.location-pill{overflow:visible;border-radius:10px;background:linear-gradient(180deg,#8f5e33,#5d3a1f);box-shadow:0 8px 22px rgba(40,24,10,.4),inset 0 0 0 2px #b98a55,inset 0 -6px 10px rgba(30,16,6,.25)}
+.location-pill::before,.location-pill::after{content:"";position:absolute;top:-22px;width:3px;height:22px;background:repeating-linear-gradient(180deg,#3b2a1a 0 4px,#7d6142 4px 6px);border-radius:2px}
+.location-pill::before{left:22%}.location-pill::after{right:22%}
+.location-pill .lamp{width:10px;height:14px;border-radius:3px 3px 5px 5px;background:radial-gradient(circle at 50% 60%,#fff2b8,#ffbf48 60%,#c97a1c);box-shadow:0 0 12px 3px rgba(255,190,80,.75);border:1.5px solid #3b2a1a}
+.tool-grid .iconbtn::before{content:"";position:absolute;inset:7px;border-radius:50%;background:currentColor;opacity:.14;pointer-events:none}
+.tool-grid .iconbtn svg{stroke-width:2.2}
+#btnBag{color:#a4532f}#btnQuest{color:#7d5a2f}#btnShop{color:#cc4f78}#btnBook{color:#3f78b5}#btnWard{color:#3b7cc0}#btnFriends{color:#d0842a}
+.tool-grid .iconbtn:hover{filter:brightness(1.08)}
+@media(max-width:850px){.player-panel{left:12px;top:12px;width:216px;padding:9px}.player-portrait{width:52px;height:60px;border-radius:13px}.player-portrait .chick{width:44px;height:49px}.player-copy>strong{font-size:16px}.player-copy>small{font-size:7px}.location-pill{top:12px;min-width:0;padding:6px 11px;max-width:210px}.location-pill strong{font-size:12px}.location-pill small{font-size:8px}.map-corner{right:12px;top:12px;width:134px;gap:6px}#miniMapButton{height:120px;border-width:4px;border-radius:17px}.wallet{padding:5px 11px;font-size:12px}.sky-chip{min-width:28px;height:26px;padding:0 6px;font-size:10px}.wallet small{display:none}#routeCard{left:12px;top:150px;width:214px}.tool-tray{right:12px;bottom:16px;gap:8px}.tool-grid{grid-template-columns:repeat(2,42px);gap:8px}.iconbtn{width:42px;height:42px;font-size:20px;border-radius:13px}.more-button{width:42px;height:40px}.emotes{right:64px;bottom:16px}.emotes .iconbtn{width:38px;height:38px;font-size:16px}.camera-tools{left:12px;bottom:16px;padding:5px}#interact{right:12px;bottom:204px;min-width:140px;font-size:12px;padding:10px 16px}#quickChat{bottom:16px;width:40vw;height:46px}.control-hint{bottom:70px;font-size:8px}.map-layout{grid-template-columns:minmax(0,1fr) 190px;gap:15px}.map-detail h2{font-size:19px}.map-icon{width:55px;height:55px;font-size:32px;margin-top:10px}}
+@media(pointer:coarse){.control-hint{display:none}#joy{width:105px;height:105px;left:22px;bottom:26px;background:#f4ebd530;border:2px solid #f4ebd5;box-shadow:0 0 0 8px #ffffff0c}#joyNub{width:43px;height:43px;margin:-21.5px;background:#f8f1dfd9;border:2px solid #89582f}.camera-tools{left:140px;bottom:22px;padding:4px}.camera-tools button{width:32px;height:32px}#quickChat{display:none}.emotes{display:none}.tool-tray{right:12px;bottom:16px}.location-pill{left:42%;max-width:180px}.map-corner>small{font-size:8px}}
+@media(max-width:600px){.location-pill::before,.location-pill::after{display:none}.location-pill{top:120px;left:12px;transform:none;max-width:200px}.map-corner{width:110px}.map-corner>small{display:none}#routeCard{top:176px;width:200px}.map-layout{display:block}.village-map{max-height:44vh}.map-detail{margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:5px 15px}.map-detail .map-icon,.map-detail .eyebrow,.map-detail .map-facts{display:none}.map-detail h2{margin:5px 0}.map-detail p{margin:0;font-size:10px}.map-detail .btn{grid-column:2;grid-row:1/3;align-self:center}.map-detail>small{grid-column:1/3;margin:0;font-size:9px}.map-tabs>span{display:none}.map-tabs button{padding:8px;font-size:11px}.region-grid{grid-template-columns:1fr}.region-art{height:80px;font-size:60px}.region-card h2{font-size:20px}body.map-open .sheet-b{padding:0 14px 16px}.camera-tools{left:128px}.tool-grid{grid-template-columns:repeat(2,40px);gap:7px}.iconbtn{width:40px;height:40px;font-size:19px;border-radius:12px}.more-button{width:40px;height:38px}.emotes{right:60px}}
 
 #routeArrow{position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;z-index:4}#routeArrow span{position:absolute;left:-17px;top:-17px;width:34px;height:34px;display:grid;place-items:center;border-radius:50%;background:#f3c46b;color:#5b3c16;font-size:15px;box-shadow:0 4px 14px #5b3c1640;border:3px solid #fff8e3;transform:rotate(var(--rot,0rad));animation:routeBob 1.4s ease-in-out infinite}#routeArrow:not(.edge) span{transform:rotate(90deg)}@keyframes routeBob{50%{margin-top:-5px}}
-.village-map .area{stroke:#fff8e4;stroke-width:.8}.map-poi.selected .area{stroke:#e0a53f;stroke-width:1.6}.map-poi.here .area{stroke:#6b9257;stroke-width:1.4}.map-poi:hover .area{filter:brightness(1.06)}.map-route{fill:none;stroke:#e8a64f;stroke-width:1.6;stroke-dasharray:2.4 2;stroke-linecap:round}.village-map{background:#dfe8c4}
+.village-map .area{stroke:#fff8e4;stroke-width:.8}.map-poi.selected .area{stroke:#e0a53f;stroke-width:1.6}.map-poi.here .area{stroke:#6b9257;stroke-width:1.4}.map-poi:hover .area{filter:brightness(1.06)}.map-route{fill:none;stroke:#e8a64f;stroke-width:1.6;stroke-dasharray:2.4 2;stroke-linecap:round}.village-map{background:#f2e8cd}
+
+/* ===== Chạy nhanh (PLAN_LOGIC_GAME 3) ===== */
+#sprintBtn{position:absolute;left:20px;bottom:84px;width:64px;height:64px;border-radius:50%;border:0;padding:0;cursor:pointer;display:grid;place-items:center;align-content:center;gap:0;color:#3a2a18;font:800 10px var(--font);
+  background:radial-gradient(circle,#fff8ea 0 58%,transparent 59%),conic-gradient(#e9a23b calc(var(--stam,100)*1%),#59361d55 0);box-shadow:0 6px 16px rgba(40,24,10,.35);touch-action:none;user-select:none;-webkit-user-select:none}
+#sprintBtn .ico{font-size:22px;line-height:1}
+#sprintBtn.locked{background:radial-gradient(circle,#f3e4c4 0 58%,transparent 59%),conic-gradient(#d94d42 calc(var(--stam,0)*1%),#59361d55 0);color:#a33}
+#sprintBtn.none{opacity:.55}
+#sprintBtn:active{transform:scale(.96)}
+@media(pointer:coarse){#sprintBtn{left:140px;bottom:72px;width:72px;height:72px}}
+@media(max-width:600px){#sprintBtn{left:128px}}
+
+/* ===== Đào giun: giằng co (PLAN_LOGIC_GAME 4) ===== */
+.tug{position:absolute;left:50%;bottom:86px;transform:translateX(-50%);width:min(420px,92vw);padding:12px 14px 10px;border-radius:18px;background:linear-gradient(180deg,#fff8eaf2,#f3e4c4f2);box-shadow:0 10px 26px rgba(40,24,10,.38),inset 0 0 0 2px #89582f;color:#3a2a18;pointer-events:auto;z-index:6}
+.tug-head{display:flex;align-items:center;gap:8px;font:800 15px var(--font);margin-bottom:6px}
+.tug-head .rtag{font-size:10px}
+.tug-slips{margin-left:auto;letter-spacing:2px;color:#d94d42;font-size:13px}
+.tug-time{font:700 12px var(--font);color:#7a5a36;min-width:40px;text-align:right}
+.tug-slips+.tug-time{margin-left:6px}
+.tug-head .tug-time:first-child,.tug-head b+.rtag+.tug-time{margin-left:auto}
+.tug-bar{display:grid;grid-template-columns:56px 1fr;align-items:center;gap:8px;margin:5px 0;font:700 11px var(--font);color:#6b4a2a}
+.tug-bar .track{height:14px;border-radius:999px;background:#59361d33;overflow:hidden;box-shadow:inset 0 1px 2px rgba(0,0,0,.2)}
+.tug-bar .fill{height:100%;border-radius:999px;transition:width .05s linear}
+.tug-bar .prog{background:linear-gradient(90deg,#f0b84a,#e98a2b)}
+.tug-bar .ten{background:#5aa05a}
+.tug.warn .tension{box-shadow:inset 0 0 0 2px #d94d42;animation:tugWarn .3s infinite alternate}
+@keyframes tugWarn{from{background:#59361d33}to{background:#d94d4255}}
+.tug.slip{animation:tugShake .3s}
+@keyframes tugShake{0%,100%{transform:translateX(-50%)}25%{transform:translateX(calc(-50% - 8px))}75%{transform:translateX(calc(-50% + 8px))}}
+.tug-btn{display:block;width:100%;margin-top:8px;padding:14px;border:0;border-radius:14px;background:linear-gradient(180deg,#5b8f4e,#35614c);color:#fff6e4;font:800 17px var(--font);letter-spacing:.5px;box-shadow:0 4px 0 #24442f;cursor:pointer;touch-action:none;user-select:none;-webkit-user-select:none}
+.tug-btn kbd{font-size:10px;margin-left:6px;opacity:.8}
+.tug-btn.on{transform:translateY(3px);box-shadow:0 1px 0 #24442f;background:linear-gradient(180deg,#e98a2b,#c8642c)}
+.tug-hint{margin-top:6px;font:600 11px var(--font);color:#7a5a36;text-align:center}
+.tug-pop{position:absolute;left:50%;top:30%;transform:translate(-50%,-50%) scale(.6);opacity:0;pointer-events:none;padding:12px 22px;border-radius:18px;background:#fff8eaf5;box-shadow:0 10px 28px rgba(40,24,10,.4),inset 0 0 0 3px var(--c,#89582f);text-align:center;color:#3a2a18;transition:transform .25s cubic-bezier(.2,1.6,.4,1),opacity .2s;z-index:7}
+.tug-pop.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.tug-pop small{display:block;font:700 12px var(--font);color:#7a5a36}
+.tug-pop b{display:block;font:800 22px var(--font);color:var(--c)}
+.tug-pop span{display:block;font:700 11px var(--font);color:#7a5a36;text-transform:uppercase;letter-spacing:1px}
+
+/* ===== Bong bóng NPC (PLAN_LOGIC_GAME 5.1) ===== */
+.bubble.npc{background:#fff8ea;color:#3a2a18;border:2px solid #b98a55;max-width:260px;white-space:normal;text-align:left;line-height:1.3}
+.bubble.npc b{display:block;font:800 10px var(--font);color:#8a5a30;letter-spacing:.3px;margin-bottom:1px}
+.bubble.npc.me{border-color:#e98a2b;box-shadow:0 0 0 3px #e98a2b55,0 6px 16px rgba(40,24,10,.3)}
+
+/* ===== Thẻ NPC trên HUD ===== */
+.npc-card{position:absolute;left:50%;transform:translateX(-50%);z-index:5;display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:16px;background:linear-gradient(180deg,#fff8eaf5,#f3e4c4f5);box-shadow:0 8px 22px rgba(40,24,10,.32),inset 0 0 0 2px #b98a55;color:#3a2a18;max-width:min(520px,92vw);pointer-events:auto}
+.npc-card small{display:block;font:800 9px var(--font);letter-spacing:.8px;color:#8a5a30}
+.npc-card b{display:block;font:800 14px var(--font)}
+.npc-card span{display:block;font:600 11px var(--font);color:#6b4a2a}
+.npc-card .btn{padding:8px 12px;font-size:13px;white-space:nowrap}
+.npc-card kbd{font-size:9px;margin-left:4px}
+.npc-card.tut{top:104px;flex-direction:column;align-items:flex-start;gap:2px;max-width:min(380px,80vw);box-shadow:0 8px 22px rgba(40,24,10,.32),inset 0 0 0 2px #e9a23b}
+.npc-card.offer{bottom:150px}
+.npc-card.ask{bottom:150px;flex-direction:column;align-items:stretch}
+.npc-card.ask .ask-choices{display:grid;gap:6px;margin-top:6px}
+.npc-card.ride{bottom:150px}
+.cm.npc{background:#fff4dc;border-left:3px solid #e9a23b;padding-left:6px}
+.npctag{font:800 8px var(--font);background:#8a5a30;color:#fff6e4;border-radius:6px;padding:1px 4px;margin-left:2px}
+#toasts .toast.npc{background:#fff8ea;color:#3a2a18;border-left:4px solid #e9a23b}
+@media(max-width:600px){.npc-card.tut{top:168px}}

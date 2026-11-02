@@ -47,16 +47,38 @@ type Player struct {
 	rideOf      *Player              // người lái của xe mình đang ngồi
 	seatInvites map[string]time.Time // pid người lái → hạn lời mời lên xe
 	trade       *Trade
+
+	// Chạy nhanh (PLAN_LOGIC_GAME mục 3): thể lực tính bằng giây chạy, chỉ sống trong phiên.
+	run        bool      // input đang giữ nút chạy
+	running    bool      // tick vừa rồi thật sự chạy
+	stam       float64   // giây chạy còn lại
+	stamInit   bool      // đã nạp đầy lần đầu
+	stamLock   time.Time // hụt hơi: khoá tới mốc này rồi đầy lại
+	stamUsedAt time.Time
+	stamSent   float64
+	stamSentAt time.Time
+
+	// Làng sống (PLAN_LOGIC_GAME 5–9): đang ngồi xe NPC (xe buýt / xe ôm), trí nhớ của đạo diễn.
+	carrier     *Actor
+	carrierSeat int
+	busDest     string // mã khu của bến muốn xuống
+	alightNext  bool   // xuống ở bến kế
+	joinedAt    time.Time
+	memo        npcMemo
+	gooseUntil  time.Time // cưỡi ngỗng (Ngỗng con Lv3): chạy ×1,5 tới mốc này
+	gooseReady  time.Time // hồi kỹ năng cưỡi ngỗng
 }
 
+// DigSession là một lượt đào đang mở: loài giun và seed giằng co do máy chủ gieo lúc bắt đầu.
 type DigSession struct {
-	ID     string
-	Spot   string
-	Start  time.Time
-	Center float64
-	Half   float64
-	Speed  float64
-	MinDur time.Duration
+	ID        string
+	Spot      string
+	Start     time.Time
+	TugAt     time.Time // giằng co bắt đầu sau lúc mổ đất và lúc giun ló đầu
+	Worm      *Worm
+	Seed      uint32
+	Params    TugParams
+	Exhausted bool
 }
 
 // ChatLog là bản ghi chat phía máy chủ, dùng làm bằng chứng khi báo cáo (mục 11).
@@ -91,6 +113,15 @@ type Room struct {
 	invites  map[string]*Invite
 	pidSeq   int
 
+	actors      map[string]*Actor // NPC di động: xe buýt, xe ôm, xe trên đường, cameo
+	actorSeq    int
+	actorsReady bool
+	show        *arenaShow // trận biểu diễn đang diễn ở Sân tỷ thí
+	showNext    time.Time
+	clockSent   *Clock    // ngày/đêm, thời tiết đã báo cho phòng
+	sayWin      time.Time // hạn mức toàn phòng: tối đa SayPerSec câu NPC không nhắm ai mỗi giây
+	sayN        int
+
 	tickMu  sync.Mutex
 	tickBuf []float64 // thời gian xử lý tick gần nhất (ms) cho số đo vận hành
 }
@@ -120,7 +151,8 @@ func NewRegionRoom(h *Hub, id, name, region string) *Room {
 // NewHomeRoom mở phòng riêng cho nhà của một người (tối đa 8 người, mục 9.1).
 func NewHomeRoom(h *Hub, home *Home) *Room {
 	r := NewRoom(h, "h:"+home.Owner, "Chuồng riêng của "+home.OwnerName)
-	r.Kind, r.Owner, r.home, r.entry, r.cap = "home", home.Owner, home, "home", HomeCapacity
+	_, cap := home.comfort()
+	r.Kind, r.Owner, r.home, r.entry, r.cap = "home", home.Owner, home, "home", cap
 	r.zones = map[string]*Zone{"home": home.Zone()}
 	r.world = nil
 	return r
@@ -164,7 +196,8 @@ func (r *Room) Run() {
 
 func (r *Room) add(s *Session) {
 	r.pidSeq++
-	p := &Player{PID: "p" + strconv.Itoa(r.pidSeq), sess: s, acc: s.acc, zone: r.entry, lastInvited: map[string]time.Time{}, seatInvites: map[string]time.Time{}}
+	p := &Player{PID: "p" + strconv.Itoa(r.pidSeq), sess: s, acc: s.acc, zone: r.entry, lastInvited: map[string]time.Time{}, seatInvites: map[string]time.Time{},
+		joinedAt: time.Now(), memo: npcMemo{greetAt: map[string]time.Time{}}}
 	arr := s.arrive
 	s.arrive = nil
 	r.arriveV11(p, arr, time.Now())
@@ -177,8 +210,24 @@ func (r *Room) add(s *Session) {
 	p.lastStage = p.acc.HungerStage(r.hub.bal)
 	r.players[s] = p
 	now := time.Now()
+	if r.home != nil && p.acc.ID == r.Owner && r.home.houseDone() && !p.acc.HouseBuilt {
+		p.acc.HouseBuilt, p.dirty = true, true // chuồng nuôi thêm 6 bạn đồng hành
+	}
+	// Quà khởi nghiệp 100 thóc: tài khoản mới và tài khoản cũ đều nhận đúng một lần (PLAN_LOGIC_GAME 2.3).
+	starter := p.acc.GrantStarter(now, r.hub.bal)
+	if starter {
+		if err := r.hub.store.Save(p.acc); err != nil {
+			log.Printf("starter %s: %v", p.acc.ID, err)
+		}
+	}
+	defer func() {
+		if starter {
+			r.toast(p, "good", fmt.Sprintf("🎁 Cụ Cục tặng %d thóc khởi nghiệp. Tiêu cho khéo nhé!", r.hub.bal.StarterThoc))
+		}
+	}()
 
 	r.discover(p, "zone:"+p.zone)
+	r.onJoinNPC(p, now)
 	r.sendWelcome(p, now)
 	r.broadcastZone(p.zone, p, map[string]any{"t": "pjoin", "p": r.publicOf(p)})
 	r.broadcastRoom(nil, map[string]any{"t": "room", "room": r.info()})
@@ -199,7 +248,7 @@ func (r *Room) sendWelcome(p *Player, now time.Time) {
 		"t": "welcome", "pid": p.PID, "me": p.acc.View(now, r.hub.bal),
 		"room": r.info(), "zones": r.zones, "zone": p.zone, "pos": p.pos, "ry": p.ry,
 		"players": r.zonePlayers(p.zone, p), "catalog": catalog(r.hub.bal), "festival": r.hub.festival.Snapshot(),
-		"self": r.publicOf(p), "bus": r.busInfo(), "region": r.Region,
+		"self": r.publicOf(p), "bus": r.busInfo(), "region": r.Region, "actors": r.actorList(), "clock": GameClock(now),
 	}
 	if r.world != nil {
 		welcome["world"] = r.world.WorldInfo()
@@ -214,6 +263,9 @@ func (r *Room) sendWelcome(p *Player, now time.Time) {
 		}
 	}
 	p.sess.Send(welcome)
+	if r.show != nil {
+		p.sess.Send(r.show.msg(now)) // vào giữa trận biểu diễn: xem tiếp từ đúng giây đang diễn
+	}
 }
 
 // markGone giữ con gà trong phòng khi mất kết nối; hết ReconnectGrace thì mới rời phòng.
@@ -225,7 +277,7 @@ func (r *Room) markGone(s *Session) {
 	}
 	p.goneAt = time.Now()
 	p.in = Vec{}
-	p.dig = nil
+	r.abandonDig(p)
 	r.broadcastZone(p.zone, p, map[string]any{"t": "pgone", "pid": p.PID, "gone": true})
 }
 
@@ -273,6 +325,10 @@ func (r *Room) remove(s *Session) {
 	if p.rideOf != nil {
 		r.dismount(p, "")
 	}
+	if p.carrier != nil {
+		r.unboard(p, "")
+	}
+	r.forgetPlayer(p)
 	r.cancelTrip(p, "Bạn đã rời bến trước giờ xe chạy.")
 	r.endMatchFor(p, "left")
 	r.cancelInvitesFor(p)
@@ -336,6 +392,8 @@ type publicPlayer struct {
 	Z        float64           `json:"z"`
 	RY       float64           `json:"ry"`
 	Stage    int               `json:"stage"`
+	Carrier  string            `json:"carrier,omitempty"` // đang ngồi xe buýt / xe ôm NPC
+	CarSeat  int               `json:"carSeat,omitempty"`
 }
 
 // Chỉ gửi thông tin công khai; ví/túi đầy đủ không broadcast (mục 16.3).
@@ -358,6 +416,9 @@ func (r *Room) publicOf(p *Player) publicPlayer {
 	}
 	if p.rideOf != nil {
 		pp.RideOf = p.rideOf.PID
+	}
+	if p.carrier != nil {
+		pp.Carrier, pp.CarSeat = p.carrier.ID, p.carrierSeat
 	}
 	_, pp.Guild, pp.GColor = r.hub.store.Guilds.GuildOf(p.acc.ID)
 	return pp
@@ -437,14 +498,15 @@ func (r *Room) step(now time.Time, dt float64) {
 			}
 			continue
 		}
-		p.acc.TickVitals(dt, b)
+		if regen := r.homeRest(p); regen > 0 {
+			p.acc.restoreMana(regen * dt / 60) // ngủ ổ trong nhà đã xây: hồi độ no theo vật liệu
+		} else {
+			p.acc.TickVitalsAt(dt, b, r.drainFactor(p))
+		}
 		stage := p.acc.HungerStage(b)
 		if stage != p.lastStage || now.Sub(p.vitAt) > time.Second {
 			if stage != p.lastStage {
 				r.broadcastZone(p.zone, nil, map[string]any{"t": "pstage", "pid": p.PID, "stage": stage})
-				if stage == 4 && p.dig != nil {
-					p.dig = nil
-				}
 			}
 			p.lastStage = stage
 			p.vitAt = now
@@ -460,11 +522,20 @@ func (r *Room) step(now time.Time, dt float64) {
 				mult = 0 // kiệt sức khi đang lái: xe giảm tốc và dừng an toàn (mục 7.4)
 			}
 		}
-		if p.rideOf != nil {
-			continue // khách ngồi theo ghế, vị trí do syncRides đặt
+		if p.rideOf != nil || p.carrier != nil {
+			continue // khách ngồi theo ghế, vị trí do syncRides / syncCarried đặt
 		}
-		if now.Sub(p.inAt) < 300*time.Millisecond && (p.in.X != 0 || p.in.Z != 0) && p.dig == nil && mult > 0 {
-			spd := WalkSpeed * SpeedFactor(stage) * mult * math.Min(dt, .1)
+		wantMove := now.Sub(p.inAt) < 300*time.Millisecond && (p.in.X != 0 || p.in.Z != 0) && p.dig == nil && mult > 0
+		if r.stepStamina(p, now, dt, stage, wantMove) {
+			mult *= SprintMult
+		} else if now.Before(p.gooseUntil) && p.ride == nil {
+			mult *= GooseMult
+		}
+		if p.dig != nil && now.Sub(p.dig.TugAt).Seconds() > p.dig.Params.MaxSec+20 {
+			r.abandonDig(p) // lượt đào bỏ dở quá lâu: huỷ để gà đi lại được
+		}
+		if wantMove {
+			spd := WalkSpeed * SpeedFactor(stage) * r.walkBonus(p) * mult * math.Min(dt, .1)
 			z := r.zones[p.zone]
 			if r.world != nil {
 				z = r.world.World
@@ -486,7 +557,16 @@ func (r *Room) step(now time.Time, dt float64) {
 	}
 	r.stepPK(now)
 	r.stepV11(now)
+	r.stepActors(now, dt)
+	if r.tick%TickRate == 0 {
+		r.clockTick(now) // mọi phòng, kể cả nhà riêng, cùng một trời
+	}
 	if r.home != nil && r.home.Tick(now) {
+		for _, p := range r.players {
+			if p.acc.ID == r.Owner {
+				p.acc.HouseBuilt, p.dirty = true, true
+			}
+		}
 		if err := r.hub.store.Homes.Save(r.home); err != nil {
 			log.Printf("save home %s: %v", r.Owner, err)
 		}
@@ -501,6 +581,9 @@ func (r *Room) step(now time.Time, dt float64) {
 			mv := 0.0
 			if p.moving {
 				mv = 1
+				if p.running {
+					mv = 2 // dáng chạy cho người khác thấy
+				}
 			}
 			key := p.zone
 			if r.world != nil {
@@ -509,8 +592,20 @@ func (r *Room) step(now time.Time, dt float64) {
 			byZone[key] = append(byZone[key], []float64{round2(p.pos.X), round2(p.pos.Z), round2(p.ry), mv})
 			pidsByZone[key] = append(pidsByZone[key], p.PID)
 		}
+		var arows [][]any
+		for _, a := range r.actors {
+			mv := 0
+			if a.moving {
+				mv = 1
+			}
+			arows = append(arows, []any{a.ID, round2(a.Pos.X), round2(a.Pos.Z), round2(a.RY), mv, a.State})
+		}
 		for zone, rows := range byZone {
-			r.broadcastZone(zone, nil, map[string]any{"t": "snap", "tick": r.tick, "pids": pidsByZone[zone], "p": rows})
+			msg := map[string]any{"t": "snap", "tick": r.tick, "pids": pidsByZone[zone], "p": rows}
+			if arows != nil {
+				msg["a"] = arows
+			}
+			r.broadcastZone(zone, nil, msg)
 		}
 	}
 	// Checkpoint chỉ số sống định kỳ; tài sản đã lưu ngay lúc giao dịch.
@@ -527,6 +622,106 @@ func (r *Room) step(now time.Time, dt float64) {
 }
 
 func round2(v float64) float64 { return math.Round(v*100) / 100 }
+
+// abandonDig bỏ lượt đào đang mở như thể giun thoát: không thưởng, vẫn tính hồi đất. Nhờ vậy không thể
+// bắt đầu lại (huỷ, rời khu, mất kết nối) để gieo lại loài giun đã lộ.
+func (r *Room) abandonDig(p *Player) {
+	d := p.dig
+	if d == nil {
+		return
+	}
+	p.dig = nil
+	cd := 1.0
+	if d.Exhausted {
+		cd = 1.5
+	}
+	p.acc.DigReadyAt = time.Now().Add(time.Duration(float64(r.hub.bal.DigCooldown) * cd))
+	p.dirty = true
+	r.broadcastZone(p.zone, p, map[string]any{"t": "fx", "pid": p.PID, "fx": "escape"})
+}
+
+// homeRest: đứng yên cạnh ổ rơm trong nhà đã xây xong → độ no hồi theo vật liệu nhà (điểm/phút).
+func (r *Room) homeRest(p *Player) float64 {
+	if r.home == nil || p.moving {
+		return 0
+	}
+	regen, _ := r.home.comfort()
+	if regen <= 0 {
+		return 0
+	}
+	for _, o := range r.home.Objects {
+		if o.Kind == "o_rom" && p.pos.Dist(Vec{float64(o.X), float64(o.Z)}) < 1.3 {
+			return regen
+		}
+	}
+	return 0
+}
+
+// drainFactor: ngồi ổ thì độ no tụt chậm; bạn đồng hành "Bụng Khoẻ" giảm thêm.
+func (r *Room) drainFactor(p *Player) float64 {
+	f := 1.0
+	if p.seat != "" {
+		f *= r.hub.bal.ManaRestFactor
+	}
+	return f * (1 - petBonus(p.acc, AbilityBelly))
+}
+
+// walkBonus: bạn đồng hành "Chân Nhanh" (tổng mọi nguồn tối đa +10%).
+func (r *Room) walkBonus(p *Player) float64 { return 1 + math.Min(0.10, petBonus(p.acc, AbilityFeet)) }
+
+// maxStamina: 6 giây chạy, đói (giai đoạn 2) còn một nửa, đi chậm/kiệt sức không chạy; ngỗng cõng thêm giây.
+func (r *Room) maxStamina(p *Player, stage int) float64 {
+	if stage >= 3 {
+		return 0
+	}
+	m := StaminaSec + petBonus(p.acc, AbilityCarry)
+	if stage == 2 {
+		m /= 2
+	}
+	return m
+}
+
+// stepStamina trả true nếu tick này người chơi được chạy nhanh; cập nhật thể lực và báo cho chủ phiên.
+func (r *Room) stepStamina(p *Player, now time.Time, dt float64, stage int, moving bool) bool {
+	maxS := r.maxStamina(p, stage)
+	if !p.stamInit {
+		p.stam, p.stamInit = maxS, true
+	}
+	if !p.stamLock.IsZero() && !now.Before(p.stamLock) {
+		p.stam, p.stamLock = maxS, time.Time{} // hết 5 giây hụt hơi: thể lực đầy lại
+	}
+	canRun := p.run && moving && maxS > 0 && p.ride == nil && p.rideOf == nil && p.seat == "" && p.trade == nil && p.stamLock.IsZero() && p.stam > 0
+	p.running = canRun
+	if canRun {
+		p.stam -= dt
+		p.stamUsedAt = now
+		if p.stam <= 0 {
+			p.stam = 0
+			p.stamLock = now.Add(StaminaLock) // hụt hơi: nghỉ 5 giây
+			p.memo.lockouts = append(p.memo.lockouts, now)
+		}
+		if !p.acc.Tutorial["first_run"] {
+			p.acc.step("first_run")
+			p.dirty = true
+		}
+	} else if p.stamLock.IsZero() && now.Sub(p.stamUsedAt) > StaminaRegenGap {
+		p.stam += maxS * StaminaRegen * dt
+	}
+	p.stam = math.Min(p.stam, maxS)
+	ratio := 0.0
+	if maxS > 0 {
+		ratio = math.Round(p.stam/maxS*100) / 100
+	}
+	if p.sess != nil && ratio != p.stamSent && now.Sub(p.stamSentAt) > 150*time.Millisecond {
+		lock := 0.0
+		if !p.stamLock.IsZero() {
+			lock = math.Max(0, p.stamLock.Sub(now).Seconds())
+		}
+		p.sess.Send(map[string]any{"t": "stam", "s": ratio, "lock": math.Round(lock*10) / 10, "max": maxS})
+		p.stamSent, p.stamSentAt = ratio, now
+	}
+	return canRun
+}
 
 // ---------- Xử lý tin nhắn ----------
 
@@ -546,6 +741,7 @@ func (r *Room) handle(s *Session, m *inMsg) {
 		}
 		p.in = Vec{m.X, m.Z}
 		p.inAt = time.Now()
+		p.run = m.Run
 	case "chat":
 		r.chat(p, m.Text)
 	case "emote":
@@ -632,6 +828,7 @@ type petView struct {
 	Name     string `json:"name"`
 	Color    string `json:"color"`
 	Affinity int    `json:"level"`
+	Species  string `json:"species"`
 }
 
 func petOf(a *Account) *petView {
@@ -640,5 +837,5 @@ func petOf(a *Account) *petView {
 		return nil
 	}
 	lv, _ := AffinityLevel(c.Affinity)
-	return &petView{c.Name, c.Color, lv}
+	return &petView{c.Name, c.Color, lv, c.Species}
 }

@@ -49,6 +49,8 @@ type RescueJob struct {
 
 type Stats struct {
 	Dug      int `json:"dug"`
+	Escaped  int `json:"escaped,omitempty"` // giun thoát khi giằng co
+	RawEaten int `json:"rawEaten,omitempty"`
 	Perfect  int `json:"perfect"`
 	Sold     int `json:"sold"`
 	Eaten    int `json:"eaten"`
@@ -100,6 +102,7 @@ type Account struct {
 
 	Tutorial        map[string]bool `json:"tutorial"`
 	TutorialClaimed bool            `json:"tutorialClaimed"`
+	TutorialSkipped bool            `json:"tutorialSkipped,omitempty"` // bỏ qua hướng dẫn: giữ quà khởi nghiệp, không nhận thưởng hướng dẫn
 	Rescue          *RescueJob      `json:"rescue"`
 	RescueDone      map[string]bool `json:"rescueDone"`
 	LastShowAt      time.Time       `json:"lastShowAt"`
@@ -125,6 +128,21 @@ type Account struct {
 	OwnedVehicles map[string]bool `json:"ownedVehicles"`
 	Reputation    int             `json:"reputation"`
 	RepPairs      map[string]bool `json:"repPairs"`
+	// PLAN_LOGIC_GAME: quà khởi nghiệp một lần, bữa cứu trợ mỗi ngày của Cụ Cục.
+	StarterGranted bool                 `json:"starterGranted,omitempty"`
+	RationDay      string               `json:"rationDay,omitempty"`
+	Items          map[string]int       `json:"items"`         // kho: vật liệu, hạt giống, nông sản, trứng
+	LevelRewarded  map[int]bool         `json:"levelRewarded"` // cấp đã nhận quà
+	Coupons        map[string]time.Time `json:"coupons"`       // mã phiếu → hạn dùng
+	BusTokens      int                  `json:"busTokens"`     // lượt xe miễn phí đang có (tối đa 2)
+	BusTokenAt     time.Time            `json:"busTokenAt"`    // mốc bắt đầu tính lượt hồi kế tiếp
+	TokensInit     bool                 `json:"tokensInit,omitempty"`
+	Prefs          Prefs                `json:"prefs"`
+	NPCSeen        map[string]string    `json:"npcSeen"` // khoá lời chào NPC → ngày đã chào đầy đủ
+	CheckIn        CheckIn              `json:"checkIn"`
+	Beds           map[string]*Plant    `json:"beds"`                 // luống đang trồng: mã luống → cây
+	HouseBuilt     bool                 `json:"houseBuilt,omitempty"` // nhà riêng đã xây xong (mở chuồng nuôi thú cưng)
+	Week           WeekStats            `json:"week"`                 // thành tích tuần cho bảng xếp hạng
 
 	Recent      map[string]ActResult `json:"recent"` // request ID → kết quả (idempotency)
 	RecentOrder []string             `json:"recentOrder"`
@@ -185,6 +203,29 @@ func (a *Account) normalize() {
 	}
 	if a.RepPairs == nil {
 		a.RepPairs = map[string]bool{}
+	}
+	if a.Items == nil {
+		a.Items = map[string]int{}
+	}
+	if a.LevelRewarded == nil {
+		a.LevelRewarded = map[int]bool{}
+	}
+	if a.Coupons == nil {
+		a.Coupons = map[string]time.Time{}
+	}
+	if a.NPCSeen == nil {
+		a.NPCSeen = map[string]string{}
+	}
+	if a.Beds == nil {
+		a.Beds = map[string]*Plant{}
+	}
+	if a.Eggs > 0 {
+		// Bản lưu cũ: trứng là một con số; chuyển vào kho thành trứng thường.
+		a.Items["trung_thuong"] += a.Eggs
+		a.Eggs = 0
+	}
+	if !a.TokensInit {
+		a.TokensInit, a.BusTokens = true, MaxBusTokens
 	}
 	if a.Level < 1 {
 		a.Level = 1
@@ -255,8 +296,11 @@ func (a *Account) HungerStage(b Balance) int {
 }
 
 // TickVitals chỉ chạy khi phiên online đang kết nối; offline không cộng dồn.
-func (a *Account) TickVitals(dt float64, b Balance) {
-	a.Mana = math.Max(0, a.Mana-b.ManaDrainPerSec*dt)
+func (a *Account) TickVitals(dt float64, b Balance) { a.TickVitalsAt(dt, b, 1) }
+
+// TickVitalsAt nhân tốc độ tụt với factor: ngồi ổ (ManaRestFactor), bạn đồng hành "Bụng Khoẻ"…
+func (a *Account) TickVitalsAt(dt float64, b Balance, factor float64) {
+	a.Mana = math.Max(0, a.Mana-b.ManaDrainPerSec*factor*dt)
 	if a.Mana <= 0 {
 		a.ZeroElapsed += dt
 	}
@@ -270,8 +314,11 @@ func (a *Account) restoreMana(n float64) {
 }
 
 func SpeedFactor(stage int) float64 {
-	if stage >= 3 {
-		return 0.85 // đi bộ chậm 15%
+	switch {
+	case stage >= 4:
+		return 0.75 // kiệt sức: chậm 25%
+	case stage >= 3:
+		return 0.85 // đói kéo dài: chậm 15%
 	}
 	return 1
 }
@@ -319,12 +366,24 @@ func (a *Account) bumpDaily(id string, now time.Time, notes *[]string) {
 }
 
 // Các bước hướng dẫn 15 phút đầu (mục 4).
-var TutorialSteps = []struct{ ID, Text string }{
-	{"met_elder", "Gặp Gà Cụ Cục ở sảnh chuồng"},
-	{"first_dig", "Ra Vườn giun đào con giun đầu tiên"},
-	{"first_sell", "Bán giun ở Chợ thóc"},
-	{"first_meal", "Ăn để hồi mana (thức ăn hoặc chế biến giun)"},
-	{"first_social", "Chào ai đó, chat hoặc thử PK"},
+// Hướng dẫn người mới qua NPC (PLAN_LOGIC_GAME 6): mỗi bước có một NPC đội dấu "!" chỉ việc tiếp theo.
+var TutorialSteps = []struct{ ID, Text, NPC, Area string }{
+	{"met_elder", "Gặp Gà Cụ Cục trên bục cuối sảnh", "ga_cu_cuc", "lobby"},
+	{"first_run", "Giữ Shift (hoặc nút 🏃) chạy ra cửa sảnh", "ga_don_khach", "lobby"},
+	{"reach_garden", "Đi bộ hoặc đi xe buýt tới Vườn giun", "lon_un", "garden"},
+	{"first_dig", "Đào con giun đầu tiên (giữ nút để kéo)", "lon_un", "garden"},
+	{"first_sell", "Bán 1 con giun cho Lợn Ủn ở Chợ thóc", "sap_giun", "market"},
+	{"first_meal", "Ăn một món (mua ở chợ hoặc ăn sống giun)", "quay_an", "market"},
+}
+
+// NextTutorial là bước hướng dẫn đầu tiên chưa xong (nil khi đã xong hết).
+func (a *Account) NextTutorial() *struct{ ID, Text, NPC, Area string } {
+	for i := range TutorialSteps {
+		if !a.Tutorial[TutorialSteps[i].ID] {
+			return &TutorialSteps[i]
+		}
+	}
+	return nil
 }
 
 func (a *Account) step(id string) { a.Tutorial[id] = true }
@@ -384,9 +443,8 @@ func RollWormIn(set string, r float64) *Worm {
 
 func (a *Account) CanDig(now time.Time, b Balance) error {
 	a.EnsureDaily(now)
+	// Kiệt sức vẫn đào được (chỉ ra giun thường, xem RollDigWorm) để không bao giờ kẹt (PLAN_LOGIC_GAME 2.3).
 	switch {
-	case a.HungerStage(b) >= 4:
-		return errors.New("Kiệt sức: không đào được. Hãy ăn để mana đạt 20.")
 	case a.BagCount() >= BagCapacity:
 		// Túi đầy: dừng lượt trước khi bắt đầu, không âm thầm xoá vật phẩm (mục 7.1).
 		return fmt.Errorf("Túi đầy (%d/%d). Bán, ăn hoặc chế biến bớt giun rồi đào tiếp.", a.BagCount(), BagCapacity)
@@ -415,8 +473,14 @@ func RollWormAt(set string, r float64, now time.Time) *Worm {
 }
 
 func (a *Account) FinishDigIn(set, zone, spot string, perfect bool, rollR, sizeR float64, now time.Time, b Balance) (Loot, []string) {
+	loot, notes, _ := a.FinishDigWorm(RollWormAt(set, rollR, now), zone, spot, perfect, sizeR, now, b, 1)
+	return loot, notes
+}
+
+// FinishDigWorm cấp con giun máy chủ đã gieo lúc bắt đầu (giằng co thành công). cdMult kéo dài hồi đất
+// khi đào lúc kiệt sức. Trả thêm số cấp vừa lên vì đào cũng cho XP.
+func (a *Account) FinishDigWorm(w *Worm, zone, spot string, perfect bool, sizeR float64, now time.Time, b Balance, cdMult float64) (Loot, []string, int) {
 	var notes []string
-	w := RollWormAt(set, rollR, now)
 	size := math.Round((8+sizeR*22)*(1+0.15*float64(rarityIndex(w.ID)))*10) / 10
 	loot := Loot{ID: a.nextID("loot"), Worm: w.ID, SizeCM: size, Zone: zone, Spot: spot, At: now, Perfect: perfect}
 	a.Worms[w.ID]++
@@ -435,7 +499,7 @@ func (a *Account) FinishDigIn(set, zone, spot string, perfect bool, rollR, sizeR
 		a.Stats.Perfect++
 	}
 	a.DailyDigs++
-	a.DigReadyAt = now.Add(b.DigCooldown)
+	a.DigReadyAt = now.Add(time.Duration(float64(b.DigCooldown) * cdMult))
 	a.Mana = math.Max(0, a.Mana-b.ManaPerDig)
 	a.Loots = append(a.Loots, loot)
 	if len(a.Loots) > 30 {
@@ -443,7 +507,16 @@ func (a *Account) FinishDigIn(set, zone, spot string, perfect bool, rollR, sizeR
 	}
 	a.step("first_dig")
 	a.bumpDaily("dig", now, &notes)
-	return loot, notes
+	lv := a.addXP(DigXP[wormTier(w)])
+	return loot, notes, lv
+}
+
+// EscapeDig: giun thoát. Không tính vào lượt đào có thưởng của ngày, vẫn hồi đất và tốn sức; +XP an ủi.
+func (a *Account) EscapeDig(now time.Time, b Balance, cdMult float64) int {
+	a.DigReadyAt = now.Add(time.Duration(float64(b.DigCooldown) * cdMult))
+	a.Mana = math.Max(0, a.Mana-b.ManaPerDig)
+	a.Stats.Escaped++
+	return a.addXP(EscapeXP)
 }
 
 func rarityIndex(id string) int {
@@ -469,11 +542,27 @@ func (a *Account) SellWorm(id string, now time.Time) (int, []string, error) {
 	}
 	var notes []string
 	a.Worms[id]--
-	_ = a.addThoc(w.Sell, "sell_worm", id, now)
+	price := SellPrice(a, w, now)
+	_ = a.addThoc(price, "sell_worm", id, now)
 	a.Stats.Sold++
 	a.step("first_sell")
 	a.bumpDaily("sell", now, &notes)
-	return w.Sell, notes, nil
+	return price, notes, nil
+}
+
+// SellPrice: giá Lợn Ủn trả cho một con giun, đã cộng loài thu mua giá cao hôm nay (+10%) và "Tay Buôn".
+func SellPrice(a *Account, w *Worm, now time.Time) int {
+	mult := 1.0
+	if a != nil {
+		mult += petBonus(a, AbilityTrader)
+	}
+	if w.Region != "" && HotWorm(w.Region, now) == w.ID {
+		mult += 0.10
+	}
+	if mult == 1 {
+		return w.Sell
+	}
+	return int(float64(w.Sell)*mult + 0.5)
 }
 
 // EatWorm là giao dịch nguyên tử: trừ đúng 1 con và phí, cộng XP/mana; thiếu điều kiện thì không đổi gì.
@@ -500,6 +589,51 @@ func (a *Account) EatWorm(id string, now time.Time) (int, []string, error) {
 	a.step("first_meal")
 	a.bumpDaily("eat", now, &notes)
 	return lv, notes, nil
+}
+
+// EatWormRaw: gà ăn sống giun ngay tại chỗ, không tốn phí chế biến, không cộng XP (PLAN_LOGIC_GAME 2.3).
+func (a *Account) EatWormRaw(id string, b Balance, now time.Time) (int, []string, error) {
+	w := wormByID(id)
+	if w == nil {
+		return 0, nil, errors.New("Loại giun không hợp lệ.")
+	}
+	if a.Worms[id] <= 0 {
+		return 0, nil, errors.New("Không còn con " + w.Name + " nào trong túi.")
+	}
+	if a.Mana >= ManaMax {
+		return 0, nil, errors.New("Bụng đã no căng, chưa ăn được.")
+	}
+	var notes []string
+	gain := int(math.Round(float64(w.Mana) * b.RawEatRatio))
+	a.Worms[id]--
+	a.restoreMana(float64(gain))
+	a.Stats.RawEaten++
+	a.step("first_meal") // nhiệm vụ ngày "Chế biến & ăn" chỉ tính món chế biến
+	return gain, notes, nil
+}
+
+// GrantStarter cấp quà khởi nghiệp đúng một lần cho mỗi tài khoản (mới tạo hoặc có từ trước bản cập nhật).
+func (a *Account) GrantStarter(now time.Time, b Balance) bool {
+	if a.StarterGranted || a.Char == nil || b.StarterThoc <= 0 {
+		return false
+	}
+	a.StarterGranted = true
+	_ = a.addThoc(b.StarterThoc, "starter_gift", "starter", now)
+	return true
+}
+
+// ElderRation: mỗi ngày một khẩu phần cám khi đói, gần hết thóc và không còn gì ăn hay bán.
+func (a *Account) ElderRation(now time.Time) error {
+	day := DayKey(now)
+	switch {
+	case a.RationDay == day:
+		return errors.New("Hôm nay cụ đã cho cháu một phần rồi. Ra vườn đào giun đi!")
+	case a.Mana >= 10 || a.Thoc >= 5 || a.hasEdibleOrSellable():
+		return errors.New("Cháu vẫn còn cách tự lo được: bán giun, mua đồ ăn hoặc ăn sống một con giun nhé.")
+	}
+	a.RationDay = day
+	a.Food["cam"]++
+	return nil
 }
 
 func (a *Account) BuyFood(id string, eatNow bool, now time.Time) error {
@@ -592,6 +726,9 @@ func (a *Account) ClaimTutorial(now time.Time, b Balance) error {
 		return errors.New("Hoàn thành các bước hướng dẫn trước đã.")
 	}
 	a.TutorialClaimed = true
+	// Thưởng hướng dẫn: thóc + 3 khẩu phần cám + 1 trứng thường (PLAN_LOGIC_GAME 2.3).
+	a.Food["cam"] += 3
+	a.Items["trung_thuong"]++
 	return a.addThoc(b.TutorialReward, "tutorial", "tutorial", now)
 }
 
@@ -755,6 +892,20 @@ type AccountView struct {
 	TripsLeft       int                 `json:"tripsLeft"`
 	OwnedVehicles   map[string]bool     `json:"ownedVehicles"`
 	Reputation      int                 `json:"reputation"`
+	Items           map[string]int      `json:"items"`
+	StorageCount    int                 `json:"storageCount"`
+	StorageCap      int                 `json:"storageCap"`
+	LevelRewarded   map[int]bool        `json:"levelRewarded"`
+	Coupons         map[string]float64  `json:"coupons"` // mã → giây còn hiệu lực
+	BusTokens       int                 `json:"busTokens"`
+	NextTokenIn     float64             `json:"nextTokenIn"`
+	Prefs           Prefs               `json:"prefs"`
+	CheckIn         CheckInView         `json:"checkIn"`
+	Beds            map[string]*Plant   `json:"beds"`
+	StarterGranted  bool                `json:"starterGranted"`
+	RationReady     bool                `json:"rationReady"`
+	CompanionCap    int                 `json:"companionCap"`
+	HouseBuilt      bool                `json:"houseBuilt"`
 }
 
 func (a *Account) View(now time.Time, b Balance) AccountView {
@@ -772,8 +923,12 @@ func (a *Account) View(now time.Time, b Balance) AccountView {
 		RescueEligible: a.RescueEligible(), Rescue: a.Rescue, Stats: a.Stats, Loots: a.Loots,
 		BagCount: a.BagCount(), BagCap: BagCapacity, Discover: a.Discover, Titles: a.Titles, Title: a.Title,
 		Orders: a.OrderViews(now), Festival: a.Festival,
-		Eggs: a.Eggs, EggsClaimed: a.EggsClaimed, Incubation: a.Incubation, HatchIn: a.hatchIn(now), Companions: a.Companions,
-		Following: a.Following, Booking: a.Booking, TripsLeft: a.TripsLeft(now), OwnedVehicles: a.OwnedVehicles, Reputation: a.Reputation,
+		Eggs: a.eggCount(), EggsClaimed: a.EggsClaimed, Incubation: a.Incubation, HatchIn: a.hatchIn(now), Companions: a.Companions,
+		Following: a.Following, Booking: a.Booking, TripsLeft: a.TripsLeft(now, b), OwnedVehicles: a.OwnedVehicles, Reputation: a.Reputation,
+		Items: a.Items, StorageCount: a.StorageCount(), StorageCap: StorageCap, LevelRewarded: a.LevelRewarded,
+		Coupons: a.couponView(now), BusTokens: a.Tokens(now, b), NextTokenIn: a.NextTokenIn(now, b), Prefs: a.Prefs,
+		CheckIn: a.CheckInView(now), Beds: a.Beds, StarterGranted: a.StarterGranted, CompanionCap: a.CompanionCap(), HouseBuilt: a.HouseBuilt,
+		RationReady: a.RationDay != DayKey(now) && a.Mana < 10 && a.Thoc < 5 && !a.hasEdibleOrSellable(),
 	}
 }
 
@@ -792,4 +947,14 @@ func (a *Account) BagCount() int {
 		n += c
 	}
 	return n
+}
+
+func (a *Account) couponView(now time.Time) map[string]float64 {
+	out := map[string]float64{}
+	for id, exp := range a.Coupons {
+		if now.Before(exp) {
+			out[id] = math.Round(exp.Sub(now).Seconds())
+		}
+	}
+	return out
 }

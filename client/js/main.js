@@ -10,6 +10,9 @@ import * as V from './v11.js';
 import {bindWorldInput} from './input.js';
 import {findPath,moveSafe,walkable,areaAt} from './navigation.js';
 import * as MAP from './map.js';
+import * as D from './dig.js';
+import * as NPC from './npc.js';
+import * as L from './life.js';
 
 const T = window.THREE;
 const TOKEN_KEY = 'hypex_token';
@@ -25,6 +28,19 @@ function loading(title, sub) { $('loadTitle').textContent = title; $('loadSub').
 G.net = new Net();
 G.world = new World($('app'));
 MAP.initMap();
+// Chân dung gà trên HUD: tô màu lông theo gà của người chơi.
+const hexStr = (n) => '#' + (n >>> 0).toString(16).padStart(6, '0');
+function shadeHex(hex, f) {
+  const n = typeof hex === 'number' ? hex : parseInt(String(hex).replace('#', ''), 16);
+  return `rgb(${Math.round(((n >> 16) & 255) * f)},${Math.round(((n >> 8) & 255) * f)},${Math.round((n & 255) * f)})`;
+}
+function syncPortrait(color) {
+  const el = document.querySelector('.player-portrait');
+  if (!el) return;
+  const hex = FEATHER[color] ?? FEATHER.vang;
+  el.style.setProperty('--feather', hexStr(hex));
+  el.style.setProperty('--feather-shade', shadeHex(hex, 0.82));
+}
 // Hook xem trạng thái khi phát triển cục bộ; server vẫn quyết định mọi thứ nên không mở đường gian lận.
 if (['localhost', '127.0.0.1'].includes(location.hostname)) window.G_dbg = () => G;
 
@@ -157,6 +173,7 @@ function addPlayer(p) {
   setGone(mesh, p.gone);
   V.setVehicle(mesh, p.vehicle);
   mesh.userData.seated = p.rideOf || null;
+  mesh.userData.carrier = p.carrier ? { id: p.carrier, kind: G.actors.get(p.carrier)?.info.kind || 'bus', seat: p.carSeat } : null;
  mesh.userData.nest=p.nest||null;
   V.setPet(mesh, p.pet);
 }
@@ -210,7 +227,8 @@ function announceArea(zone) {
 // The ground the chicken walks on: the whole region map, or the single home/guild hall.
 const walkZone = () => G.worldMap || G.zones[G.zone];
 // Interaction points of every area (all in map coordinates).
-const allItems = () => G.worldMap ? Object.values(G.zones).flatMap((z) => z.items || []) : (G.zones[G.zone]?.items || []);
+const homeBeds = () => G.zone === 'home' && G.home && G.home.owner === G.me?.id ? (G.home.objects || []).filter((o) => o.kind === 'luong_rau' || o.kind === 'luong_ca_rot').map((o) => ({ kind: 'bed', id: 'home:' + o.id, label: 'Luống rau nhà', x: o.x, z: o.z, r: 1.6 })) : [];
+const allItems = () => G.worldMap ? Object.values(G.zones).flatMap((z) => z.items || []) : [...(G.zones[G.zone]?.items || []), ...homeBeds()];
 
 // ============ Tin nhắn từ máy chủ ============
 const N = G.net;
@@ -239,6 +257,7 @@ N.on('welcome', (m) => {
   G.pid = m.pid;
   G.room = m.room;
   G.world.build(m.zones, m.catalog.cosmetics, m.world);
+  setClock(m.clock);
   SO.stopPlacing();
   G.home = m.home || null;
   if (m.home) G.world.setHome(m.zones.home, m.home, m.catalog.cosmetics);
@@ -246,6 +265,7 @@ N.on('welcome', (m) => {
   if (G.self) G.world.scene.remove(G.self.mesh);
   const mesh = buildChicken({ color: m.me.char.color, comb: m.me.char.comb, tail: m.me.char.tail, eyes: m.me.char.eyes });
   G.world.scene.add(mesh);
+  syncPortrait(m.me.char.color);
   G.self = { mesh, pos: new T.Vector3(), srv: new T.Vector3(), phase: 0 };
   applyMe(m.me);
   dress(mesh, m.me.equipped, m.me.char, G.catalog.cosmetics);
@@ -256,6 +276,9 @@ N.on('welcome', (m) => {
   G.myGuild = m.self?.guild || '';
   G.myRide = m.self?.vehicle || null;
   G.myRideOf = m.self?.rideOf || null;
+  NPC.onWelcome(m.actors);
+  G.myCarrier = m.self?.carrier ? { id: m.self.carrier, kind: G.actors.get(m.self.carrier)?.info.kind || 'bus' } : null;
+  G.chatLog = P.appendChat;
   V.clearPets();
   V.setVehicle(mesh, G.myRide);
   mesh.userData.seated = G.myRideOf;
@@ -331,6 +354,7 @@ N.on('plook', (m) => {
 });
 N.on('pstage', (m) => { const p = G.players.get(m.pid); if (p) p.stage = m.stage; });
 N.on('snap', (m) => {
+  if (m.a) NPC.onSnap(m.a);
   m.pids.forEach((pid, i) => {
     const [x, z, ry, mv] = m.p[i];
     if (pid === G.pid) { G.self.srv.set(x, 0, z); return; }
@@ -346,6 +370,13 @@ N.on('vit', (m) => {
   if (m.stage !== prev) hungerToast(prev, m.stage);
 });
 N.on('toast', (m) => toast(m.text, m.kind));
+// Thể lực chạy nhanh (PLAN_LOGIC_GAME 3): máy chủ tính, client hiện vòng quanh nút 🏃.
+N.on('stam', (m) => { G.stam = m; updateSprint(); });
+// Làng sống (PLAN_LOGIC_GAME 5–9).
+N.on('aj', NPC.onJoin); N.on('al', NPC.onLeave); N.on('say', NPC.onSay); N.on('mark', NPC.onMark);
+N.on('offer', NPC.onOffer); N.on('offer_end', NPC.onOfferEnd); N.on('npcask', NPC.onAsk);
+N.on('scene', NPC.onScene); N.on('scene_end', NPC.onSceneEnd); N.on('pcar', NPC.onCarrier);
+N.on('reward', (m) => P.showLevelReward?.(m.level, m.reward));
 N.on('chat', (m) => {
   P.appendChat(m);
   if (m.kind === 'chat' && (G.worldMap ? meshOf(m.pid)?.position.distanceTo(G.self.pos) < 30 : m.zone === G.zone)) bubble(meshOf(m.pid), m.text);
@@ -365,6 +396,26 @@ N.on('home', (m) => {
   if (G.modal === 'cow') SO.dialogCow();
   if (G.modal === 'decorate') SO.openDecorate();
 });
+N.on('clock', (m) => setClock(m.clock));
+// Chip 🎫 lượt xe miễn phí (PLAN_LOGIC_GAME 7.2): tự đếm lượt hồi giữa hai lần máy chủ gửi "me".
+setInterval(() => {
+  const me = G.me, el = $('ticketChip');
+  if (!me || !el || !G.catalog || me.busTokens == null) return;
+  const max = G.catalog.maxBusTokens || 2, every = G.catalog.balance.tokenEverySec || 300;
+  let n = me.busTokens, left = (me.nextTokenIn || 0) - (performance.now() - (me._at || 0)) / 1000;
+  if (n < max && me.nextTokenIn > 0 && left <= 0) { n = Math.min(max, n + 1 + Math.floor(-left / every)); left = every - (-left % every); }
+  el.hidden = !G.worldMap;
+  el.textContent = `🎫 ${n}/${max}` + (n < max ? ` · ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}` : '');
+}, 1000);
+// Ngày/đêm và mưa (PLAN_LOGIC_GAME 16): máy chủ báo, chip trên ví nhắc luật đang có tác dụng.
+function setClock(c) {
+  if (!c) return;
+  G.clock = c;
+  G.world.setClock(c);
+  const chip = $('skyChip');
+  chip.textContent = (c.night ? '🌙' : '☀️') + (c.rain ? ' 🌧' : '');
+  chip.title = [c.night ? 'Đêm: đèn lồng thắp, Giun phát sáng ngoi lên nhiều hơn' : 'Ban ngày', c.rain ? 'Mưa nhẹ: ụ đất hồi nhanh hơn 30%, xe ôm phụ thu 1 thóc' : ''].filter(Boolean).join(' · ');
+}
 N.on('pk_invite', P.showInvite);
 N.on('pk_invite_gone', (m) => P.hideInvite(m.id));
 N.on('pk_start', P.PK.start);
@@ -422,12 +473,13 @@ const keys = {};
 window.addEventListener('keydown', (e) => {
   if (['INPUT','TEXTAREA'].includes(e.target.tagName)||e.target.isContentEditable) return;
   const k = e.key.toLowerCase();
-  if (G.modal === 'dig' && (k === ' ' || k === 'e')) { e.preventDefault(); $('digGo')?.click(); return; }
   if(k==='m'&&!e.repeat&&!$('hud').hidden){e.preventDefault();if(G.modal==='map')closeSheet();else MAP.openMap();return;}
   if (G.modal) return;
   keys[k] = true;
   if (G.placing && k === 'r') { SO.rotatePlacing(); return; }
   if (G.placing && (k === 'e' || k === ' ')) { e.preventDefault(); if (!e.repeat) SO.commitPlacing(); return; }
+  if (k === 'x' && NPC.hasOffer()) { e.preventDefault(); NPC.declineOffer(); return; }
+  if (k === 'e' && NPC.hasOffer()) { e.preventDefault(); if (!e.repeat) NPC.acceptOffer(); return; }
   if (k === 'e' || k === ' ') { e.preventDefault(); if (!e.repeat) interact(); }
   if (k === 'enter' && !$('hud').hidden) { e.preventDefault(); P.openChat(); }
 });
@@ -436,6 +488,12 @@ window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; }
 
 const joy = { x: 0, y: 0, id: null };
 const joyEl = $('joy'), nub = $('joyNub');
+// Nút 🏃: giữ để chạy (cảm ứng và chuột); Shift trên bàn phím làm cùng việc.
+{
+  const sb = $('sprintBtn');
+  const set = (v) => (e) => { e.preventDefault(); G.runHeld = v; if (v) sb.setPointerCapture?.(e.pointerId); };
+  sb.addEventListener('pointerdown', set(true)); sb.addEventListener('pointerup', set(false)); sb.addEventListener('pointercancel', set(false));
+}
 joyEl.addEventListener('pointerdown', (e) => { joy.id = e.pointerId; joyEl.setPointerCapture(e.pointerId); moveJoy(e); });
 joyEl.addEventListener('pointermove', moveJoy);
 const endJoy = () => { joy.id = null; joy.x = joy.y = 0; nub.style.transform = ''; };
@@ -477,10 +535,18 @@ $('btnQuest').onclick = P.openQuests;
 $('btnBag').onclick = () => P.openBag();
 $('btnBook').onclick = P.openBook;
 $('btnWard').onclick = P.openWardrobe;
+// Cửa hàng: ở xa thì chỉ đường ra Chợ thóc; mua/bán vẫn phải đứng gần quầy tương ứng.
+$('btnShop').onclick = () => {
+  if (!G.me) return;
+  if (G.zone === 'market') { toast('Bạn đang ở Chợ thóc — ghé các quầy để mua bán.'); return; }
+  if (!G.worldMap) { toast('Ra khỏi chuồng rồi mới đi chợ được.', 'warn'); return; }
+  MAP.setDestination('market', 'Đã ghim Chợ thóc — đi theo dấu chỉ đường.');
+};
 $('btnChat').onclick = P.openChat;
 $('btnHelp').onclick = P.openHelp;
 $('btnFriends').onclick = () => SO.openFriends();
 $('btnSettings').onclick = openSettings;
+$('btnSound').onclick = () => { settings.muted = !settings.muted; applySettings(); syncSoundIcon(); toast(settings.muted ? 'Đã tắt âm thanh' : 'Đã bật âm thanh'); };
 $('btnMail').onclick = () => { $('mailDot').hidden = true; SO.openMail(); };
 $('btnGuild').onclick = V.openGuild;
 // Chụp ảnh cảnh hiện tại (mục 11: bữa tiệc sân nhà và chụp ảnh).
@@ -506,7 +572,12 @@ function applySettings() {
   setAudio(settings.volume, settings.muted);
   store.set('hypex_settings', JSON.stringify(settings));
 }
+function syncSoundIcon() {
+  const use = $('btnSound')?.querySelector('use');
+  if (use) use.setAttribute('href', settings.muted ? '#i-sound-off' : '#i-sound');
+}
 applySettings();
+syncSoundIcon();
 function openSettings() {
   const q = [['low', 'Thấp', 'Không bóng đổ, ưu tiên điện thoại'], ['mid', 'Vừa', 'Cân bằng'], ['high', 'Cao', 'Bóng đổ nét, máy mạnh']];
   openSheet('settings', 'Cài đặt', `
@@ -517,6 +588,7 @@ function openSettings() {
     <h2>Âm thanh</h2>
     <div class="row"><div class="meta"><label class="nm" for="setVol">Âm lượng</label><input type="range" id="setVol" min="0" max="1" step="0.05" value="${settings.volume}" style="width:100%;accent-color:var(--accent)"></div>
       <label class="act" style="gap:6px;align-items:center;display:flex"><input type="checkbox" id="setMute" ${settings.muted ? 'checked' : ''} style="width:22px;height:22px;accent-color:var(--accent)">Tắt tiếng</label></div>
+    ${L.prefsSection()}
     <h2>Riêng tư</h2>
     <button class="choice" id="setPrivacy" style="width:100%">👥 Hiện vị trí với bạn bè, nhận lời mời PK, danh sách đã chặn…</button>
     <h2>Điều khiển</h2>
@@ -527,6 +599,7 @@ function openSettings() {
     <button class="btn sec block" id="logoutBtn" style="margin-top:0">Đăng xuất</button>`);
   document.querySelectorAll('[data-q]').forEach((b) => (b.onclick = () => { settings.quality = b.dataset.q; applySettings(); openSettings(); }));
   $('setReduced').onchange = (e) => { settings.reduced = e.target.checked; document.documentElement.classList.toggle('reduce', settings.reduced); applySettings(); };
+  L.bindPrefs();
   $('setPrivacy').onclick = () => SO.openFriends('settings');
   $('safeReturn').onclick = () => SO.confirmBox('Về sảnh an toàn?', 'Gà sẽ về cửa sảnh chuồng cộng đồng. Chỉ dùng khi bị kẹt hoặc cần cứu đói; đi lại thường ngày hãy dùng bản đồ.', async () => { const r = await G.net.act('go', { to: 'lobby', id: 'home' }); if (!r.ok) toast(r.err, 'warn'); });
   $('setVol').oninput = (e) => { settings.volume = +e.target.value; applySettings(); };
@@ -574,6 +647,8 @@ function promptText(it) {
   if (it.kind === 'guild_board') return 'Bảng hội';
   if (it.kind === 'parking') return G.myRide ? 'Cất xe' : 'Điểm đỗ xe';
   if (it.kind === 'road') return 'Đường liên trại';
+  if (it.kind === 'bed') { const pl = G.me?.beds?.[it.id.startsWith('home:') ? it.id : 'park:' + it.id]; return pl ? (Date.now() >= Date.parse(pl.ready) ? '🧺 Thu hoạch' : '🌱 Chăm cây') : '🌱 Gieo hạt · ' + it.label; }
+  if (it.kind === 'npc_cow' && G.zone !== 'home') return 'Tiệm vật liệu · Bò Mộc';
   return 'Gặp ' + it.label;
 }
 function interact() {
@@ -581,13 +656,13 @@ function interact() {
   const work = V.workPrompt();
   if (work) { V.doWork(work); return; }
   if (partyPrompt()) { G.net.act('party_cheer').then((r) => !r.ok && toast(r.err, 'warn')); return; }
-  if (!nearest) return;
+  if (!nearest) { if (NPC.nearestStop()) NPC.openBusStop(); return; }
   const it = nearest;
   switch (it.kind) {
     case 'nest': G.net.act(G.self.mesh.userData.nest?'stand':'sit',{id:it.id}).then(r=>!r.ok&&toast(r.err,'warn'));break;
     case 'npc_guide': openSheet('guide','Chào mừng về làng',`<p>Cụ Cục đang ở trên bục cuối sảnh. Chọn một ổ rơm để ngồi cùng mọi người.</p><p>Kéo để xoay góc nhìn, lăn chuột để zoom. Chạm xuống đất hoặc dùng WASD để đi.</p><p>Qua cửa chính là sân làng. Mở bản đồ để tìm đường tới vườn giun, chợ và bến xe.</p><button class="btn block" id="guideMap">Mở bản đồ làng ↗</button>`);$('guideMap').onclick=()=>MAP.openMap();break;
     case 'gate': G.net.act('go', { to: it.to }).then((r) => !r.ok && toast(r.err, 'warn')); break;
-    case 'dig': P.startDig(it); break;
+    case 'dig': D.startDig(it); break;
     case 'npc_elder': P.dialogElder(it); break;
     case 'npc_pig': P.dialogPig(it); break;
     case 'board': P.openQuests(); break;
@@ -599,6 +674,8 @@ function interact() {
     case 'home_sign': SO.dialogHomeSign(); break;
     case 'home_exit': G.net.act('go', { to: 'lobby' }); break;
     case 'npc_cow': SO.dialogCow(); break;
+    case 'npc_investor': L.dialogInvestor(); break;
+    case 'bed': L.dialogBed(it); break;
     case 'home_board': SO.openHomeBoard(); break;
     case 'npc_duck': V.dialogDuck(); break;
     case 'guild_board': V.openGuild(); break;
@@ -617,7 +694,10 @@ function fx(kind, mesh, opt = {}) {
   if (!mesh) return;
   const a = (k, dur) => (mesh.userData.anim = { k, t: 0, dur });
   switch (kind) {
-    case 'dig': a('dig', 0.9); dirt(mesh); break;
+    case 'dig': a('dig', opt.dur || (opt.peck ? opt.peck / 1000 : 0.9)); dirt(mesh); break;
+    case 'escape': dirt(mesh); bubble(mesh, '💨', { emo: true, ttl: 1.2 }); break;
+    case 'goose': bubble(mesh, '🪿 Cưỡi ngỗng!', { ttl: 2.5 }); a('hop', 0.8); break;
+    case 'buddy': bubble(mesh, '💞', { emo: true, ttl: 1.6 }); break;
     case 'dug': {
       a('hop', 0.6); dirt(mesh);
       const w = wormMesh(opt.color || '#d98a8a');
@@ -673,6 +753,22 @@ function confetti(mesh) {
     effects.push({ obj: c, parent: G.world.scene, t: 0, dur: 1.6, update: (e, dt) => { v.y -= 7 * dt; c.position.addScaledVector(v, dt); c.rotation.x += dt * 8; } });
   }
 }
+// Bụi sau chân khi chạy nhanh.
+function dust(mesh) {
+  const c = new T.Mesh(new T.SphereGeometry(0.12, 6, 4), mat(0xcdb48a, { transparent: true, opacity: 0.6 }));
+  c.position.set(mesh.position.x - Math.sin(mesh.rotation.y) * 0.4, 0.12, mesh.position.z - Math.cos(mesh.rotation.y) * 0.4);
+  G.world.scene.add(c);
+  effects.push({ obj: c, parent: G.world.scene, t: 0, dur: 0.5, update: (e) => { c.scale.setScalar(1 + e.t * 3); c.material.opacity = 0.6 * (1 - e.t / 0.5); } });
+}
+// Nút 🏃 và vòng thể lực (máy chủ gửi tỉ lệ 0..1 và số giây khoá khi hụt hơi).
+function updateSprint() {
+  const st = G.stam || { s: 1, lock: 0 }, btn = $('sprintBtn');
+  if (!btn) return;
+  btn.style.setProperty('--stam', Math.round((st.lock > 0 ? 1 - st.lock / 5 : st.s) * 100));
+  btn.classList.toggle('locked', st.lock > 0);
+  btn.classList.toggle('none', (st.max ?? 6) <= 0);
+  $('sprintTxt').textContent = st.lock > 0 ? `Hụt hơi ${st.lock.toFixed(0)}s` : (st.max ?? 6) <= 0 ? 'Đói quá' : 'Chạy';
+}
 function stars(mesh, color) {
   for (let i = 0; i < 10; i++) {
     const s = new T.Mesh(new T.OctahedronGeometry(0.09), mat(color));
@@ -689,10 +785,12 @@ function animate(mesh, dt, moving, phase, stage) {
   p.head.rotation.x = stage >= 2 ? 0.35 : 0; // gà đói cúi đầu
   p.wings[0].rotation.z = p.wings[1].rotation.z = 0;
   if (moving) {
-    p.legs[0].rotation.x = Math.sin(phase) * 0.6;
-    p.legs[1].rotation.x = -Math.sin(phase) * 0.6;
-    rig.position.y = Math.abs(Math.sin(phase * 2)) * 0.05;
-    p.wings[0].rotation.z = -Math.sin(phase) * 0.2; p.wings[1].rotation.z = Math.sin(phase) * 0.2;
+    const run = mesh.userData.running;
+    p.legs[0].rotation.x = Math.sin(phase) * (run ? 0.95 : 0.6);
+    p.legs[1].rotation.x = -Math.sin(phase) * (run ? 0.95 : 0.6);
+    rig.position.y = Math.abs(Math.sin(phase * 2)) * (run ? 0.1 : 0.05);
+    if (run) { rig.rotation.x = 0.22; p.wings[0].rotation.z = -0.55 - Math.abs(Math.sin(phase)) * 0.3; p.wings[1].rotation.z = -p.wings[0].rotation.z; }
+    else { p.wings[0].rotation.z = -Math.sin(phase) * 0.2; p.wings[1].rotation.z = Math.sin(phase) * 0.2; }
   } else {
     p.legs[0].rotation.x *= 0.8; p.legs[1].rotation.x *= 0.8;
     if (!G.reducedMotion) rig.position.y = Math.sin(performance.now() * 0.002 + phase) * 0.015;
@@ -703,6 +801,17 @@ function animate(mesh, dt, moving, phase, stage) {
     p.legs[0].rotation.x = p.legs[1].rotation.x = -1.1;
   }
   if(mesh.userData.nest&&!moving){rig.position.y=-.08;p.legs[0].rotation.x=p.legs[1].rotation.x=-1.2;}
+  const car = mesh.userData.carrier;
+  if (car) { rig.position.y = car.kind === 'bus' ? 0.95 : V.rideHeight('xe_may') + 0.08; p.legs[0].rotation.x = p.legs[1].rotation.x = -1.1; return; }
+  const tug = mesh.userData.tug;
+  if (tug) {
+    // Giằng co: cúi đầu ngậm giun, giữ thì ngả người kéo, căng quá thì rung.
+    const shake = tug.tension > 0.7 ? Math.sin(performance.now() * 0.06) * 0.05 : 0;
+    p.head.rotation.x = 0.75 - tug.pose * 0.45; rig.rotation.x = 0.25 - tug.pose * 0.45 + shake;
+    p.legs[0].rotation.x = p.legs[1].rotation.x = tug.pose * 0.35;
+    p.wings[0].rotation.z = -0.4 - tug.pose * 0.5; p.wings[1].rotation.z = -p.wings[0].rotation.z;
+    return;
+  }
   const an = mesh.userData.anim;
   if (!an) return;
   an.t += dt;
@@ -750,7 +859,7 @@ function loop() {
 
   // Hướng input theo camera: lên = đi xa camera.
   let ix = 0, iz = 0;
-  if (!G.modal && !G.busy && !G.myRideOf) {
+  if (!G.modal && !G.busy && !G.myRideOf && !G.myCarrier) {
     if (keys.w || keys.arrowup) iz -= 1;
     if (keys.s || keys.arrowdown) iz += 1;
     if (keys.a || keys.arrowleft) ix -= 1;
@@ -774,21 +883,27 @@ function loop() {
   }
   const moving = Math.hypot(wx,wz) > 0.12;
   const now = performance.now();
-  // Gửi input khi đổi hướng hoặc 10 lần/giây khi đang đi; server tự dừng nếu 300ms không có input.
-  if (Math.hypot(wx - lastSent.x, wz - lastSent.z) > 0.05 || (moving && now - lastSent.at > 100)) {
-    G.net.raw({ t: 'in', x: +wx.toFixed(3), z: +wz.toFixed(3) });
-    lastSent = { x: wx, z: wz, at: now };
+  // Chạy nhanh: giữ Shift hoặc nút 🏃; máy chủ quyết định có chạy được không (thể lực, đói, xe).
+  const wantRun = !!(keys.shift || G.runHeld) && !G.busy && !G.myRideOf && !G.myCarrier;
+  // Gửi input khi đổi hướng/đổi chạy hoặc 10 lần/giây khi đang đi; server tự dừng nếu 300ms không có input.
+  if (Math.hypot(wx - lastSent.x, wz - lastSent.z) > 0.05 || wantRun !== lastSent.run || (moving && now - lastSent.at > 100)) {
+    G.net.raw({ t: 'in', x: +wx.toFixed(3), z: +wz.toFixed(3), run: wantRun });
+    lastSent = { x: wx, z: wz, at: now, run: wantRun };
   }
+  const veh = G.myRide && G.catalog.vehicles.find((v) => v.id === G.myRide);
+  const running = moving && wantRun && !veh && me.stage < 3 && !(G.stam && (G.stam.lock > 0 || G.stam.s <= 0.01)) && !S.mesh.userData.nest;
+  S.mesh.userData.running = running;
   // Dự đoán cục bộ cùng luật với server, rồi hiệu chỉnh theo snapshot.
   if (moving) {
-    const veh = G.myRide && G.catalog.vehicles.find((v) => v.id === G.myRide);
-    const spd = 4.2 * (me.stage >= 3 ? 0.85 : 1) * (veh ? (me.stage >= 4 ? 0 : veh.speed) : 1) * dt;
+    const stageF = me.stage >= 4 ? 0.75 : me.stage >= 3 ? 0.85 : 1;
+    const spd = (G.catalog.walkSpeed || 4.6) * stageF * (veh ? (me.stage >= 4 ? 0 : veh.speed) : 1) * (running ? G.catalog.sprintMult || 1.65 : 1) * (1 + (G.walkBonus || 0)) * dt;
     const pos=moveSafe(walkZone(),S.pos,S.pos.x+wx*spd,S.pos.z+wz*spd);S.pos.x=pos.x;S.pos.z=pos.z;
     S.mesh.rotation.y = lerpAngle(S.mesh.rotation.y, Math.atan2(wx, wz), 0.25);
-    S.phase += dt * 12;
+    S.phase += dt * (running ? 18 : 12);
+    if (running && Math.random() < dt * 8) dust(S.mesh);
   }
   const err = S.srv.distanceTo(S.pos);
-  if (G.myRideOf) S.pos.lerp(S.srv, Math.min(1, dt * 12)); // ngồi xe: vị trí ghế do server đặt
+  if (G.myRideOf || G.myCarrier) S.pos.lerp(S.srv, Math.min(1, dt * 12)); // ngồi xe: vị trí ghế do server đặt
   else if (err > 2.5) S.pos.copy(S.srv);
   else if (!moving || err > 1.2) S.pos.lerp(S.srv, Math.min(1, dt * (moving ? 5 : 10)));
   S.mesh.position.copy(S.pos);
@@ -803,7 +918,8 @@ function loop() {
     if (far !== p.far) { p.far = far; p.mesh.userData.parts.detail?.forEach((o) => (o.visible = !far)); }
     p.mesh.position.lerp(p.target, k);
     p.mesh.rotation.y = lerpAngle(p.mesh.rotation.y, p.ry, 0.2);
-    if (p.mv) p.phase += dt * 12;
+    if (p.mv) p.phase += dt * (p.mv === 2 ? 18 : 12);
+    p.mesh.userData.running = p.mv === 2;
     animate(p.mesh, dt, !!p.mv, p.phase, p.stage);
   }
   for (let i = effects.length - 1; i >= 0; i--) {
@@ -815,13 +931,17 @@ function loop() {
 
   SO.updatePlacing();
   V.updatePets(dt);
+  NPC.update(dt, S.pos);
+  L.updatePlants();
   nearest = G.nearest = findNearest();
   const btn = $('interact');
   const work = !G.modal && V.workPrompt();
   const party = !G.modal && !work && partyPrompt();
   if (party) { btn.hidden = false; $('interactTxt').textContent = '🎉 Ăn mừng ở bàn tiệc'; }
   else if (work) { btn.hidden = false; $('interactTxt').textContent = `🔨 Thi công (${work.progress}/${work.need})`; }
-  else if (nearest) { btn.hidden = false; $('interactTxt').textContent = promptText(nearest); } else btn.hidden = true;
+  else if (nearest) { btn.hidden = false; $('interactTxt').textContent = promptText(nearest); }
+  else if (!G.modal && NPC.nearestStop()) { btn.hidden = false; $('interactTxt').textContent = `🚌 Bến xe buýt · ${NPC.nearestStop().title}`; }
+  else btn.hidden = true;
 
   // At most 8 name plates: own (outside the social view) plus the nearest players.
   const cam = G.world.camera;

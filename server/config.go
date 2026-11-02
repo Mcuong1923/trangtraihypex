@@ -20,11 +20,12 @@ type Worm struct {
 }
 
 var Worms = []Worm{
-	{"dat", "Giun đất", "Thường", 0.75, 5, 10, 10, 2, "#d98a8a", false, RegionHypex},
+	// Ba bậc trên được tăng nhẹ so với PLAN.md 7.2 để bù giun thoát khi giằng co (PLAN_LOGIC_GAME 4.4).
+	{"dat", "Giun đất", "Thường", 0.7422, 5, 10, 10, 2, "#d98a8a", false, RegionHypex},
 	{"beo", "Giun béo", "Khá hiếm", 0.20, 12, 25, 20, 3, "#c86f9a", false, RegionHypex},
-	{"sang", "Giun phát sáng", "Hiếm", 0.04, 40, 80, 30, 5, "#4fc9b4", true, RegionHypex},
-	{"vang", "Giun vàng", "Sử thi", 0.009, 150, 200, 40, 8, "#e0b52a", true, RegionHypex},
-	{"cauvong", "Giun cầu vồng", "Huyền thoại", 0.001, 500, 500, 60, 12, "#b65cf0", true, RegionHypex},
+	{"sang", "Giun phát sáng", "Hiếm", 0.046, 40, 80, 30, 5, "#4fc9b4", true, RegionHypex},
+	{"vang", "Giun vàng", "Sử thi", 0.0105, 150, 200, 40, 8, "#e0b52a", true, RegionHypex},
+	{"cauvong", "Giun cầu vồng", "Huyền thoại", 0.0013, 500, 500, 60, 12, "#b65cf0", true, RegionHypex},
 }
 
 type Food struct {
@@ -153,6 +154,21 @@ type Balance struct {
 	ContractTTL      time.Duration `json:"-"`
 	ContractSec      float64       `json:"contractSec"`
 	OwnerAbsent      time.Duration `json:"-"` // chủ hội vắng lâu thì phó hội được nhận quyền (mục 13)
+	// PLAN_LOGIC_GAME: nghỉ ổ, ăn sống, quà khởi nghiệp, xe liên trại theo lịch, nhịp giằng co.
+	ManaRestFactor float64       `json:"manaRestFactor"` // ngồi ổ: độ no tụt chậm theo hệ số này
+	RawEatRatio    float64       `json:"rawEatRatio"`    // ăn sống giun: phần độ no so với chế biến
+	StarterThoc    int           `json:"starterThoc"`
+	BusEvery       time.Duration `json:"-"` // xe liên trại xuất bến theo lịch
+	BusEverySec    float64       `json:"busEverySec"`
+	TugSpeed       float64       `json:"tugSpeed"` // >1: giằng co nhanh hơn (chỉ dùng cho test)
+	DigPeckMs      int           `json:"digPeckMs"`
+	DigRevealMs    int           `json:"digRevealMs"`
+	TokenEvery     time.Duration `json:"-"` // hồi 1 lượt xe miễn phí
+	TokenEverySec  float64       `json:"tokenEverySec"`
+	BusLoopSpeed   float64       `json:"busLoopSpeed"` // xe buýt vòng làng (m/giây)
+	BusLoopDwell   time.Duration `json:"-"`            // dừng ở mỗi bến
+	BusDwellSec    float64       `json:"busDwellSec"`
+	JoinGiftsOff   bool          `json:"-"` // chỉ test: tắt điểm danh và quà cấp còn nợ lúc vào game
 }
 
 func PlanBalance() Balance {
@@ -165,11 +181,24 @@ func PlanBalance() Balance {
 	})
 }
 
+// LiveBalance là bộ mặc định khi chơi thật (PLAN_LOGIC_GAME mục 17): độ no 15–20 phút, đào ~5 lượt/phút.
+func LiveBalance() Balance {
+	return finalize(Balance{
+		Name: "live", DigCooldown: 8 * time.Second, DigDailyLimit: 120, DigMinDuration: 400 * time.Millisecond,
+		ManaDrainPerSec: 4.5 / 60, ManaPerDig: 0.4, HungerSlowSec: 180, HungerExhaustSec: 360,
+		RescueDuration: 30 * time.Second, RescueReward: 5, TutorialReward: 50, ShowcaseEvery: 60 * time.Second,
+		BuildDuration: 10 * time.Minute, HatchDuration: 30 * time.Minute, BusWait: 20 * time.Second, BusEvery: 3 * time.Minute,
+		ContractWork: 6, ContractTTL: 24 * time.Hour, OwnerAbsent: 7 * 24 * time.Hour,
+	})
+}
+
+// DemoBalance rút ngắn các mốc chờ để thử nhanh; độ no dùng chung số với bộ live (người chơi thử
+// phàn nàn 0,5 điểm/giây hết quá nhanh).
 func DemoBalance() Balance {
 	return finalize(Balance{
 		Name: "demo", DigCooldown: 4 * time.Second, DigDailyLimit: 120, DigMinDuration: 400 * time.Millisecond,
-		ManaDrainPerSec: 0.5, ManaPerDig: 1, HungerSlowSec: 20, HungerExhaustSec: 45,
-		RescueDuration: 8 * time.Second, RescueReward: 5, TutorialReward: 100, ShowcaseEvery: 60 * time.Second,
+		ManaDrainPerSec: 4.5 / 60, ManaPerDig: 0.4, HungerSlowSec: 180, HungerExhaustSec: 360, BusEvery: 90 * time.Second,
+		RescueDuration: 8 * time.Second, RescueReward: 5, TutorialReward: 50, ShowcaseEvery: 60 * time.Second,
 		BuildDuration: 20 * time.Second, HatchDuration: 30 * time.Second, BusWait: 10 * time.Second,
 		ContractWork: 4, ContractTTL: 10 * time.Minute, OwnerAbsent: 10 * time.Minute,
 	})
@@ -197,7 +226,39 @@ func finalize(b Balance) Balance {
 	if b.OwnerAbsent == 0 {
 		b.OwnerAbsent = time.Hour
 	}
+	if b.ManaRestFactor == 0 {
+		b.ManaRestFactor = 0.5
+	}
+	if b.RawEatRatio == 0 {
+		b.RawEatRatio = 0.6
+	}
+	if b.StarterThoc == 0 {
+		b.StarterThoc = 100
+	}
+	if b.BusEvery == 0 {
+		b.BusEvery = 3 * time.Minute
+	}
+	if b.TugSpeed == 0 {
+		b.TugSpeed = 1
+	}
+	if b.DigPeckMs == 0 {
+		b.DigPeckMs = 900
+	}
+	if b.DigRevealMs == 0 {
+		b.DigRevealMs = 800
+	}
+	if b.TokenEvery == 0 {
+		b.TokenEvery = 5 * time.Minute
+	}
+	if b.BusLoopSpeed == 0 {
+		b.BusLoopSpeed = 9
+	}
+	if b.BusLoopDwell == 0 {
+		b.BusLoopDwell = 8 * time.Second
+	}
+	b.BusDwellSec = b.BusLoopDwell.Seconds()
 	b.HatchSec, b.BusWaitSec, b.ContractSec = b.HatchDuration.Seconds(), b.BusWait.Seconds(), b.ContractTTL.Seconds()
+	b.BusEverySec, b.TokenEverySec = b.BusEvery.Seconds(), b.TokenEvery.Seconds()
 	return b
 }
 
@@ -205,8 +266,8 @@ const (
 	LevelCap      = 10
 	ManaMax       = 100.0
 	ManaHungryAt  = 20.0 // dưới mức này là "sắp đói"; ăn lên >= mức này gỡ phạt
-	WalkSpeed     = 4.2
-	RoomCapacity  = 50 // public channel; zone capacities are independently enforced
+	WalkSpeed     = 4.6  // bản đồ liền rộng hơn: nhanh hơn 10% so với 4,2 ban đầu
+	RoomCapacity  = 50   // public channel; zone capacities are independently enforced
 	TickRate      = 20
 	SnapEvery     = 2 // gửi snapshot mỗi 2 tick = 10 lần/giây
 	ChatMaxLen    = 120
@@ -221,6 +282,15 @@ const (
 	CoinRounds    = 3
 )
 
+// Chạy nhanh (PLAN_LOGIC_GAME mục 3): 6 giây thể lực, hụt hơi thì khoá 5 giây rồi đầy lại.
+const (
+	SprintMult      = 1.65
+	StaminaSec      = 6.0
+	StaminaLock     = 5 * time.Second
+	StaminaRegenGap = 800 * time.Millisecond
+	StaminaRegen    = 0.25 // phần thể lực tối đa hồi mỗi giây khi thả nút sớm
+)
+
 // XP để đi từ cấp L lên L+1 (mục 7.3).
 func LevelXP(level int) int { return 80 + 40*(level-1) }
 
@@ -229,10 +299,10 @@ var RoomThemes = []string{"Chuồng Hạt Thóc", "Chuồng Rơm Vàng", "Chuồ
 
 // Giun đặc sản trại Ven Suối (mục 7.2.1, V1.1): bảng xác suất riêng, có hiển thị.
 var VenSuoiWorms = []Worm{
-	{"suoi", "Giun suối", "Thường", 0.70, 8, 14, 12, 2, "#c99b8a", false, RegionVenSuoi},
+	{"suoi", "Giun suối", "Thường", 0.6915, 8, 14, 12, 2, "#c99b8a", false, RegionVenSuoi},
 	{"bun", "Giun bùn", "Khá hiếm", 0.25, 18, 30, 22, 3, "#7d6450", false, RegionVenSuoi},
-	{"ngoc", "Giun ngọc", "Hiếm", 0.045, 60, 110, 35, 6, "#5ad1e0", true, RegionVenSuoi},
-	{"rong", "Giun rồng", "Huyền thoại", 0.005, 400, 450, 60, 12, "#e2452e", true, RegionVenSuoi},
+	{"ngoc", "Giun ngọc", "Hiếm", 0.052, 60, 110, 35, 6, "#5ad1e0", true, RegionVenSuoi},
+	{"rong", "Giun rồng", "Huyền thoại", 0.0065, 400, 450, 60, 12, "#e2452e", true, RegionVenSuoi},
 }
 
 var WormSets = map[string][]Worm{RegionHypex: Worms, RegionVenSuoi: VenSuoiWorms}
