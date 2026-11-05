@@ -288,6 +288,9 @@ const (
 	PKCountdown   = 3 * time.Second
 	PeckMinGap    = 60 * time.Millisecond // giới hạn ~16 lần mổ hợp lệ/giây
 	CoinRounds    = 3
+	// Úp ngửa: người chọn có 10 giây, quá hạn máy chủ chọn ngẫu nhiên thay (trận không treo vô hạn).
+	CoinPickTimeout  = 10 * time.Second
+	CoinBotPickDelay = 900 * time.Millisecond // Gà Máy "nghĩ" một chút rồi chọn ngẫu nhiên
 )
 
 // Chạy nhanh (PLAN_LOGIC_GAME mục 3): 6 giây thể lực, hụt hơi thì khoá 5 giây rồi đầy lại.

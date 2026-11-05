@@ -117,3 +117,76 @@ Kiểm thử sau khi cài Go 1.27.3 (winget):
 6. Khách nghỉ cạnh ổ trong nhà người khác có được hồi độ no không, hay chỉ chủ nhà?
 7. Bỏ trận PK (đi ra khỏi sân) có tính vào bảng xếp hạng PK tuần không?
 8. Xe buýt: plan §7.1 nói 2 xe (3 xe khi > 30 người ngoài trời), bán kính lên xe 3 m; code cố định 3 xe, 5 m. Có phải cố ý?
+
+---
+
+# Lượt rà 2 (05/11/2026 tối)
+
+3 góc mới: (A) đối chiếu ~170 luật/con số plan ↔ code; (B) client JS ↔ giao thức server; (D) soi sâu PK, xe/vé, trứng/pet, trồng cây/đất, mốc ngày. Không lặp lại các mục ở trên. XM: ✅ = lead tự đọc lại code; 🧪 = agent chứng minh bằng test tạm (worktree đã xoá); 🔎 = agent truy vết.
+
+## Chặn hẳn tính năng / hồi quy (sửa trước)
+
+| # | Lỗi | Vị trí | XM |
+|---|---|---|---|
+| R1 | **"Bán hết" vượt giới hạn tần suất (hồi quy do H5):** client bán từng con, tối đa 60 act liên tiếp → quá 40 thì dừng với "Thao tác nhanh quá" | `client/js/panels.js:188-200`, `server/hub.go` rateMsg | ✅ |
+| B1 | **Giao dịch luôn bị huỷ:** mỗi lần nhận `trade`, `onTrade` gọi lại `openSheet` → chạy callback đóng cũ → gửi `trade_cancel` | `client/js/v11.js:235-253`, `client/js/ui.js:23` | ✅ |
+| B2 | **Chọn điểm xe ôm làm huỷ chuyến:** bấm chọn khu → `render()` → `openSheet` → callback đóng gửi `xeom_decline` | `client/js/map.js:117-125` | ✅ |
+| B3 | **Hành khách không xuống được xe người khác:** server có `seat_leave`/`seat_kick`, client không có nút | `server/v11_room.go:451,458` | ✅ |
+| D1 | **PK Úp ngửa treo vô hạn:** người được chọn không bấm thì trận không bao giờ kết thúc; đối thủ chỉ thoát bằng bỏ trận (bị xử thua, bên kia +thắng, +bảng tuần, +điểm hội); sân PK bị coi là bận nên huỷ trận biểu diễn | `server/pk.go:273-282` | ✅🧪 |
+
+### Cập nhật: đã sửa R1, B1–B3, D1 (chưa commit)
+
+- **R1:** `sell` nhận số lượng `i` (`Account.SellWorms`, một giao dịch, một dòng sổ cái, nhiệm vụ ngày vẫn đếm từng con); "Bán hết" gửi một lệnh. Bán lẻ không gửi `i` → 1 con như cũ.
+- **B1, B2:** `openSheet` bỏ qua callback đóng cũ khi vẽ lại đúng bảng đang mở (giao dịch, bản đồ, đổi tab). Kèm sửa phụ: mở DM người khác khi DM đang mở không còn xoá `G.dmWith`; `pickDestination` huỷ pick cũ trước khi gán pick mới.
+- **B3:** thẻ "Đi nhờ xe · Xuống xe" (`seat_leave`) khi ngồi xe người chơi; danh sách "Quanh đây" của tài xế có "Mời xuống xe" (`seat_kick`).
+- **D1:** `Match.PickBy`: người chọn có `CoinPickTimeout` = 10 giây, quá hạn máy chủ chọn ngẫu nhiên (chốt mặc định, câu hỏi 5 bên dưới). Lượt Gà Máy dùng cùng cơ chế (`CoinBotPickDelay` 900 ms), bỏ goroutine `time.Sleep`. `pk_round`/`pk_resume` gửi `pickLeft`; client hiện đếm ngược. Hành vi mới: người chọn mất mạng thì máy chọn thay sau 10 giây mỗi lượt.
+- Test mới (`server/feature_blockers_regression_test.go`): `TestSellAllInOneMessage`, `TestSellWormsCounts`, `TestCoinPickTimeoutAutoPicks`, `TestCoinBotPicksAndLatePickRejected`. B1–B3 là lỗi client, chưa kiểm trên trình duyệt (chỉ `node --check`).
+- Code review: không lỗi nghiêm trọng; đã áp dụng góp ý (đồng hồ đếm giữ tham chiếu phần tử khi nối lại, chỉ vẽ lại bảng bạn bè khi còn mở, huỷ pick cũ, thêm test Gà Máy và chọn trễ). Còn nhỏ: danh sách "Quanh đây" không tự cập nhật khi có người lên/xuống xe (bấm sẽ nhận lỗi rõ ràng).
+
+## Kinh tế / farm
+
+| # | Lỗi | Vị trí | XM |
+|---|---|---|---|
+| D2 | Luống rau nhà không giới hạn: Tổ nhỏ đặt được 39 luống → ~2.500 thóc/giờ. **Cần chốt:** giới hạn luống theo hạng đất, trần bán, hay giảm giá | `home.go:219`, `logic_actions.go:204`, `items.go:140` | 🧪 |
+| D3 | Thắng Gà Máy vẫn cộng điểm hội tuần và danh hiệu "Cao thủ PK" | `server/pk.go:344` | ✅🧪 |
+| A7 | Thắng PK Úp ngửa (may rủi) cũng tính bảng tuần/điểm hội (PLAN.md:399 nói không) | `server/pk.go:341-344` | 🔎 |
+| — | Thân thiết thú cưng farm được (tưới giúp +1/luống không trần; ngồi ổ cạnh bạn +60/giờ) | `logic_actions.go:122` | 🔎 |
+
+## Lệch plan (trung bình)
+
+| # | Lỗi | Vị trí | XM |
+|---|---|---|---|
+| A1 | Xe liên trại chạy 20 giây sau người đặt vé đầu, không theo lịch 3 phút (README cũng ghi sai) | `v11_room.go:353` | ✅ |
+| A2 | Nhà luôn giới hạn 8 khách; plan: rơm 8 / gỗ 12 / gạch 16, panel hiện "tối đa 16" | `social_hub.go:344` | ✅ |
+| A3 | Giao dịch không trao đổi được vật phẩm (plan §11 cho phép vật liệu, hạt, nông sản từ cấp 3) | `trade.go:15` | ✅ |
+| A4 | Gà con nở trước v2 có `Species` rỗng → không bao giờ có kỹ năng "Mỏ Thính" (client vẫn hiện +4%) | `pets.go:55`, thiếu migration | ✅ |
+| A5 | Cấp tối đa 20 (plan ghi 10); cấp 11–20, lô đồi, nhà 2 tầng chưa vào ngân sách §17 — có vẻ cố ý, cần cập nhật plan | `config.go:274` | 🔎 |
+
+## Client (trung bình)
+
+- B4: đổi kênh/mất mạng giữa lượt đào/câu thì màn giằng co vẫn chạy, gà đứng im; `G.cancelDig` không bao giờ được gọi, câu cá không có huỷ (`dig.js:122`, `fish.js`, `main.js:253`).
+- B5: sau khi nối lại giữa trận PK, listener phím còn sót → gõ "e"/dấu cách trong chat bị nuốt (`panels.js:631-684`).
+- B7: giá bán hiển thị khác giá server trả (giun hot +10%, kỹ năng Tay Buôn) (`panels.js:172`).
+- B8: joystick gửi tới 60 `in`/giây, server bỏ quá 30 → lệnh dừng có thể mất, gà trôi thêm ~2 m (`main.js:899`).
+- B9: bảng xe liên trại vẫn ghi "3 lượt/ngày, reset 0:00" (thực tế 2 lượt, hồi 5 phút) (`v11.js:136`).
+- B10: hai panel cùng tên modal `bus` → panel bến làng bị thay bởi panel xe liên trại (`npc.js:276`, `v11.js:122`).
+- B11–B13: đếm ngược nhà/tiệc cũ dần; hẹn giờ vườn dùng đồng hồ máy; toast "Đã kết nối lại" mỗi lần đổi phòng.
+
+## Thấp (tóm tắt)
+
+- PK: mời lại mỗi 10 giây giữ người kia "bận" mãi (`pk.go:113,117`); `pk_bot` không huỷ lời mời đang chờ (`pk.go:79`).
+- Xe: `drive_region` dùng danh sách khách lúc bấm, khách vừa xuống vẫn bị chở đi (`v11_room.go:466-501`); lên xe buýt/xe ôm trước khi lưu xong (`npc_director.go`).
+- Ngày: `daily.go:33` dùng `AddDate` theo múi giờ máy chủ (DST); lượt đào qua nửa đêm không bị đếm (`account.go:509`).
+- Lệch plan nhỏ: cameo nhà báo 2 phút (plan 8), việc dọn ổ 30 giây (plan 60), quà điểm danh khác plan, hoa không tặng được, giằng co 2 bậc hiếm 16/20 giây (plan 15/18), snapshot gửi mọi xe NPC (plan: trong 70 m), xe ôm không hoàn tiền khi máy chủ huỷ, cưỡi ngỗng khi kiệt sức, nghỉ ổ trong Tổ nhỏ không có tác dụng.
+- Client: hai loại mã "#…" gây nhầm khi kết bạn; message bị bỏ do rate limit không báo gì (panel "Đang tải…" treo); giá xe ôm không tính mưa/mặc cả; lời mời thăm nhà hết hạn trước khi bấm vào; gợi ý thi công chỉ hiện sau khi mở bảng hợp đồng; nhiều action server không có UI (`dig_cancel`, `fish_cancel`, `rename_pet`…).
+- Tài liệu: TIEN_DO/PLAN vẫn ghi "chưa làm" cho câu cá, lô trưng bày, tưới giúp, cấp 11–20, đèn pha; README/TIEN_DO ghi "69 test với -race" (thực tế 84, chưa chạy -race).
+
+## Câu hỏi cần chốt (lượt 2)
+
+1. Luống rau nhà: giới hạn theo hạng đất, trần bán ở quầy, hay giảm giá nông sản?
+2. Xe liên trại: chạy theo lịch 3 phút như plan, hay sửa README và câu thoại theo cách hiện tại (20 giây sau người đầu)?
+3. Cấp 11–20 có phải nội dung đã duyệt? Nếu có, cần cập nhật plan §12, §17.
+4. PK Úp ngửa và thắng Gà Máy có tính bảng tuần, điểm hội, danh hiệu không?
+5. Hết giờ chọn ở Úp ngửa: máy chủ chọn ngẫu nhiên hay xử vòng đó cho bên kia?
+6. Thân thiết thú cưng có cần trần mỗi ngày không?
+7. Mất mạng 1 giây giữa lượt đào thì mất lượt ngay (hiện tại), hay giữ lượt đến hết 15 giây chờ nối lại?

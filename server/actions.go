@@ -264,11 +264,16 @@ func (r *Room) act(p *Player, m *inMsg) {
 			return
 		}
 		txn(func() (ActResult, error) {
-			got, notes, err := p.acc.SellWorm(m.ID, now)
+			// m.I = số con muốn bán (0/1 = một con); "Bán hết" gửi một lệnh với số lượng.
+			got, n, notes, err := p.acc.SellWorms(m.ID, m.I, now)
 			if err != nil { // trả sớm: ID lạ thì wormByID là nil, deref sẽ panic
 				return ActResult{}, err
 			}
-			return ActResult{Msg: fmt.Sprintf("Bán %s: +%d thóc", wormByID(m.ID).Name, got), Data: map[string]any{"notes": notes}}, nil
+			name := wormByID(m.ID).Name
+			if n > 1 {
+				name = fmt.Sprintf("%d %s", n, name)
+			}
+			return ActResult{Msg: fmt.Sprintf("Bán %s: +%d thóc", name, got), Data: map[string]any{"notes": notes, "sold": n, "got": got}}, nil
 		})
 
 	case "eat_worm":

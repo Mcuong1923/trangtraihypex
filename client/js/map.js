@@ -155,6 +155,6 @@ function drawMini(){
  $('localPopulation').textContent=`${G.players.size+1} người chơi trong kênh${G.zone==='lobby'&&npc?` · ${npc} NPC trong sảnh`:''}`;
 }
 // Chọn điểm đến trên bản đồ cho xe ôm (PLAN_LOGIC_GAME 8.2): label(id) là chữ trên nút, fn(id) khi chọn.
-export function pickDestination(label,fn,cancel,verb){G.mapPick={label,fn,cancel,verb};openMap('village');}
+export function pickDestination(label,fn,cancel,verb){if(G.mapPick){const old=G.mapPick;G.mapPick=null;old.cancel?.();}G.mapPick={label,fn,cancel,verb};openMap('village');}
 export function initMap(){ $('btnMap').onclick=()=>openMap();$('miniMapButton').onclick=()=>openMap();$('cancelRoute').onclick=cancelRoute;G.navigate=setDestination;G.openMap=openMap;}
 export {areaAt};

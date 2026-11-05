@@ -541,21 +541,31 @@ func rarityIndex(id string) int {
 // ---------- Bán / chế biến & ăn ----------
 
 func (a *Account) SellWorm(id string, now time.Time) (int, []string, error) {
+	got, _, notes, err := a.SellWorms(id, 1, now)
+	return got, notes, err
+}
+
+// SellWorms bán tối đa n con cùng loài trong một giao dịch (nút "Bán hết" gửi một lệnh thay vì n lệnh,
+// không vướng giới hạn tốc độ message). Có ít hơn n thì bán hết số đang có. Trả tổng thóc và số con đã bán.
+func (a *Account) SellWorms(id string, n int, now time.Time) (int, int, []string, error) {
 	w := wormByID(id)
 	if w == nil {
-		return 0, nil, errors.New("Loại giun không hợp lệ.")
+		return 0, 0, nil, errors.New("Loại giun không hợp lệ.")
 	}
-	if a.Worms[id] <= 0 {
-		return 0, nil, errors.New("Không còn con " + w.Name + " nào trong túi.")
+	n = min(max(n, 1), a.Worms[id])
+	if n <= 0 {
+		return 0, 0, nil, errors.New("Không còn con " + w.Name + " nào trong túi.")
 	}
 	var notes []string
-	a.Worms[id]--
-	price := SellPrice(a, w, now)
-	_ = a.addThoc(price, "sell_worm", id, now)
-	a.Stats.Sold++
+	a.Worms[id] -= n
+	total := SellPrice(a, w, now) * n
+	_ = a.addThoc(total, "sell_worm", id, now)
+	a.Stats.Sold += n
 	a.step("first_sell")
-	a.bumpDaily("sell", now, &notes)
-	return price, notes, nil
+	for range n { // nhiệm vụ ngày đếm theo từng con như khi bán lẻ
+		a.bumpDaily("sell", now, &notes)
+	}
+	return total, n, notes, nil
 }
 
 // SellPrice: giá Lợn Ủn trả cho một con giun, đã cộng loài thu mua giá cao hôm nay (+10%) và "Tay Buôn".

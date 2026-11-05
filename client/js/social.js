@@ -50,7 +50,7 @@ function renderFriends() {
       return `<div class="row"><div class="ico" style="background:#f1e3c6">🐔</div><div class="meta"><div class="nm">${esc(p.name)}</div><div class="sub">Cấp ${p.level}</div></div>
         <div class="act">${isFriend ? '' : `<button class="mini good" data-addpid="${pid}">Kết bạn</button>`}
           <button class="mini sec" data-tradepid="${pid}">Giao dịch</button>
-          ${G.myRide ? `<button class="mini sec" data-seatpid="${pid}">Mời lên xe</button>` : ''}
+          ${G.myRide ? (p.mesh?.userData.seated === G.pid ? `<button class="mini sec" data-kickpid="${pid}">Mời xuống xe</button>` : `<button class="mini sec" data-seatpid="${pid}">Mời lên xe</button>`) : ''}
           ${G.myGuild ? `<button class="mini sec" data-guildpid="${pid}">Mời vào hội</button>` : ''}
           <button class="mini sec" data-report="${pid}" data-name="${esc(p.name)}">Báo cáo</button>
           <button class="mini sec" data-blockpid="${pid}" data-name="${esc(p.name)}">Chặn</button></div></div>`;
@@ -78,6 +78,7 @@ function bindFriends() {
   document.querySelectorAll('[data-addpid]').forEach((b) => (b.onclick = () => { b.disabled = true; raw({ t: 'friend_add', target: b.dataset.addpid }); }));
   document.querySelectorAll('[data-tradepid]').forEach((b) => (b.onclick = async () => { closeSheet(); showResult(await act('trade_invite', { target: b.dataset.tradepid })); }));
   document.querySelectorAll('[data-seatpid]').forEach((b) => (b.onclick = async () => { showResult(await act('seat_invite', { target: b.dataset.seatpid })); }));
+  document.querySelectorAll('[data-kickpid]').forEach((b) => (b.onclick = async () => { if (showResult(await act('seat_kick', { target: b.dataset.kickpid }), { quiet: true }) && G.modal === 'friends') renderFriends(); }));
   document.querySelectorAll('[data-guildpid]').forEach((b) => (b.onclick = () => raw({ t: 'guild_invite', target: b.dataset.guildpid })));
   document.querySelectorAll('[data-blockpid]').forEach((b) => (b.onclick = () => confirmBox(`Chặn ${b.dataset.name}?`, 'Bạn sẽ không nhận tin, lời mời, PK hay chat của người này.', () => raw({ t: 'block', target: b.dataset.blockpid, on: true }))));
   document.querySelectorAll('[data-report]').forEach((b) => (b.onclick = () => reportMenu(b.dataset.report, b.dataset.name)));

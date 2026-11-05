@@ -20,7 +20,10 @@ $('scrim').onclick = () => closeSheet();
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && G.modal) closeSheet(); });
 
 export function openSheet(name, title, html, { closable = true, close } = {}) {
-  if (onClose) { const f = onClose; onClose = null; f(); }
+  // Vẽ lại đúng bảng đang mở (cập nhật giao dịch, chọn khu trên bản đồ, đổi tab) không phải là đóng bảng:
+  // bỏ qua lệnh đóng cũ, nếu không giao dịch bị huỷ và chuyến xe ôm bị từ chối ngay khi vẽ lại.
+  const reopen = name === G.modal && modalRoot.classList.contains('on');
+  if (onClose) { const f = onClose; onClose = null; if (!reopen) f(); }
   G.modal = name;
   sheet.innerHTML = `<div class="sheet-h"><h3>${title}</h3>${closable ? '<button class="x" id="xBtn" aria-label="Đóng">✕</button>' : ''}</div><div class="sheet-b" id="sheetB">${html}</div>`;
   if (closable) $('xBtn').onclick = () => closeSheet();

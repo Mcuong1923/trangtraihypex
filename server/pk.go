@@ -31,7 +31,8 @@ type Match struct {
 	// úp ngửa
 	Round   int
 	NextAt  time.Time
-	Waiting bool // đang chờ bên chọn khoá mặt
+	Waiting bool      // đang chờ bên chọn khoá mặt
+	PickBy  time.Time // hạn chọn của lượt đang chờ; quá hạn máy chủ chọn ngẫu nhiên
 }
 
 var PKModes = map[string]string{"peck": "Mổ nhanh", "coin": "Úp ngửa"}
@@ -187,6 +188,7 @@ func (r *Room) pkResume(mt *Match, p *Player, now time.Time) map[string]any {
 	return map[string]any{"t": "pk_resume", "id": mt.ID, "mode": mt.Mode, "modeName": PKModes[mt.Mode], "you": mt.side(p),
 		"names": []string{na, nb}, "state": mt.State, "a": mt.ScoreA, "b": mt.ScoreB, "rounds": CoinRounds,
 		"round": mt.Round, "waiting": mt.Waiting, "chooser": mt.chooser(), "duration": PeckDuration.Seconds(),
+		"pickLeft": max(0, mt.PickBy.Sub(now).Seconds()),
 		"countLeft": max(0, mt.CountEnd.Sub(now).Seconds()), "playLeft": max(0, mt.PlayEnd.Sub(now).Seconds())}
 }
 
@@ -271,7 +273,19 @@ func (r *Room) stepPK(now time.Time) {
 				r.finishMatch(mt, "")
 			}
 		case "coin":
-			if mt.Waiting || now.Before(mt.NextAt) {
+			if mt.Waiting {
+				// Hết hạn chọn (người chọn bỏ đi, mất mạng, hoặc lượt của Gà Máy): máy chủ chọn ngẫu nhiên
+				// thay, để trận không treo vô hạn và đối thủ không phải bỏ trận rồi bị xử thua.
+				if now.After(mt.PickBy) {
+					side := "ngua"
+					if r.rng.IntN(2) == 1 {
+						side = "up"
+					}
+					r.flip(mt, side, now)
+				}
+				continue
+			}
+			if now.Before(mt.NextAt) {
 				continue
 			}
 			if mt.Round >= CoinRounds {
@@ -279,23 +293,11 @@ func (r *Room) stepPK(now time.Time) {
 				continue
 			}
 			mt.Waiting = true
-			mt.send(r, map[string]any{"t": "pk_round", "id": mt.ID, "round": mt.Round, "chooser": mt.chooser()})
+			mt.PickBy = now.Add(CoinPickTimeout)
 			if mt.Bot && mt.chooser() == 1 {
-				side := "ngua"
-				if r.rng.IntN(2) == 1 {
-					side = "up"
-				}
-				mt.NextAt = now.Add(900 * time.Millisecond)
-				pick := side
-				go func(m *Match) {
-					time.Sleep(900 * time.Millisecond)
-					r.Do(func() {
-						if r.matches[m.ID] == m && m.Waiting {
-							r.flip(m, pick, time.Now())
-						}
-					})
-				}(mt)
+				mt.PickBy = now.Add(CoinBotPickDelay)
 			}
+			mt.send(r, map[string]any{"t": "pk_round", "id": mt.ID, "round": mt.Round, "chooser": mt.chooser(), "pickLeft": mt.PickBy.Sub(now).Seconds()})
 		}
 	}
 }

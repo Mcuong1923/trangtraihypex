@@ -187,15 +187,8 @@ function bindWormButtons(refresh) {
   document.querySelectorAll('[data-sellall]').forEach((b) => (b.onclick = async () => {
     b.disabled = true;
     const id = b.dataset.sellall;
-    let total = 0;
-    while ((G.me.worms[id] || 0) > 0) {
-      const r = await act('sell', { id });
-      if (r.me) applyMe(r.me);
-      if (!r.ok) { toast(r.err, 'warn'); break; }
-      total += wormById(id).sell;
-      for (const n of r.data?.notes || []) toast(n, 'good');
-    }
-    if (total) { toast(`Đã bán: +${total} thóc`, 'good'); sfx('coin'); }
+    // Một lệnh với số lượng: máy chủ bán hết trong một giao dịch, không vướng giới hạn tốc độ message.
+    if (showResult(await act('sell', { id, i: G.me.worms[id] || 0 }))) sfx('coin');
     refresh();
   }));
 }
@@ -601,7 +594,7 @@ export const PK = {
     if (m.mode === 'peck') {
       mt.goAt = performance.now() - (m.duration - m.playLeft) * 1000;
     } else if (m.waiting) {
-      PK.round({ id: m.id, round: m.round, chooser: m.chooser });
+      PK.round({ id: m.id, round: m.round, chooser: m.chooser, pickLeft: m.pickLeft });
     }
     toast('Đã nối lại trận đấu', 'good');
   },
@@ -657,6 +650,22 @@ export const PK = {
     const mine = m.chooser === mt.you;
     $('coinTxt').innerHTML = `Lượt ${m.round + 1}/${mt.rounds} — ${mine ? '<b>bạn chọn mặt</b>, đối thủ nhận mặt còn lại' : 'đối thủ đang chọn mặt…'}`;
     $('coinBtns').innerHTML = mine ? '<button class="btn" data-side="ngua">🙂 Ngửa</button><button class="btn sec" data-side="up">🥚 Úp</button>' : '';
+    // Hạn chọn do máy chủ đặt: hết giờ máy chủ chọn ngẫu nhiên thay. Lượt Gà Máy (dưới 2 giây) không cần đếm.
+    if (m.pickLeft > 2) {
+      const end = performance.now() + m.pickLeft * 1000, round = m.round;
+      // Giữ tham chiếu phần tử của riêng vòng này: sau khi nối lại, vòng cũ không được xoá nhầm đồng hồ mới.
+      const el = document.createElement('p');
+      el.className = 'mut';
+      $('coinBtns').after(el);
+      const tick = () => {
+        if (!el.isConnected || G.match !== mt || mt.coinRound !== round) { el.remove(); return; }
+        const left = Math.max(0, Math.ceil((end - performance.now()) / 1000));
+        el.textContent = left ? `Còn ${left} giây${mine ? ' — hết giờ máy chủ chọn ngẫu nhiên' : ''}` : 'Máy chủ đang chọn ngẫu nhiên…';
+        requestAnimationFrame(tick);
+      };
+      mt.coinRound = round;
+      tick();
+    }
     document.querySelectorAll('[data-side]').forEach((b) => (b.onclick = async () => {
       document.querySelectorAll('[data-side]').forEach((x) => (x.disabled = true));
       const r = await act('pk_pick', { id: mt.id, side: b.dataset.side });
@@ -666,6 +675,7 @@ export const PK = {
   flip(m) {
     const mt = G.match; if (!mt || mt.id !== m.id) return;
     $('coinBtns').innerHTML = '';
+    mt.coinRound = null; // dừng đồng hồ đếm hạn chọn của lượt này
     $('coin').textContent = '🌀';
     const name = { ngua: 'Ngửa 🙂', up: 'Úp 🥚' };
     setTimeout(() => {

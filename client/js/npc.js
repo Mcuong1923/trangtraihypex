@@ -297,7 +297,17 @@ export function onCarrier(m) {
 
 function updateRideCard() {
   const card = $('rideCard'), c = G.myCarrier;
-  if (!c) { if (!card.hidden) card.hidden = true; return; }
+  if (!c && G.myRideOf) { // ngồi ghế khách trên xe người chơi khác: server có seat_leave, cần nút để xuống
+    const k = 'seat' + G.myRideOf;
+    if (card.dataset.k !== k) {
+      card.dataset.k = k;
+      card.innerHTML = `<small>ĐI NHỜ XE</small><b>🚗 Đang ngồi xe của ${esc(G.players.get(G.myRideOf)?.name || 'bạn')}</b><button class="btn sec" id="rideOff">Xuống xe</button>`;
+      $('rideOff').onclick = async () => showResult(await G.net.act('seat_leave'));
+    }
+    card.hidden = false;
+    return;
+  }
+  if (!c) { if (!card.hidden) { card.hidden = true; card.dataset.k = ''; } return; }
   const a = G.actors.get(c.id);
   const html = c.kind === 'bus'
     ? `<small>XE BUÝT VÒNG LÀNG</small><b>🚌 ${G.myBusDest ? 'Xuống ở bến ' + esc(G.zones[G.myBusDest]?.title || '') : 'Đi vòng làng'}</b><button class="btn sec" id="rideOff">Xuống ở bến kế</button>`
