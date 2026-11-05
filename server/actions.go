@@ -34,6 +34,14 @@ func (r *Room) act(p *Player, m *inMsg) {
 			return
 		}
 		snap, _ := json.Marshal(p.acc)
+		// Panic giữa apply: hoàn nguyên tài khoản rồi báo lỗi, để bản dở dang không bị lưu ở lần Save sau.
+		defer func() {
+			if e := recover(); e != nil {
+				restore(p.acc, snap)
+				logPanic("txn "+m.A, e)
+				fail(errors.New("Lỗi máy chủ, giao dịch chưa thực hiện."))
+			}
+		}()
 		res, err := apply()
 		if err != nil {
 			restore(p.acc, snap)
@@ -253,7 +261,10 @@ func (r *Room) act(p *Player, m *inMsg) {
 		}
 		txn(func() (ActResult, error) {
 			got, notes, err := p.acc.SellWorm(m.ID, now)
-			return ActResult{Msg: fmt.Sprintf("Bán %s: +%d thóc", wormByID(m.ID).Name, got), Data: map[string]any{"notes": notes}}, err
+			if err != nil { // trả sớm: ID lạ thì wormByID là nil, deref sẽ panic
+				return ActResult{}, err
+			}
+			return ActResult{Msg: fmt.Sprintf("Bán %s: +%d thóc", wormByID(m.ID).Name, got), Data: map[string]any{"notes": notes}}, nil
 		})
 
 	case "eat_worm":

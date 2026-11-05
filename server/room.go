@@ -7,6 +7,7 @@ import (
 	"log"
 	"math"
 	"math/rand/v2"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -170,8 +171,23 @@ func (r *Room) Do(f func()) { r.inbox <- f }
 
 func (r *Room) DoWait(f func()) {
 	done := make(chan struct{})
-	r.inbox <- func() { f(); close(done) }
+	r.inbox <- func() { defer close(done); f() } // defer: f panic (đã được safely bắt) vẫn nhả người chờ
 	<-done
+}
+
+// logPanic ghi panic kèm stack để điều tra; không có nó một lỗi nil trong handler sẽ giết cả tiến trình.
+func logPanic(where string, e any) {
+	log.Printf("PANIC %s: %v\n%s", where, e, debug.Stack())
+}
+
+// safely chạy f trên goroutine phòng; panic chỉ huỷ việc đang xử lý, phòng và các phòng khác vẫn chạy.
+func (r *Room) safely(what string, f func()) {
+	defer func() {
+		if e := recover(); e != nil {
+			logPanic("room "+r.ID+" "+what, e)
+		}
+	}()
+	f()
 }
 
 func (r *Room) Run() {
@@ -181,11 +197,11 @@ func (r *Room) Run() {
 	for !r.quit {
 		select {
 		case f := <-r.inbox:
-			f()
+			r.safely("inbox", f)
 		case now := <-t.C:
 			dt := now.Sub(last).Seconds()
 			last = now
-			r.step(now, dt)
+			r.safely("tick", func() { r.step(now, dt) })
 			ms := float64(time.Since(now).Microseconds()) / 1000
 			r.tickMu.Lock()
 			r.tickBuf = append(r.tickBuf, ms)
@@ -325,6 +341,9 @@ func (r *Room) remove(s *Session) {
 		return
 	}
 	r.fbedsDirty = true
+	// Rời phòng (đổi kênh, sang vùng, vào/ra nhà, bị thay phiên) = bỏ dở lượt đào/câu: tính hồi đất/hồi câu
+	// trước khi lưu. Thiếu dòng này thì đổi kênh rồi đào lại ngay tại chỗ để gieo lại loài giun/cá đã lộ.
+	r.abandonDig(p)
 	if p.trade != nil {
 		r.closeTrade(p.trade, "Bên kia đã rời đi.")
 	}

@@ -170,18 +170,27 @@ func TestContractStoreRules(t *testing.T) {
 		t.Fatal("thợ đã nhận thì chủ không huỷ ngang")
 	}
 	now := time.Now()
-	cs.Work(k.ID, "tho", now)
-	if _, err := cs.Work(k.ID, "tho", now.Add(100*time.Millisecond)); err == nil {
+	// Hồi quy: thi công ở nhà người khác (vd nhà của chính thợ) bị từ chối và KHÔNG cộng tiến độ.
+	for i := 0; i < 3; i++ {
+		if _, err := cs.Work(k.ID, "tho", "tho", now.Add(time.Duration(i-10)*2*time.Second)); err == nil {
+			t.Fatal("thi công sai nhà phải bị chặn")
+		}
+	}
+	if got := cs.Contracts[k.ID]; got.Progress != 0 || got.State != "taken" || len(cs.Credits["tho"]) != 0 {
+		t.Fatalf("thi công sai nhà không được cộng tiến độ hay trả công: progress=%d state=%s", got.Progress, got.State)
+	}
+	cs.Work(k.ID, "tho", "owner", now)
+	if _, err := cs.Work(k.ID, "tho", "owner", now.Add(100*time.Millisecond)); err == nil {
 		t.Fatal("thi công dồn dập phải bị chặn")
 	}
-	done, err := cs.Work(k.ID, "tho", now.Add(2*time.Second))
+	done, err := cs.Work(k.ID, "tho", "owner", now.Add(2*time.Second))
 	if err != nil || done.State != "done" {
 		t.Fatalf("đủ tiến độ thì nghiệm thu: %v", err)
 	}
 	if c := cs.TakeCredits("tho"); len(c) != 1 || c[0].Amount != 300 || len(cs.TakeCredits("tho")) != 0 {
 		t.Fatal("trả công đúng một lần")
 	}
-	if _, err := cs.Work(k.ID, "tho", now.Add(5*time.Second)); err == nil {
+	if _, err := cs.Work(k.ID, "tho", "owner", now.Add(5*time.Second)); err == nil {
 		t.Fatal("hợp đồng xong không thi công tiếp")
 	}
 	// Quá hạn: hoàn chủ đúng một lần.

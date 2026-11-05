@@ -92,6 +92,12 @@ func (s *SocialStore) getLocked(id string) *Social {
 		return so
 	}
 	so := &Social{ID: id}
+	if !validAccountID(id) {
+		// ID lạ từ client: trả bản rỗng, không đọc file, không cache; saveLocked sẽ từ chối ghi.
+		so.Friends, so.ReqIn, so.ReqOut, so.Blocks = map[string]time.Time{}, map[string]time.Time{}, map[string]time.Time{}, map[string]time.Time{}
+		so.DMs, so.Unread = map[string][]DM{}, map[string]int{}
+		return so
+	}
 	if b, err := os.ReadFile(filepath.Join(s.dir, id+".json")); err == nil {
 		json.Unmarshal(b, so)
 	} else {
@@ -113,6 +119,11 @@ func (s *SocialStore) getLocked(id string) *Social {
 }
 
 func (s *SocialStore) saveLocked(ids ...string) error {
+	for _, id := range ids { // kiểm hết trước khi ghi, để không ghi dở một nửa cặp
+		if !validAccountID(id) {
+			return ErrNotFound
+		}
+	}
 	for _, id := range ids {
 		if err := writeAtomic(filepath.Join(s.dir, id+".json"), s.cache[id]); err != nil {
 			return err

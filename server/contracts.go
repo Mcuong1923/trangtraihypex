@@ -194,15 +194,18 @@ func (c *ContractStore) WorkerOf(owner, worker string) bool {
 	return false
 }
 
-// Work cộng một lần thi công; trả về hợp đồng sau khi cộng (State "done" nếu vừa hoàn thành).
+// Work cộng một lần thi công tại nhà của homeOwner; trả về hợp đồng sau khi cộng (State "done" nếu vừa hoàn thành).
 // Thanh toán cho thợ được ghi vào hàng chờ cùng lúc đổi trạng thái — chỉ một lần.
-func (c *ContractStore) Work(id, worker string, now time.Time) (*Contract, error) {
+// Phải kiểm nhà đúng chủ hợp đồng TRƯỚC khi cộng: nếu không thợ "xây" ở nhà mình vẫn đủ tiến độ và được trả công.
+func (c *ContractStore) Work(id, worker, homeOwner string, now time.Time) (*Contract, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	k := c.Contracts[id]
 	switch {
 	case k == nil || k.State != "taken" || k.Worker != worker:
 		return nil, errors.New("Bạn không có hợp đồng này.")
+	case k.Owner != homeOwner:
+		return nil, errors.New("Hợp đồng không thuộc chuồng này.")
 	case now.After(k.Deadline):
 		return nil, errors.New("Hợp đồng đã quá hạn.")
 	case now.Sub(k.LastWork) < WorkGap:
@@ -375,11 +378,8 @@ func (r *Room) contractAct(p *Player, m *inMsg, reply func(ActResult), fail func
 			fail(errors.New("Chuồng đã có, không cần xây nữa."))
 			return
 		}
-		k, err := cs.Work(m.ID, p.acc.ID, now)
-		if err != nil || k.Owner != h.Owner {
-			if err == nil {
-				err = errors.New("Hợp đồng không thuộc chuồng này.")
-			}
+		k, err := cs.Work(m.ID, p.acc.ID, h.Owner, now)
+		if err != nil {
 			fail(err)
 			return
 		}

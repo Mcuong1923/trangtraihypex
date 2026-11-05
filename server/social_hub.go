@@ -66,7 +66,7 @@ func (h *Hub) resolve(s *Session, m *inMsg) (string, error) {
 		}
 		return id, nil
 	}
-	if len(m.ID) == 24 { // account ID có sẵn trong danh sách bạn
+	if validAccountID(m.ID) { // account ID có sẵn trong danh sách bạn (chỉ nhận đúng dạng hex, chặn "../")
 		return m.ID, nil
 	}
 	if id, ok := h.store.Social.Lookup(m.ID); ok {
@@ -80,6 +80,15 @@ func (h *Hub) social(s *Session, m *inMsg) {
 	so := h.store.Social
 	toast := func(kind, text string) { s.Send(map[string]any{"t": "toast", "kind": kind, "text": text}) }
 	fail := func(err error) { toast("warn", err.Error()) }
+
+	// Các lệnh dưới đây dùng thẳng m.ID làm account ID (không qua resolve): chặn ID sai dạng ngay từ đầu.
+	switch m.T {
+	case "friend_respond", "friend_remove", "dm", "dm_history", "invite_room", "home_invite":
+		if !validAccountID(m.ID) {
+			fail(ErrNotFound)
+			return
+		}
+	}
 
 	switch m.T {
 	case "social":

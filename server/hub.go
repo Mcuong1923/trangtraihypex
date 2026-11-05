@@ -192,8 +192,22 @@ func (s *Session) readPump() {
 		if json.Unmarshal(data, &m) != nil {
 			continue
 		}
-		s.handle(&m)
+		if !s.handleSafe(&m) {
+			return // panic khi xử lý: ngắt phiên này (Leave qua defer) thay vì sập cả máy chủ
+		}
 	}
+}
+
+// handleSafe bắt panic trong handler chạy trên goroutine đọc của phiên.
+func (s *Session) handleSafe(m *inMsg) (ok bool) {
+	defer func() {
+		if e := recover(); e != nil {
+			logPanic("session "+m.T, e)
+			ok = false
+		}
+	}()
+	s.handle(m)
+	return true
 }
 
 func (s *Session) handle(m *inMsg) {

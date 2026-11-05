@@ -392,6 +392,9 @@ func (s *HomeStore) Get(owner, name string) (*Home, error) {
 	if h, ok := s.cache[owner]; ok {
 		return h, nil
 	}
+	if !validAccountID(owner) {
+		return nil, ErrNotFound
+	}
 	var h *Home
 	if b, err := os.ReadFile(filepath.Join(s.dir, owner+".json")); err == nil {
 		h = &Home{}
@@ -413,6 +416,9 @@ func (s *HomeStore) Get(owner, name string) (*Home, error) {
 }
 
 func (s *HomeStore) saveLocked(h *Home) error {
+	if !validAccountID(h.Owner) {
+		return ErrNotFound
+	}
 	if err := writeAtomic(filepath.Join(s.dir, h.Owner+".json"), h); err != nil {
 		return err
 	}

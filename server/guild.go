@@ -350,7 +350,7 @@ func (h *Hub) guild(s *Session, m *inMsg) {
 		return nil
 	}
 	target := func() (string, error) {
-		if m.ID != "" && len(m.ID) == 24 {
+		if validAccountID(m.ID) {
 			return m.ID, nil
 		}
 		return h.resolve(s, m)

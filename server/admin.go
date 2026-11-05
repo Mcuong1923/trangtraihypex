@@ -80,6 +80,13 @@ type AuditLine struct {
 	Detail string    `json:"detail,omitempty"`
 }
 
+// Close đóng file nhật ký quản trị. Windows không xoá được file đang mở, nên test phải đóng trước khi dọn thư mục.
+func (m *Moderation) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.auditF.Close()
+}
+
 func (m *Moderation) Audit(l AuditLine) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

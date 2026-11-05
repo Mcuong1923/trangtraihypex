@@ -100,6 +100,24 @@ func randHex(n int) string {
 	return hex.EncodeToString(b)
 }
 
+// AccountIDLen: account ID là randHex(12) = 24 ký tự hex thường.
+const AccountIDLen = 24
+
+// validAccountID chặn mọi ID không đúng dạng do server sinh ra. Account ID được ghép thẳng vào đường dẫn file
+// (accounts/, social/, homes/), nên ID từ client như "../accounts/<id>" phải bị loại trước khi chạm đĩa.
+func validAccountID(id string) bool {
+	if len(id) != AccountIDLen {
+		return false
+	}
+	for i := 0; i < len(id); i++ {
+		c := id[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 var usernameRe = regexp.MustCompile(`^[a-z0-9_]{3,20}$`)
 
 var (
@@ -267,6 +285,9 @@ func (s *Store) Account(id string) (*Account, error) {
 	if a, ok := s.accounts[id]; ok {
 		return a, nil
 	}
+	if !validAccountID(id) {
+		return nil, ErrNotFound
+	}
 	b, err := os.ReadFile(s.accountPath(id))
 	if err != nil {
 		return nil, err
@@ -281,6 +302,17 @@ func (s *Store) Account(id string) (*Account, error) {
 }
 
 // Save ghi bản lưu bền vững và sổ cái. Trả lỗi để caller không báo "thành công giả" (mục 17).
+// Close đóng các file append-only (sổ cái, nhật ký quản trị). Ghi sau khi đóng chỉ ra lỗi log, không panic.
+func (s *Store) Close() error {
+	s.ledgerMu.Lock()
+	err := s.ledgerF.Close()
+	s.ledgerMu.Unlock()
+	if e := s.Mod.Close(); err == nil {
+		err = e
+	}
+	return err
+}
+
 func (s *Store) Save(a *Account) error {
 	if err := writeAtomic(s.accountPath(a.ID), a); err != nil {
 		return err

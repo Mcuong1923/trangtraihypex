@@ -45,7 +45,8 @@ func newEnvBal(t *testing.T, dir string, tune func(*Balance)) *env {
 	hub := NewHub(store, bal)
 	e := &env{srv: httptest.NewServer(hub.Routes()), hub: hub, store: store}
 	// Chạy trước khi xoá thư mục tạm: đợi các phòng lưu xong tài khoản của người vừa thoát.
-	t.Cleanup(func() { e.srv.Close(); time.Sleep(300 * time.Millisecond) })
+	// Đóng store sau cùng để Windows xoá được ledger.jsonl/admin_audit.jsonl khi dọn TempDir.
+	t.Cleanup(func() { e.srv.Close(); time.Sleep(300 * time.Millisecond); store.Close() })
 	return e
 }
 
@@ -726,6 +727,7 @@ func TestEndToEnd(t *testing.T) {
 	if err2 != nil {
 		t.Fatal(err2)
 	}
+	defer s2.Close()
 	id, _ := e.store.AccountIDForToken(tokA2)
 	acc, err3 := s2.Account(id)
 	if err3 != nil || float64(acc.Thoc) != thocBefore || acc.Stats.PKPlayed != 1 || !acc.TutorialClaimed {
