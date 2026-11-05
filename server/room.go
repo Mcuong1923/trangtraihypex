@@ -31,9 +31,12 @@ type Player struct {
 	inAt   time.Time
 	moving bool
 
-	dig    *DigSession
-	match  *Match
-	invite *Invite
+	dig       *DigSession
+	fish      *DigSession // đang câu cá ở ao
+	fbedsSent string      // danh sách cây của bạn bè đã gửi (tránh gửi lặp)
+	showSent  string      // lô trưng bày đã gửi
+	match     *Match
+	invite    *Invite
 
 	chatTokens  float64
 	chatAt      time.Time
@@ -79,6 +82,7 @@ type DigSession struct {
 	Seed      uint32
 	Params    TugParams
 	Exhausted bool
+	Fish      *FishDef // lượt câu cá (cùng khung giằng co)
 }
 
 // ChatLog là bản ghi chat phía máy chủ, dùng làm bằng chứng khi báo cáo (mục 11).
@@ -119,6 +123,7 @@ type Room struct {
 	show        *arenaShow // trận biểu diễn đang diễn ở Sân tỷ thí
 	showNext    time.Time
 	clockSent   *Clock    // ngày/đêm, thời tiết đã báo cho phòng
+	fbedsDirty  bool      // có người vào/ra hoặc cây đổi: gửi lại cây của bạn bè
 	sayWin      time.Time // hạn mức toàn phòng: tối đa SayPerSec câu NPC không nhắm ai mỗi giây
 	sayN        int
 
@@ -195,6 +200,7 @@ func (r *Room) Run() {
 // ---------- Vào / ra phòng ----------
 
 func (r *Room) add(s *Session) {
+	r.fbedsDirty = true
 	r.pidSeq++
 	p := &Player{PID: "p" + strconv.Itoa(r.pidSeq), sess: s, acc: s.acc, zone: r.entry, lastInvited: map[string]time.Time{}, seatInvites: map[string]time.Time{},
 		joinedAt: time.Now(), memo: npcMemo{greetAt: map[string]time.Time{}}}
@@ -318,6 +324,7 @@ func (r *Room) remove(s *Session) {
 	if p == nil {
 		return
 	}
+	r.fbedsDirty = true
 	if p.trade != nil {
 		r.closeTrade(p.trade, "Bên kia đã rời đi.")
 	}
@@ -525,7 +532,7 @@ func (r *Room) step(now time.Time, dt float64) {
 		if p.rideOf != nil || p.carrier != nil {
 			continue // khách ngồi theo ghế, vị trí do syncRides / syncCarried đặt
 		}
-		wantMove := now.Sub(p.inAt) < 300*time.Millisecond && (p.in.X != 0 || p.in.Z != 0) && p.dig == nil && mult > 0
+		wantMove := now.Sub(p.inAt) < 300*time.Millisecond && (p.in.X != 0 || p.in.Z != 0) && p.dig == nil && p.fish == nil && mult > 0
 		if r.stepStamina(p, now, dt, stage, wantMove) {
 			mult *= SprintMult
 		} else if now.Before(p.gooseUntil) && p.ride == nil {
@@ -533,6 +540,9 @@ func (r *Room) step(now time.Time, dt float64) {
 		}
 		if p.dig != nil && now.Sub(p.dig.TugAt).Seconds() > p.dig.Params.MaxSec+20 {
 			r.abandonDig(p) // lượt đào bỏ dở quá lâu: huỷ để gà đi lại được
+		}
+		if p.fish != nil && now.Sub(p.fish.TugAt).Seconds() > p.fish.Params.MaxSec+20 {
+			r.abandonFish(p)
 		}
 		if wantMove {
 			spd := WalkSpeed * SpeedFactor(stage) * r.walkBonus(p) * mult * math.Min(dt, .1)
@@ -560,6 +570,13 @@ func (r *Room) step(now time.Time, dt float64) {
 	r.stepActors(now, dt)
 	if r.tick%TickRate == 0 {
 		r.clockTick(now) // mọi phòng, kể cả nhà riêng, cùng một trời
+		if r.tick%(TickRate*10) == 0 {
+			r.fbedsDirty = true // kết bạn/huỷ bạn đổi danh sách cây nhìn thấy
+		}
+		r.syncFriendBeds()
+		if r.tick%(TickRate*5) == 0 || r.tick == TickRate {
+			r.syncShowcase(now)
+		}
 	}
 	if r.home != nil && r.home.Tick(now) {
 		for _, p := range r.players {
@@ -626,6 +643,7 @@ func round2(v float64) float64 { return math.Round(v*100) / 100 }
 // abandonDig bỏ lượt đào đang mở như thể giun thoát: không thưởng, vẫn tính hồi đất. Nhờ vậy không thể
 // bắt đầu lại (huỷ, rời khu, mất kết nối) để gieo lại loài giun đã lộ.
 func (r *Room) abandonDig(p *Player) {
+	r.abandonFish(p)
 	d := p.dig
 	if d == nil {
 		return

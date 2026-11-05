@@ -112,16 +112,51 @@ func status() map[string]any {
 	return out.Metrics
 }
 
+type vec struct {
+	X float64 `json:"x"`
+	Z float64 `json:"z"`
+}
+
+type item struct {
+	ID   string  `json:"id"`
+	Kind string  `json:"kind"`
+	X    float64 `json:"x"`
+	Z    float64 `json:"z"`
+}
+
+type zoneInfo struct {
+	ID      string  `json:"id"`
+	CX      float64 `json:"cx"`
+	CZ      float64 `json:"cz"`
+	HalfX   float64 `json:"halfX"`
+	HalfZ   float64 `json:"halfZ"`
+	Spawns  []vec   `json:"spawns"`
+	Items   []item  `json:"items"`
+	Entry   *vec    `json:"entry"`
+	Outdoor bool    `json:"outdoor"`
+}
+
+type obstacle struct{ X, Z, W, D float64 }
+
+// worldInfo là bản đồ liền máy chủ gửi trong welcome: biên, vật cản và quảng trường trung tâm.
+type worldInfo struct {
+	CX, CZ, HalfX, HalfZ float64
+	Obstacles            []obstacle
+	Hub                  vec
+}
+
 type bot struct {
-	id   int
-	conn *websocket.Conn
-	wmu  sync.Mutex
-	mu   sync.Mutex
-	pid  string
-	pos  [2]float64
-	zone string
-	in   chan map[string]any
-	seq  int
+	id    int
+	conn  *websocket.Conn
+	wmu   sync.Mutex
+	mu    sync.Mutex
+	pid   string
+	pos   [2]float64
+	zone  string
+	zones map[string]zoneInfo
+	world *worldInfo
+	in    chan map[string]any
+	seq   int
 }
 
 func (b *bot) send(m map[string]any) error {
@@ -206,6 +241,11 @@ func runBot(i int, stop chan struct{}) {
 	default:
 		b.chatter(stop)
 	}
+	select {
+	case <-stop:
+	default:
+		b.wander(stop) // hành vi kết thúc sớm: vẫn giữ kết nối như người chơi đứng chơi tiếp
+	}
 }
 
 func (b *bot) read() {
@@ -225,6 +265,18 @@ func (b *bot) read() {
 			b.mu.Lock()
 			if m["t"] == "welcome" {
 				b.pid, _ = m["pid"].(string)
+				// Bản đồ của phòng hiện tại (chuồng chung, nhà riêng hay vùng khác đều gửi lại).
+				var zs map[string]zoneInfo
+				if raw, err := json.Marshal(m["zones"]); err == nil && json.Unmarshal(raw, &zs) == nil {
+					b.zones = zs
+				}
+				b.world = nil
+				if w, ok := m["world"]; ok {
+					var wi worldInfo
+					if raw, err := json.Marshal(w); err == nil && json.Unmarshal(raw, &wi) == nil {
+						b.world = &wi
+					}
+				}
 			}
 			b.zone, _ = m["zone"].(string)
 			if p, ok := m["pos"].(map[string]any); ok {
@@ -307,9 +359,97 @@ func (b *bot) act(a string, args map[string]any) bool {
 	}
 }
 
-// walkTo đi bằng input như người chơi; vị trí lấy từ snapshot của máy chủ.
+// walkable dùng cùng luật với máy chủ: trong biên bản đồ, cách vật cản 0,35.
+func (b *bot) walkable(x, z float64) bool {
+	w := b.world
+	if w == nil {
+		return true
+	}
+	if math.Abs(x-w.CX) > w.HalfX-.35 || math.Abs(z-w.CZ) > w.HalfZ-.35 {
+		return false
+	}
+	for _, o := range w.Obstacles {
+		if math.Abs(x-o.X) < o.W/2+.35 && math.Abs(z-o.Z) < o.D/2+.35 {
+			return false
+		}
+	}
+	return true
+}
+
+// route tìm đường tránh vật cản trên lưới 0,5 (BFS), rồi nắn thành các đoạn thẳng.
+func (b *bot) route(from, to [2]float64) [][2]float64 {
+	clear := func(a, c [2]float64) bool {
+		n := int(math.Ceil(math.Hypot(c[0]-a[0], c[1]-a[1])/0.2)) + 1
+		for i := 1; i <= n; i++ {
+			t := float64(i) / float64(n)
+			if !b.walkable(a[0]+(c[0]-a[0])*t, a[1]+(c[1]-a[1])*t) {
+				return false
+			}
+		}
+		return true
+	}
+	if b.world == nil || clear(from, to) {
+		return [][2]float64{to}
+	}
+	const step = 0.5
+	type cell struct{ x, z int }
+	at := func(c cell) [2]float64 { return [2]float64{float64(c.x) * step, float64(c.z) * step} }
+	start := cell{int(math.Round(from[0] / step)), int(math.Round(from[1] / step))}
+	prev := map[cell]cell{start: start}
+	q := []cell{start}
+	var goal *cell
+	for len(q) > 0 && goal == nil && len(prev) < 250000 {
+		cur := q[0]
+		q = q[1:]
+		for _, d := range []cell{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+			n := cell{cur.x + d.x, cur.z + d.z}
+			p := at(n)
+			if _, seen := prev[n]; seen || !b.walkable(p[0], p[1]) {
+				continue
+			}
+			prev[n] = cur
+			if math.Hypot(p[0]-to[0], p[1]-to[1]) < step*1.5 && clear(p, to) {
+				goal = &n
+				break
+			}
+			q = append(q, n)
+		}
+	}
+	if goal == nil {
+		return [][2]float64{to}
+	}
+	pts := [][2]float64{to}
+	for c := *goal; c != start; c = prev[c] {
+		pts = append([][2]float64{at(c)}, pts...)
+	}
+	// Bỏ các điểm trung gian nằm trên cùng một đoạn đi thẳng được.
+	out, cur := [][2]float64{}, from
+	for i := 0; i < len(pts); {
+		j := i
+		for j+1 < len(pts) && clear(cur, pts[j+1]) {
+			j++
+		}
+		out = append(out, pts[j])
+		cur = pts[j]
+		i = j + 1
+	}
+	return out
+}
+
+// walkTo đi bằng input như người chơi theo lộ trình tránh vật cản; vị trí lấy từ snapshot của máy chủ.
 func (b *bot) walkTo(x, z float64, stop chan struct{}) bool {
-	deadline := time.Now().Add(15 * time.Second)
+	p, _ := b.where()
+	for _, wp := range b.route(p, [2]float64{x, z}) {
+		if !b.walkStraight(wp[0], wp[1], stop) {
+			return false
+		}
+	}
+	return true
+}
+
+func (b *bot) walkStraight(x, z float64, stop chan struct{}) bool {
+	p, _ := b.where()
+	deadline := time.Now().Add(time.Duration(4+math.Hypot(x-p[0], z-p[1])/4.2*2) * time.Second)
 	for time.Now().Before(deadline) {
 		select {
 		case <-stop:
@@ -332,6 +472,53 @@ func (b *bot) walkTo(x, z float64, stop chan struct{}) bool {
 	return false
 }
 
+// goZone đi bộ trên bản đồ liền: ra đầu đường khu đang đứng → quảng trường → đường vào khu đích.
+func (b *bot) goZone(to string, stop chan struct{}) bool {
+	b.mu.Lock()
+	from, zs, w := b.zone, b.zones, b.world
+	b.mu.Unlock()
+	dst, ok := zs[to]
+	if !ok || w == nil {
+		return false
+	}
+	ring := func(e *vec) [2]float64 {
+		l := math.Hypot(e.X-w.Hub.X, e.Z-w.Hub.Z)
+		if l == 0 {
+			return [2]float64{e.X, e.Z}
+		}
+		return [2]float64{w.Hub.X + (e.X-w.Hub.X)/l*8, w.Hub.Z + (e.Z-w.Hub.Z)/l*8}
+	}
+	var stops [][2]float64
+	if src, ok := zs[from]; ok && src.Entry != nil && from != to {
+		stops = append(stops, [2]float64{src.Entry.X, src.Entry.Z}, ring(src.Entry))
+	}
+	if dst.Entry != nil {
+		stops = append(stops, ring(dst.Entry), [2]float64{dst.Entry.X, dst.Entry.Z})
+	}
+	if len(dst.Spawns) > 0 {
+		stops = append(stops, [2]float64{dst.Spawns[0].X, dst.Spawns[0].Z})
+	}
+	for _, st := range stops {
+		if !b.walkTo(st[0], st[1], stop) {
+			return false
+		}
+	}
+	return true
+}
+
+func (b *bot) findItem(kind string) (string, item, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for id, z := range b.zones {
+		for _, it := range z.Items {
+			if it.Kind == kind {
+				return id, it, true
+			}
+		}
+	}
+	return "", item{}, false
+}
+
 func sleepOr(d time.Duration, stop chan struct{}) bool {
 	select {
 	case <-stop:
@@ -341,12 +528,24 @@ func sleepOr(d time.Duration, stop chan struct{}) bool {
 	}
 }
 
+// wander đi lang thang trong khu đang đứng, thỉnh thoảng biểu cảm/tương tác. Mọi hành vi khác
+// thất bại đều quay về đây, để bot giữ kết nối tới hết bài (không tự thoát làm hụt tải).
 func (b *bot) wander(stop chan struct{}) {
 	for {
-		x, z := rand.Float64()*20-10, rand.Float64()*16-8
-		if !b.walkTo(x, z, stop) && !sleepOr(time.Second, stop) {
-			return
+		b.mu.Lock()
+		z, ok := b.zones[b.zone]
+		b.mu.Unlock()
+		x, zz := rand.Float64()*20-10, rand.Float64()*16-8
+		if ok {
+			for tries := 0; tries < 20; tries++ {
+				x = z.CX + (rand.Float64()*2-1)*z.HalfX*0.8
+				zz = z.CZ + (rand.Float64()*2-1)*z.HalfZ*0.8
+				if b.walkable(x, zz) {
+					break
+				}
+			}
 		}
+		b.walkTo(x, zz, stop)
 		if rand.Float64() < 0.3 {
 			b.send(map[string]any{"t": "emote", "e": []string{"chao", "vui", "mua", "gay"}[rand.IntN(4)]})
 		}
@@ -360,28 +559,23 @@ func (b *bot) wander(stop chan struct{}) {
 }
 
 func (b *bot) home(stop chan struct{}) {
+	if !b.goZone("neighborhood", stop) {
+		b.wander(stop)
+		return
+	}
 	b.send(map[string]any{"t": "visit", "owner": "me"})
 	if b.wait("welcome", 10*time.Second) == nil {
+		b.wander(stop)
 		return
 	}
 	st.homes.Add(1)
 	b.act("home_place", map[string]any{"id": "chau_hoa", "x": -2, "z": -1})
-	for {
-		x, z := rand.Float64()*6-3, rand.Float64()*5-2.5
-		b.walkTo(x, z, stop)
-		if !sleepOr(time.Duration(1000+rand.IntN(3000))*time.Millisecond, stop) {
-			return
-		}
-	}
+	b.wander(stop)
 }
 
 func (b *bot) pk(stop chan struct{}) {
-	if !b.walkTo(8.5, -7.8, stop) || !b.act("go", map[string]any{"to": "arena"}) {
-		b.wander(stop)
-		return
-	}
-	time.Sleep(300 * time.Millisecond)
-	if !b.walkTo(-5, -2.0, stop) {
+	zone, it, ok := b.findItem("pk")
+	if !ok || !b.goZone(zone, stop) || !b.walkTo(it.X, it.Z+0.8, stop) {
 		b.wander(stop)
 		return
 	}

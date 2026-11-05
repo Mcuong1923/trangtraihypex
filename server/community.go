@@ -143,6 +143,7 @@ var TitleDefs = []TitleDef{
 	{"cao_thu", "Cao thủ PK", "Thắng 10 trận PK"},
 	{"hao_tam", "Nhà hảo tâm", "Góp từ 100 thóc cho ngày hội"},
 	{"lao_lang", "Gà Lão Làng", "Đạt cấp 10 (quà lên cấp)"},
+	{"truong_lang", "Trưởng Làng", "Đạt cấp 20 (quà lên cấp)"},
 	{"vua_giun", "Vua Giun Dài", "Đứng đầu bảng “Giun dài nhất” của một tuần"},
 	{"san_hiem", "Thợ Săn Giun Hiếm", "Đứng đầu bảng “Nhiều giun hiếm nhất” của một tuần"},
 	{"vo_si_tuan", "Võ Sĩ Của Tuần", "Đứng đầu bảng “Thắng PK nhiều nhất” của một tuần"},
@@ -178,13 +179,14 @@ func (a *Account) CheckTitles() []string {
 		}
 	}
 	got := map[string]bool{
-		"tham_hiem": all("zone:", discoverZones),
-		"muon_loai": all("npc:", discoverNPCs),
-		"tho_dao":   a.Stats.Dug >= 50,
-		"suu_tam":   species >= len(Worms),
-		"cao_thu":   a.Stats.PKWins >= 10,
-		"hao_tam":   a.Festival >= 100,
-		"lao_lang":  a.Level >= LevelCap,
+		"tham_hiem":   all("zone:", discoverZones),
+		"muon_loai":   all("npc:", discoverNPCs),
+		"tho_dao":     a.Stats.Dug >= 50,
+		"suu_tam":     species >= len(Worms),
+		"cao_thu":     a.Stats.PKWins >= 10,
+		"hao_tam":     a.Festival >= 100,
+		"lao_lang":    a.Level >= 10,
+		"truong_lang": a.Level >= 20,
 	}
 	var notes []string
 	for _, t := range TitleDefs {

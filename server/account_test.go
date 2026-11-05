@@ -62,11 +62,19 @@ func TestRollWormDistribution(t *testing.T) {
 
 func TestLevelFormula(t *testing.T) {
 	total := 0
-	for l := 1; l < LevelCap; l++ {
+	for l := 1; l < 10; l++ {
 		total += LevelXP(l)
 	}
 	if total != 2160 {
 		t.Fatalf("tổng XP cấp 1→10 = %d, plan ghi 2.160", total)
+	}
+	// Cấp 11–20 (PLAN_LOGIC_GAME 16): 440 + 90 × (L−10) mỗi cấp, tổng 10→20 là 8.450 XP.
+	high := 0
+	for l := 10; l < LevelCap; l++ {
+		high += LevelXP(l)
+	}
+	if LevelCap != 20 || high != 8450 || LevelXP(9) >= LevelXP(10) {
+		t.Fatalf("cấp 11–20: trần %d, tổng %d", LevelCap, high)
 	}
 	a := newAcc()
 	if gained := a.addXP(500); gained != 3 || a.Level != 4 || a.XP != 500-80-120-160 {

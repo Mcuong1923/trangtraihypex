@@ -462,7 +462,11 @@ func (c *client) tugPlan(start msg, wait bool) msg {
 		}
 	}
 	if wait {
-		lead := time.Duration(d["peckMs"].(float64)+d["revealMs"].(float64)) * time.Millisecond
+		wait, _ := d["peckMs"].(float64)
+		if bite, ok := d["biteMs"].(float64); ok {
+			wait = bite // câu cá: chờ phao chìm thay cho lúc mổ đất
+		}
+		lead := time.Duration(wait+d["revealMs"].(float64)) * time.Millisecond
 		time.Sleep(lead + time.Duration(res.End*float64(time.Second)) + 30*time.Millisecond)
 	}
 	evs := [][2]float64{}

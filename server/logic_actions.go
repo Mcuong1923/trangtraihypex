@@ -62,6 +62,7 @@ func (r *Room) logicAct(p *Player, m *inMsg, reply func(ActResult), fail func(er
 			fail(err)
 			return
 		}
+		r.fbedsDirty = true
 		txn(func() (ActResult, error) {
 			switch m.A {
 			case "plant":
@@ -86,6 +87,45 @@ func (r *Room) logicAct(p *Player, m *inMsg, reply func(ActResult), fail func(er
 			}
 			r.broadcastZone(p.zone, nil, map[string]any{"t": "fx", "pid": p.PID, "fx": "eat"})
 			return ActResult{Msg: fmt.Sprintf("Thu hoạch %d %s!", n, itemByID(crop).Name)}, nil
+		})
+
+	case "water_friend":
+		q := r.byPID(m.Target)
+		switch {
+		case q == nil || q == p:
+			fail(errors.New("Không thấy bạn ấy quanh đây."))
+			return
+		case !r.hub.store.Social.AreFriends(p.acc.ID, q.acc.ID):
+			fail(errors.New("Chỉ tưới giúp được luống của bạn bè."))
+			return
+		}
+		bed, err := r.friendBedKey(p, q, m.ID)
+		if err != nil {
+			fail(err)
+			return
+		}
+		txn(func() (ActResult, error) {
+			pl := q.acc.Beds[bed]
+			if pl == nil {
+				return ActResult{}, errors.New("Luống này không có cây của bạn ấy.")
+			}
+			old := *pl
+			if err := q.acc.WaterBed(bed, now); err != nil {
+				return ActResult{}, err
+			}
+			if err := r.hub.store.Save(q.acc); err != nil {
+				*pl = old
+				return ActResult{}, err
+			}
+			r.fbedsDirty = true
+			msg := fmt.Sprintf("Đã tưới giúp %s của %s.", itemByID(pl.Seed).Name, q.acc.Char.Name)
+			if c := p.acc.companion(p.acc.Following); c != nil {
+				c.Affinity++
+				msg += " " + c.Name + " +1 thân thiết."
+			}
+			q.sess.Send(map[string]any{"t": "me", "me": q.acc.View(now, r.hub.bal)})
+			r.toast(q, "good", fmt.Sprintf("💧 %s vừa tưới giúp cây %s của bạn!", p.acc.Char.Name, itemByID(pl.Seed).Name))
+			return ActResult{Msg: msg}, nil
 		})
 
 	case "land_info":

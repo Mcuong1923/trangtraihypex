@@ -13,6 +13,7 @@ import * as MAP from './map.js';
 import * as D from './dig.js';
 import * as NPC from './npc.js';
 import * as L from './life.js';
+import * as F from './fish.js';
 
 const T = window.THREE;
 const TOKEN_KEY = 'hypex_token';
@@ -397,6 +398,8 @@ N.on('home', (m) => {
   if (G.modal === 'decorate') SO.openDecorate();
 });
 N.on('clock', (m) => setClock(m.clock));
+N.on('showcase', (m) => { G.showLots = m.lots; G.world.setShowcase(m.lots); });
+N.on('fbeds', (m) => { G.friendBeds = m.beds; });
 // Chip 🎫 lượt xe miễn phí (PLAN_LOGIC_GAME 7.2): tự đếm lượt hồi giữa hai lần máy chủ gửi "me".
 setInterval(() => {
   const me = G.me, el = $('ticketChip');
@@ -649,6 +652,8 @@ function promptText(it) {
   if (it.kind === 'road') return 'Đường liên trại';
   if (it.kind === 'bed') { const pl = G.me?.beds?.[it.id.startsWith('home:') ? it.id : 'park:' + it.id]; return pl ? (Date.now() >= Date.parse(pl.ready) ? '🧺 Thu hoạch' : '🌱 Chăm cây') : '🌱 Gieo hạt · ' + it.label; }
   if (it.kind === 'npc_cow' && G.zone !== 'home') return 'Tiệm vật liệu · Bò Mộc';
+  if (it.kind === 'fish') { const left = (G.me?.fishReadyIn || 0) - (performance.now() - (G.me?._at || 0)) / 1000; return left > 0 ? `Cá còn lặn (${Math.ceil(left)}s)` : '🎣 Thả câu'; }
+  if (it.kind === 'showcase_lot') { const lot = G.showLots?.[+it.id.split('_')[1] - 1]; return lot ? (lot.mine ? '🏠 Nhà của bạn' : `🚪 Thăm nhà ${lot.name}`) : '🏡 Nhà mẫu · Chủ Đầu Tư'; }
   return 'Gặp ' + it.label;
 }
 function interact() {
@@ -676,6 +681,8 @@ function interact() {
     case 'npc_cow': SO.dialogCow(); break;
     case 'npc_investor': L.dialogInvestor(); break;
     case 'bed': L.dialogBed(it); break;
+    case 'fish': F.startFish(it); break;
+    case 'showcase_lot': L.dialogLot(it); break;
     case 'home_board': SO.openHomeBoard(); break;
     case 'npc_duck': V.dialogDuck(); break;
     case 'guild_board': V.openGuild(); break;
@@ -698,6 +705,9 @@ function fx(kind, mesh, opt = {}) {
     case 'escape': dirt(mesh); bubble(mesh, '💨', { emo: true, ttl: 1.2 }); break;
     case 'goose': bubble(mesh, '🪿 Cưỡi ngỗng!', { ttl: 2.5 }); a('hop', 0.8); break;
     case 'buddy': bubble(mesh, '💞', { emo: true, ttl: 1.6 }); break;
+    case 'cast': bubble(mesh, '🎣', { emo: true, ttl: 1.4 }); break;
+    case 'fish_catch': a('hop', 0.7); bubble(mesh, opt.tier >= 2 ? '🐟✨' : '🐟', { emo: true, ttl: 1.8 }); break;
+    case 'fish_end': bubble(mesh, '💨', { emo: true, ttl: 1 }); break;
     case 'dug': {
       a('hop', 0.6); dirt(mesh);
       const w = wormMesh(opt.color || '#d98a8a');

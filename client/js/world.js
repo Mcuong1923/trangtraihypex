@@ -1,6 +1,6 @@
 // Dựng cảnh 3D các khu từ dữ liệu zone của máy chủ. Vị trí tương tác lấy từ server;
 // phần trang trí (ổ rơm, bao thóc, sạp…) là của client theo bộ ảnh minh hoạ.
-import { mat, buildPig, buildDog, buildElder, buildCow, buildCoop, buildDecor, buildDuck, buildBird, buildGoat, buildFrog, buildBus, buildVehicle, buildInvestor, label } from './models.js';
+import { mat, buildPig, buildDog, buildElder, buildCow, buildHouse, buildDecor, buildDuck, buildBird, buildGoat, buildFrog, buildBus, buildVehicle, buildInvestor, label } from './models.js';
 
 import {CameraController} from './camera.js';
 import {buildScenery, updateScenery, gateArch, occluder, fadeTrees, setNightGlow} from './scenery.js';
@@ -90,6 +90,7 @@ export class World {
       z.scenery = buildScenery(id, group, local, cosmetics);
       if (!z.scenery?.handled) { ground(group, data.halfX * 2 + 1.2, data.halfZ * 2 + 1.2, 0xc9a978); fence(group, data.halfX * 2 + 1.2, data.halfZ * 2 + 1.2); }
       local.items.forEach((it, i) => this.placeItem(z, it, cosmetics, data.items[i]));
+      if (z.scenery?.lots) this.setShowcase(this.showLots || null);
       // A welcome arch where the village road reaches the area (the hall has its own doorway).
       if (local.entry && !data.outdoor && id !== 'lobby' && z.scenery.handled) {
         const arch = gateArch(data.title, 0, 5.2), e = local.entry;
@@ -167,12 +168,13 @@ export class World {
     path.position.set(0, 0.01, data.halfZ - 1); path.receiveShadow = true; group.add(path);
     const [cx, cz] = home.coopCell;
     if (home.coop) {
-      const coop = buildCoop(home.coop.roof, home.coop.state);
-      coop.position.set(cx, 0, cz - 0.5);
+      const c = home.coop, hz = c.design === 'nha_hai_gian' ? cz - 1 : cz - 0.5;
+      const coop = buildHouse(c.design, c.material, c.roof, c.state);
+      coop.position.set(cx, 0, hz);
       group.add(coop);
-      if (home.coop.state === 'building') {
+      if (c.state === 'building') {
         const l = label('🔨 Đang xây…', { bg: 'rgba(47,95,158,.85)', scale: 0.6 });
-        l.position.set(cx, 2.4, cz - 0.5); group.add(l);
+        l.position.set(cx, 3.2, hz); group.add(l);
       }
     } else if (home.tier >= 1) {
       const pad = new T.Mesh(new T.BoxGeometry(3, 0.04, 2), mat(0x8f6a3e));
@@ -180,6 +182,7 @@ export class World {
       const l = label('Nền chuồng', { bg: 'rgba(92,58,31,.7)', scale: 0.5 });
       l.position.set(cx, 0.6, cz - 0.5); group.add(l);
     }
+    placeScenery(group, home.place, data.halfX, data.halfZ);
     for (const o of home.objects) {
       const m = buildDecor(o.kind, home.ownerName);
       m.position.set(o.x, 0, o.z);
@@ -215,6 +218,29 @@ export class World {
     const sign = label(`${hall.emblem || '🏰'} ${hall.name}`, { bg: 'rgba(61,43,26,.86)', scale: 0.9 });
     sign.position.set(0, 3.2, -0.6); group.add(sign);
     for (const it of data.items) this.placeItem(z, it, cosmetics);
+  }
+
+  // Lô trưng bày ở Xóm Rơm Vàng (PLAN_LOGIC_GAME 13.2): nhà của người chơi đang online trong kênh (máy chủ đã xếp
+  // nhà mình, bạn bè lên trước), lô trống là nhà mẫu của Chủ đầu tư. Chỉ dựng lại lô có thay đổi.
+  setShowcase(lots) {
+    this.showLots = lots;
+    const z = this.zones.neighborhood, spots = z?.scenery?.lots;
+    if (!spots) return;
+    this.showcase ||= [];
+    spots.forEach((spot, i) => {
+      const lot = lots?.[i] || null, key = lot ? [lot.owner, lot.name, lot.design, lot.material, lot.roof, lot.state, lot.mine, lot.friend].join('|') : 'mau';
+      if (this.showcase[i]?.key === key) return;
+      if (this.showcase[i]) z.group.remove(this.showcase[i].g);
+      const g = new T.Group();
+      g.add(lot ? buildHouse(lot.design, lot.material, lot.roof, lot.state) : buildHouse('chuong_nho', 'go', 'nau'));
+      const text = lot ? `🏡 Nhà ${lot.name}${lot.mine ? ' (bạn)' : lot.friend ? ' · bạn bè' : ''}` : 'NHÀ MẪU · LIÊN HỆ CHỦ ĐẦU TƯ';
+      const sign = label(text, { bg: lot ? (lot.mine ? 'rgba(53,97,76,.9)' : 'rgba(92,58,31,.86)') : 'rgba(138,90,48,.8)', scale: 0.5 });
+      sign.position.set(0, lot?.design === 'nha_hai_tang' ? 5.6 : 4, 0); g.add(sign);
+      g.position.set(spot.x, 0, spot.z); g.rotation.y = spot.ry;
+      g.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
+      z.group.add(g);
+      this.showcase[i] = { key, g };
+    });
   }
 
   // Đèn lồng và cờ đuôi nheo ở sảnh khi cộng đồng góp đủ cho ngày hội (mục 11).
@@ -332,6 +358,7 @@ export class World {
   updateSky(dt, target) {
     const s = Math.sin(this.phase() * Math.PI * 2);
     const light = smooth(-0.15, 0.3, s), dusk = Math.max(0, 1 - Math.abs(s) / 0.3) * 0.65;
+    this.nightK = 1 - light;
     this.rainK = (this.rainK || 0) + ((this.clock?.rain ? 1 : 0) - (this.rainK || 0)) * Math.min(1, dt * 0.6);
     const rain = this.rainK;
     const key = Math.round(light * 200) + ':' + Math.round(dusk * 100) + ':' + Math.round(rain * 100);
@@ -442,6 +469,34 @@ function roofBlocks(o, cam, target) {
 
 // ---------- Trời và chân trời ----------
 // Gradient trời xanh → mù sáng ở chân trời như bộ ảnh 2 (vẽ theo màn hình, không tốn hình học).
+// Cảnh quanh nhà riêng theo vị trí lô (PLAN_LOGIC_GAME 13.2): cạnh đường làng có đường đất trước cổng, ven ao
+// có ao nhỏ và lau sậy bên trái, đồi thông có hàng thông và triền đồi phía sau.
+function placeScenery(group, place, hx, hz) {
+  const add = (geo, hex, x, y, z, opts) => { const m = new T.Mesh(geo, mat(hex, opts)); m.position.set(x, y, z); m.receiveShadow = true; group.add(m); return m; };
+  if (place === 'ven_ao') {
+    const pond = add(new T.CircleGeometry(1, 28), 0x3f7f86, -hx - 4.2, 0.03, 0, { roughness: 0.1, metalness: 0.2 }); pond.rotation.x = -Math.PI / 2; pond.scale.set(3, 4.6, 1);
+    const bank = add(new T.CircleGeometry(1, 28), 0x5b4a2e, -hx - 4.2, 0.02, 0); bank.rotation.x = -Math.PI / 2; bank.scale.set(3.4, 5, 1);
+    for (let i = 0; i < 26; i++) {
+      const a = i / 26 * Math.PI * 2, r = 1.05 + (i % 3) * 0.05;
+      const reed = add(new T.CylinderGeometry(0.025, 0.035, 0.9 + (i % 4) * 0.2, 5), i % 5 ? 0x6f8f3a : 0x8a6c3b, -hx - 4.2 + Math.cos(a) * 3 * r, 0.5, Math.sin(a) * 4.6 * r);
+      reed.rotation.z = Math.sin(i) * 0.15;
+    }
+    for (const [x, z] of [[-0.8, 1.2], [0.9, -1.6], [0.2, 2.4]]) { const pad = add(new T.CircleGeometry(0.35, 10), 0x5f8f3e, -hx - 4.2 + x, 0.05, z); pad.rotation.x = -Math.PI / 2; }
+  } else if (place === 'doi_thong') {
+    const hill = add(new T.SphereGeometry(1, 20, 10), 0x6f8f4a, 0, -6, -hz - 9); hill.scale.set(hx * 2.4, 9, 7);
+    for (let i = 0; i < 14; i++) {
+      const side = i % 3, t = (i * 0.618) % 1;
+      const x = side === 0 ? -hx - 2.5 - t * 2 : side === 1 ? hx + 2.5 + t * 2 : (t * 2 - 1) * (hx + 2), z = side === 2 ? -hz - 2.5 - t * 3 : (t * 2 - 1) * hz;
+      const h = 3 + (i % 4) * 0.7;
+      add(new T.CylinderGeometry(0.12, 0.18, 1, 6), 0x5a3d22, x, 0.5, z);
+      add(new T.ConeGeometry(1.1, h, 7), 0x2f5a33, x, 1 + h / 2, z).castShadow = true;
+    }
+  } else {
+    add(new T.BoxGeometry(hx * 2 + 30, 0.02, 2.6), 0x9a7446, 0, 0.01, hz + 2.6);
+    for (let i = -3; i <= 3; i++) { const post = add(new T.CylinderGeometry(0.05, 0.05, 1, 5), 0x6b4a2a, i * 4.5, 0.5, hz + 4.2); post.castShadow = true; }
+  }
+}
+
 // Bốn điểm màu trời (đỉnh → chân trời) cho trưa, đêm, hoàng hôn và mưa; điểm thứ ba cũng là màu sương.
 const hex = (h) => [(h >> 16 & 255) / 255, (h >> 8 & 255) / 255, (h & 255) / 255];
 const SKY = {

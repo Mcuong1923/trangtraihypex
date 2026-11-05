@@ -125,3 +125,58 @@ func TestLotsHouseDesignsAndUpgrade(t *testing.T) {
 		t.Fatal("chuồng cũ thành Chuồng nhỏ – Gỗ cạnh đường")
 	}
 }
+
+// Cấp 11–20 (PLAN_LOGIC_GAME 16): đủ quà mỗi cấp, danh hiệu cấp 10 và 20, Lô đồi mở ở cấp 12, nhà gạch hai
+// tầng mở ở cấp 15 trên Lô đồi; nhà lớn chiếm nền rộng hơn và đồ trên nền về kho.
+func TestLevelsElevenToTwenty(t *testing.T) {
+	for lv := 2; lv <= LevelCap; lv++ {
+		rw, ok := LevelRewards[lv]
+		if !ok || rw.Thoc <= 0 {
+			t.Fatalf("thiếu quà cấp %d", lv)
+		}
+		for id := range rw.Items {
+			if itemByID(id) == nil {
+				t.Fatalf("quà cấp %d có món lạ %s", lv, id)
+			}
+		}
+	}
+	a := newAcc()
+	a.Level = 10
+	a.CheckTitles()
+	if !a.hasTitle("lao_lang") || a.hasTitle("truong_lang") {
+		t.Fatal("cấp 10: Gà Lão Làng")
+	}
+	a.Level = 20
+	a.CheckTitles()
+	if !a.hasTitle("truong_lang") {
+		t.Fatal("cấp 20: Trưởng Làng")
+	}
+
+	h := NewHome("owner123456789012345678", "Gà Chủ")
+	b := newAcc()
+	b.Thoc, b.Level = 50000, 11
+	if _, _, err := h.BuyLot(b, 3, "doi_thong", t0); err == nil {
+		t.Fatal("Lô đồi cần cấp 12")
+	}
+	b.Level = 12
+	if _, _, err := h.BuyLot(b, 3, "doi_thong", t0); err != nil || h.Tier != 3 {
+		t.Fatalf("mua Lô đồi: %v", err)
+	}
+	b.Items["gach"], b.Items["go"], b.Items["ngoi"], b.Items["da"] = 60, 30, 20, 10
+	if _, err := h.BuildHouse(b, "nha_hai_tang", "gach", "do", t0, 1); err == nil {
+		t.Fatal("nhà gạch hai tầng mở ở cấp 15")
+	}
+	b.Level = 15
+	cx, cz := coopCell(h.tier())
+	h.Objects = append(h.Objects, PlacedObj{ID: "x", Kind: "thung_go", X: cx - 2, Z: cz + 1})
+	if _, err := h.BuildHouse(b, "nha_hai_tang", "gach", "do", t0, 1); err != nil {
+		t.Fatalf("xây nhà hai tầng: %v", err)
+	}
+	if h.Storage["thung_go"] != 1 || h.cellOK(cx+2, cz+1, "") == nil {
+		t.Fatal("nền nhà hai tầng rộng hơn: đồ trên nền về kho, không đặt đồ lên nền")
+	}
+	h.Tick(t0.Add(3 * time.Hour))
+	if regen, capacity := h.comfort(); regen != 2.5 || capacity != 20 {
+		t.Fatalf("nhà gạch hai tầng: hồi %.1f/phút, chứa %d", regen, capacity)
+	}
+}

@@ -263,7 +263,7 @@ func finalize(b Balance) Balance {
 }
 
 const (
-	LevelCap      = 10
+	LevelCap      = 20 // PLAN_LOGIC_GAME 16: mở cấp 11–20
 	ManaMax       = 100.0
 	ManaHungryAt  = 20.0 // dưới mức này là "sắp đói"; ăn lên >= mức này gỡ phạt
 	WalkSpeed     = 4.6  // bản đồ liền rộng hơn: nhanh hơn 10% so với 4,2 ban đầu
@@ -292,7 +292,14 @@ const (
 )
 
 // XP để đi từ cấp L lên L+1 (mục 7.3).
-func LevelXP(level int) int { return 80 + 40*(level-1) }
+// LevelXP: cấp 1–9 giữ công thức PLAN.md (80 + 40 × (L−1)); từ cấp 10 dốc hơn (440 + 90 × (L−10)) để cấp
+// 11–20 là chặng đường dài cho người chơi lâu năm.
+func LevelXP(level int) int {
+	if level < 10 {
+		return 80 + 40*(level-1)
+	}
+	return 440 + 90*(level-10)
+}
 
 // Chủ đề tên chuồng công cộng (mục 6.4).
 var RoomThemes = []string{"Chuồng Hạt Thóc", "Chuồng Rơm Vàng", "Chuồng Bình Minh"}

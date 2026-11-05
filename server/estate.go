@@ -38,22 +38,30 @@ type HouseRecipe struct {
 }
 
 type HouseDesign struct {
-	ID      string                 `json:"id"`
-	Name    string                 `json:"name"`
-	MinTier int                    `json:"minTier"`
-	Recipes map[string]HouseRecipe `json:"recipes"` // vật liệu → công thức
+	ID       string                 `json:"id"`
+	Name     string                 `json:"name"`
+	MinTier  int                    `json:"minTier"`
+	MinLevel int                    `json:"minLevel"`
+	Recipes  map[string]HouseRecipe `json:"recipes"` // vật liệu → công thức
+	// Nhà lớn ấm cúng hơn và chứa thêm khách, cộng trên độ ấm cúng của vật liệu.
+	ExtraRegen float64 `json:"extraRegen"`
+	ExtraCap   int     `json:"extraCap"`
 }
 
 var HouseDesigns = []HouseDesign{
-	{"chuong_nho", "Chuồng nhỏ", 1, map[string]HouseRecipe{
+	{"chuong_nho", "Chuồng nhỏ", 1, 0, map[string]HouseRecipe{
 		"rom":  {200, map[string]int{"rom": 20, "go": 5}, 10},
 		"go":   {400, map[string]int{"go": 20, "dinh": 10}, 20},
 		"gach": {800, map[string]int{"gach": 20, "go": 10, "ngoi": 6}, 40},
-	}},
-	{"nha_hai_gian", "Nhà hai gian", 2, map[string]HouseRecipe{
+	}, 0, 0},
+	{"nha_hai_gian", "Nhà hai gian", 2, 0, map[string]HouseRecipe{
 		"go":   {900, map[string]int{"go": 40, "dinh": 20, "rom": 10}, 40},
 		"gach": {1800, map[string]int{"gach": 40, "go": 20, "ngoi": 12}, 60},
-	}},
+	}, 0, 2},
+	// Cấp 15 (PLAN_LOGIC_GAME 16): nhà gạch hai tầng trên Lô đồi.
+	{"nha_hai_tang", "Nhà gạch hai tầng", 3, 15, map[string]HouseRecipe{
+		"gach": {3000, map[string]int{"gach": 60, "go": 30, "ngoi": 20, "da": 10}, 90},
+	}, 0.5, 4},
 }
 
 var MaterialRank = map[string]int{"rom": 0, "go": 1, "gach": 2}
@@ -86,10 +94,14 @@ func (h *Home) comfort() (float64, int) {
 		return 0, HomeCapacity
 	}
 	c := Comfort[h.Coop.Material]
-	if !h.houseDone() {
-		return 0, max(HomeCapacity, c.Cap)
+	regen, capacity := c.Regen, c.Cap
+	if d := designByID(h.Coop.Design); d != nil {
+		regen, capacity = regen+d.ExtraRegen, capacity+d.ExtraCap
 	}
-	return c.Regen, c.Cap
+	if !h.houseDone() {
+		return 0, max(HomeCapacity, capacity)
+	}
+	return regen, capacity
 }
 
 // normalizeHouse: chuồng xây trước bản cập nhật coi như "Chuồng nhỏ – Gỗ"; nhà cũ đứng cạnh đường làng.
@@ -162,6 +174,8 @@ func (h *Home) BuildHouse(a *Account, design, material, roof string, now time.Ti
 		return 0, errors.New("Chọn màu mái hợp lệ.")
 	}
 	switch {
+	case a.Level < d.MinLevel:
+		return 0, fmt.Errorf("%s mở ở cấp %d.", d.Name, d.MinLevel)
 	case h.Tier < d.MinTier:
 		return 0, fmt.Errorf("%s cần %s trở lên.", d.Name, LandTiers[d.MinTier].Name)
 	case h.Coop != nil && h.Coop.State == "building":
@@ -178,6 +192,7 @@ func (h *Home) BuildHouse(a *Account, design, material, roof string, now time.Ti
 	_ = a.addThoc(-rc.Thoc, "build_house", design+":"+material, now)
 	dur := time.Duration(float64(rc.Minutes) * float64(time.Minute) * scale)
 	h.Coop = &CoopJob{Roof: roof, Design: design, Material: material, State: "building", StartAt: now, DoneAt: now.Add(dur)}
+	h.clearFoot()
 	return dur, nil
 }
 

@@ -39,6 +39,11 @@ var Items = []ItemDef{
 	{"bi_ngo", "Bí ngô", "🎃", "nongsan", 0, 25, "", 80, true},
 	{"bo_hoa", "Bó hoa", "💐", "nongsan", 0, 8, "", 0, true},
 	{"phan_u", "Phân ủ", "🟤", "nongsan", 0, 0, "", 0, false},
+	// Cá câu ở ao (PLAN_LOGIC_GAME 16): bán ở Quầy thức ăn hoặc ăn hồi độ no.
+	{"ca_ro", "Cá rô", "🐟", "ca", 0, 6, "", 18, true},
+	{"ca_chep", "Cá chép", "🐠", "ca", 0, 14, "", 30, true},
+	{"ca_tre", "Cá trê", "🐡", "ca", 0, 35, "", 50, true},
+	{"ca_vang", "Cá vàng", "🌟", "ca", 0, 120, "", 90, true},
 	{"trung_thuong", "Trứng thường", "🥚", "trung", 0, 0, "", 0, false},
 	{"trung_dom", "Trứng đốm", "🥚", "trung", 0, 0, "", 0, false},
 	{"trung_vang", "Trứng vàng", "🥚", "trung", 0, 0, "", 0, false},
@@ -194,6 +199,17 @@ var LevelRewards = map[int]Reward{
 	8:  {Thoc: 200, Food: map[string]int{"suat": 2}, Items: map[string]int{"trung_dom": 1}},
 	9:  {Thoc: 250, Items: map[string]int{"ngoi": 10, "gach": 10, "trung_thuong": 1}},
 	10: {Thoc: 300, Items: map[string]int{"trung_vang": 1}, Title: "lao_lang", Unlock: "Lập Hội Gà"},
+	// Cấp 11–20 (PLAN_LOGIC_GAME 16): vật liệu cho nhà lớn, trứng hiếm, lô đồi và nhà gạch hai tầng.
+	11: {Thoc: 320, Items: map[string]int{"go": 15, "dinh": 15}},
+	12: {Thoc: 350, Items: map[string]int{"da": 10, "gach": 10}, Unlock: "Lô đồi"},
+	13: {Thoc: 380, Items: map[string]int{"trung_dom": 1, "hat_bi_ngo": 3}},
+	14: {Thoc: 400, Food: map[string]int{"suat": 3}, Items: map[string]int{"ngoi": 10}},
+	15: {Thoc: 450, Items: map[string]int{"gach": 20, "ngoi": 10}, Unlock: "Nhà gạch hai tầng"},
+	16: {Thoc: 480, Items: map[string]int{"trung_vang": 1}},
+	17: {Thoc: 520, Items: map[string]int{"go": 20, "gach": 10}},
+	18: {Thoc: 560, Items: map[string]int{"trung_dom": 1, "hat_hoa": 3}},
+	19: {Thoc: 600, Items: map[string]int{"gach": 20, "ngoi": 15}},
+	20: {Thoc: 700, Items: map[string]int{"trung_vang": 1}, Title: "truong_lang", Unlock: "Danh hiệu Trưởng Làng"},
 }
 
 // ClaimLevelRewards trao quà mọi cấp đã đạt mà chưa nhận (idempotent theo cấp). Kho đầy thì phần vật phẩm

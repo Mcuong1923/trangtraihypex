@@ -627,6 +627,6 @@ func catalog(b Balance) map[string]any {
 		"species": Species, "eggSpecies": EggSpecies, "eggKinds": EggKinds, "seeds": Seeds,
 		"maxBusTokens": MaxBusTokens, "villageFare": VillageFare,
 		"houseDesigns": HouseDesigns, "landPlaces": LandPlaces, "materialNames": MaterialNames, "comfort": Comfort,
-		"weeklyKinds": WeeklyKinds, "gameDay": GameDay.Seconds(),
+		"weeklyKinds": WeeklyKinds, "gameDay": GameDay.Seconds(), "fishTable": FishTable,
 	}
 }

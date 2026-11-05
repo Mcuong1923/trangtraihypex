@@ -127,7 +127,7 @@ export function openBag(tab = 'worm') {
 }
 
 const bagTabs = (tab) => `<div class="tabs"><button class="tab" data-tab="worm" aria-selected="${tab === 'worm'}">🪱 Giun</button><button class="tab" data-tab="food" aria-selected="${tab === 'food'}">🍱 Thức ăn</button><button class="tab" data-tab="store" aria-selected="${tab === 'store'}">📦 Kho</button></div>`;
-const GROUP = { vatlieu: 'Vật liệu xây nhà', hatgiong: 'Hạt giống', nongsan: 'Nông sản', trung: 'Trứng' };
+const GROUP = { vatlieu: 'Vật liệu xây nhà', hatgiong: 'Hạt giống', nongsan: 'Nông sản', ca: 'Cá câu ở ao', trung: 'Trứng' };
 // Kho đồ (PLAN_LOGIC_GAME 11): vật liệu, hạt giống, nông sản, trứng.
 function openStore() {
   const me = G.me, items = G.catalog.items.filter((it) => (me.items?.[it.id] || 0) > 0);
@@ -535,9 +535,9 @@ export function openHelp() {
     <h2>Đi lại</h2>
     <p><b>Xe buýt vòng làng</b> do NPC lái chạy liên tục qua ${G.worldMap?.roads?.stops?.length || 9} bến ở cổng các khu: mỗi người có ${c.maxBusTokens} lượt miễn phí, hồi 1 lượt mỗi 5 phút; hết lượt trả ${c.villageFare} thóc. <b>Xe ôm</b> dọc đường sẽ mời bạn: chọn điểm đến trên bản đồ, 1–2 thóc tuỳ xa gần (trời mưa +1 thóc khăn lau). Đứng ở bến nhấn <kbd>E</kbd> để xem xe sắp tới.</p>
     <h2>Nhà, vườn và bạn đồng hành</h2>
-    <p><b>Ông Chủ Đầu Tư</b> ở cổng Xóm Rơm Vàng bán lô đất (cạnh đường, ven ao, đồi thông). <b>Bò Mộc</b> bán rơm, gỗ, gạch… và xây nhà theo thiết kế: nhà rơm ấm ít, gỗ ấm vừa, gạch ấm nhất (hồi độ no khi ngủ ổ, chứa nhiều khách hơn). Mua hạt giống ở Quầy thức ăn, gieo ở luống cộng đồng (Ao và vườn) hoặc luống rau nhà, tưới một lần cho nhanh, thu trước khi héo. Trứng ấp ở Trạm ấp nở ra bạn đồng hành, mỗi loài một kỹ năng (đánh hơi giun, mặc cả giá vé, cõng chạy…).</p>
+    <p><b>Ông Chủ Đầu Tư</b> ở cổng Xóm Rơm Vàng bán lô đất (cạnh đường, ven ao, đồi thông). <b>Bò Mộc</b> bán rơm, gỗ, gạch… và xây nhà theo thiết kế: nhà rơm ấm ít, gỗ ấm vừa, gạch ấm nhất (hồi độ no khi ngủ ổ, chứa nhiều khách hơn). Mua hạt giống ở Quầy thức ăn, gieo ở luống cộng đồng (Ao và vườn) hoặc luống rau nhà, tưới một lần cho nhanh (tưới giúp được cây của bạn bè), thu trước khi héo. Ra <b>đầu cầu ao</b> thả câu: phao chìm thì giữ nút kéo cá như kéo giun; cá bán ở Quầy thức ăn hoặc ăn cho no. Xóm Rơm Vàng có 8 lô trưng bày nhà của người đang online — ghé cổng lô để thăm. Trứng ấp ở Trạm ấp nở ra bạn đồng hành, mỗi loài một kỹ năng (đánh hơi giun, mặc cả giá vé, cõng chạy…).</p>
     <h2>Làng sống</h2>
-    <p>Một ngày trong làng dài ${Math.round((c.gameDay || 2880) / 60)} phút: ban đêm đèn lồng thắp, Giun phát sáng ngoi lên nhiều hơn. Thỉnh thoảng có mưa nhẹ: ụ đất hồi nhanh hơn 30%. NPC chào hỏi, trêu nhẹ, rủ đi xe — chỉnh mức trò chuyện và tắt trêu trong Cài đặt. Bảng việc làng có nhiệm vụ của NPC; bảng <b>Xếp hạng tuần</b> trao danh hiệu cho người giỏi nhất.</p>
+    <p>Một ngày trong làng dài ${Math.round((c.gameDay || 2880) / 60)} phút: ban đêm đèn lồng thắp, Giun phát sáng ngoi lên nhiều hơn. Thỉnh thoảng có mưa nhẹ: ụ đất hồi nhanh hơn 30%. NPC chào hỏi, trêu nhẹ, rủ đi xe — chỉnh mức trò chuyện và tắt trêu trong Cài đặt. Bảng việc làng có nhiệm vụ của NPC; bảng <b>Xếp hạng tuần</b> trao danh hiệu cho người giỏi nhất. Cấp tối đa ${G.catalog.levelCap}: cấp 12 mở Lô đồi, cấp 15 mở Nhà gạch hai tầng, cấp 20 thành Trưởng Làng.</p>
     <h2>Bảng giun</h2>
     <div class="tblwrap"><table class="t"><tr><th>Giun</th><th>Độ hiếm</th><th>Tỷ lệ</th><th>Bán</th><th>XP</th><th>Độ no</th><th>Phí</th></tr>
       ${G.catalog.worms.map((w) => `<tr><td>${esc(w.name)}</td><td>${esc(w.rarity)}</td><td>${(w.prob * 100).toLocaleString('vi-VN')}%</td><td>${w.sell}</td><td>${w.xp}</td><td>${w.mana}</td><td>${w.fee}</td></tr>`).join('')}</table></div>

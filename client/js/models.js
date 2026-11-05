@@ -294,25 +294,57 @@ export function buildCow() {
 
 const ROOF = { do: 0xb8433a, xanh: 0x3e6fa8, luc: 0x4f8a45, nau: 0x8a5a30 };
 
-// Chuồng gỗ mái màu theo mẫu của Bò Mộc; state "building" là khung giàn đang dựng.
-export function buildCoop(roof, state) {
+// Nhà theo thiết kế và vật liệu của Bò Mộc (PLAN_LOGIC_GAME 13.3): rơm có vách đan và mái rơm dày, gỗ có vách ván
+// và mái màu, gạch có tường gạch đỏ mạch vữa và mái ngói màu. Thiết kế: chuồng nhỏ, nhà hai gian, nhà gạch hai
+// tầng (cấp 15). state "building" là khung giàn đang dựng. Mặt tiền (cửa) quay về +z.
+const HOUSE_SIZE = { chuong_nho: [2.4, 1.7, 1.4], nha_hai_gian: [4.2, 2.4, 1.6], nha_hai_tang: [3.6, 2.6, 3.1] };
+const WALL = { rom: 0xd8b45a, go: 0x8a5a30, gach: 0xb5553c };
+const TRIM = { rom: 0x9c7a35, go: 0x5c3a1f, gach: 0xe8dcc6 };
+export function buildHouse(design, material, roof, state) {
   const g = new T.Group();
-  const wood = 0x8a5a30, dark = 0x5c3a1f;
+  const [W, D, H] = HOUSE_SIZE[design] || HOUSE_SIZE.chuong_nho, mt = WALL[material] ? material : 'go';
   if (state === 'building') {
-    for (const [x, z] of [[-1.2, -0.8], [1.2, -0.8], [-1.2, 0.8], [1.2, 0.8]]) { const p = mesh(new T.BoxGeometry(0.12, 1.8, 0.12), 0xc9a36a); p.position.set(x, 0.9, z); g.add(p); }
-    for (const y of [0.9, 1.8]) for (const z of [-0.8, 0.8]) { const b = mesh(new T.BoxGeometry(2.5, 0.1, 0.1), 0xc9a36a); b.position.set(0, y, z); g.add(b); }
-    for (let i = 0; i < 3; i++) { const plank = mesh(new T.BoxGeometry(1.1, 0.08, 0.25), 0xc9a36a); plank.position.set(1.8, 0.05 + i * 0.09, 1.2); plank.rotation.y = 0.2; g.add(plank); }
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const p = mesh(new T.BoxGeometry(0.12, H + 0.5, 0.12), 0xc9a36a); p.position.set(sx * W / 2, (H + 0.5) / 2, sz * D / 2); g.add(p); }
+    for (const y of [0.9, H + 0.4]) for (const sz of [-1, 1]) { const b = mesh(new T.BoxGeometry(W + 0.1, 0.1, 0.1), 0xc9a36a); b.position.set(0, y, sz * D / 2); g.add(b); }
+    for (let i = 0; i < 3; i++) { const plank = mesh(new T.BoxGeometry(1.1, 0.08, 0.25), 0xc9a36a); plank.position.set(W / 2 + 0.6, 0.05 + i * 0.09, D / 2 + 0.4); plank.rotation.y = 0.2; g.add(plank); }
+    const pile = mesh(new T.BoxGeometry(0.8, 0.4, 0.6), WALL[mt]); pile.position.set(-W / 2 - 0.6, 0.2, D / 2 + 0.2); g.add(pile);
     return g;
   }
-  const bodyM = mesh(new T.BoxGeometry(2.4, 1.4, 1.7), wood); bodyM.position.y = 0.85; bodyM.receiveShadow = true; g.add(bodyM);
-  for (let i = 0; i < 4; i++) { const plank = mesh(new T.BoxGeometry(2.42, 0.04, 1.72), dark, false); plank.position.y = 0.4 + i * 0.32; g.add(plank); }
-  const door = mesh(new T.BoxGeometry(0.7, 0.75, 0.05), 0x2e1f12, false); door.position.set(0, 0.6, 0.86); g.add(door);
-  const ramp = mesh(new T.BoxGeometry(0.6, 0.06, 0.8), 0xa47447); ramp.position.set(0, 0.2, 1.2); ramp.rotation.x = 0.4; g.add(ramp);
-  for (const sx of [-1, 1]) {
-    const r = mesh(new T.BoxGeometry(1.45, 0.1, 2.1), ROOF[roof] || ROOF.do); r.position.set(sx * 0.6, 1.85, 0); r.rotation.z = -sx * 0.5; g.add(r);
+  const floors = design === 'nha_hai_tang' ? 2 : 1, fh = H / floors;
+  for (let f = 0; f < floors; f++) {
+    const body = mesh(new T.BoxGeometry(W - f * 0.2, fh, D - f * 0.2), WALL[mt]); body.position.y = 0.15 + fh / 2 + f * fh; body.receiveShadow = true; g.add(body);
+    // Vân vách: bó rơm, ván gỗ hoặc mạch vữa gạch.
+    const lines = mt === 'gach' ? 5 : 4;
+    for (let i = 1; i < lines; i++) {
+      const ln = mesh(new T.BoxGeometry(W - f * 0.2 + 0.02, mt === 'gach' ? 0.025 : 0.045, D - f * 0.2 + 0.02), TRIM[mt], false);
+      ln.position.y = 0.15 + f * fh + (fh * i) / lines; g.add(ln);
+    }
+    // Cửa sổ hai bên mặt tiền.
+    for (const sx of design === 'chuong_nho' ? [] : [-1, 1]) {
+      const win = mesh(new T.BoxGeometry(0.55, 0.45, 0.05), 0x3a2a1a, false); win.position.set(sx * W * 0.3, 0.15 + f * fh + fh * 0.6, (D - f * 0.2) / 2 + 0.02); g.add(win);
+      const sill = mesh(new T.BoxGeometry(0.7, 0.06, 0.12), TRIM[mt], false); sill.position.set(sx * W * 0.3, 0.15 + f * fh + fh * 0.33, (D - f * 0.2) / 2 + 0.05); g.add(sill);
+    }
   }
+  const base = mesh(new T.BoxGeometry(W + 0.3, 0.15, D + 0.3), mt === 'gach' ? 0x8b8378 : 0x6e5434); base.position.y = 0.075; g.add(base);
+  // Cửa: nhà hai gian có hai cửa, nhà khác một cửa; ban công cho nhà hai tầng.
+  for (const dx of design === 'nha_hai_gian' ? [-W * 0.18, W * 0.18] : [0]) {
+    const door = mesh(new T.BoxGeometry(0.7, 0.95, 0.05), 0x2e1f12, false); door.position.set(dx, 0.62, D / 2 + 0.02); g.add(door);
+  }
+  if (floors === 2) {
+    const deck = mesh(new T.BoxGeometry(W * 0.6, 0.08, 0.6), TRIM[mt]); deck.position.set(0, 0.15 + fh, D / 2 + 0.3); g.add(deck);
+    for (let i = -2; i <= 2; i++) { const post = mesh(new T.BoxGeometry(0.05, 0.45, 0.05), 0x5c3a1f, false); post.position.set(i * W * 0.14, 0.4 + fh, D / 2 + 0.58); g.add(post); }
+    const rail = mesh(new T.BoxGeometry(W * 0.6, 0.06, 0.06), 0x5c3a1f, false); rail.position.set(0, 0.62 + fh, D / 2 + 0.58); g.add(rail);
+  }
+  // Mái: rơm dày màu rơm (mép mái dải màu đã chọn), gỗ/gạch mái dốc theo màu đã chọn.
+  const roofHex = mt === 'rom' ? 0xc9a04a : ROOF[roof] || ROOF.do, top = 0.15 + H;
+  for (const sx of [-1, 1]) {
+    const r = mesh(new T.BoxGeometry(W / 2 + 0.45, mt === 'rom' ? 0.22 : 0.1, D + 0.5), roofHex); r.position.set(sx * (W / 4 + 0.05), top + W * 0.14, 0); r.rotation.z = -sx * 0.55; g.add(r);
+  }
+  const ridge = mesh(new T.BoxGeometry(0.24, 0.16, D + 0.55), mt === 'rom' ? ROOF[roof] || ROOF.do : 0x4a3322); ridge.position.set(0, top + W * 0.28, 0); g.add(ridge);
+  if (mt === 'gach') { const chim = mesh(new T.BoxGeometry(0.35, 0.7, 0.35), 0x9a4632); chim.position.set(W * 0.28, top + W * 0.28, -D * 0.2); g.add(chim); }
   return g;
 }
+export function buildCoop(roof, state) { return buildHouse('chuong_nho', 'go', roof, state); }
 
 // Đồ trang trí đặt trong chuồng riêng.
 export function buildDecor(kind, ownerName) {

@@ -37,7 +37,8 @@ function shapeWorm(mesh, chick, s, t) {
   mesh.geometry = new T.TubeGeometry(new T.CatmullRomCurve3(pts), 24, 0.05 + 0.012 * (s.tier || 0), 8, false);
 }
 
-function overlay(w, p, exhausted) {
+// Bảng giằng co dùng chung cho đào giun và câu cá (fish.js).
+export function overlay(w, p, exhausted, hint) {
   let el = $('tug');
   if (!el) { el = document.createElement('div'); el.id = 'tug'; $('hud').appendChild(el); }
   const hearts = p.canEscape ? `<span class="tug-slips" id="tugSlips">${'❤'.repeat(p.maxSlips)}</span>` : '';
@@ -47,12 +48,12 @@ function overlay(w, p, exhausted) {
     <div class="tug-bar"><span>Kéo</span><div class="track"><div class="fill prog" id="tugProg"></div></div></div>
     <div class="tug-bar"><span>Độ căng</span><div class="track tension"><div class="fill ten" id="tugTen"></div></div></div>
     <button class="tug-btn" id="tugBtn">GIỮ ĐỂ KÉO <kbd>Space</kbd></button>
-    <div class="tug-hint">${exhausted ? '<b>Kiệt sức</b>: chỉ đào được giun thường. ' : ''}Giữ để kéo · thấy đỏ thì <b>thả</b> · giun quẫy là lúc nguy hiểm</div>`;
+    <div class="tug-hint">${hint || `${exhausted ? '<b>Kiệt sức</b>: chỉ đào được giun thường. ' : ''}Giữ để kéo · thấy đỏ thì <b>thả</b> · giun quẫy là lúc nguy hiểm`}</div>`;
   el.hidden = false;
   return el;
 }
 
-function pop(text, color, ms) {
+export function pop(text, color, ms) {
   let el = $('tugPop');
   if (!el) { el = document.createElement('div'); el.id = 'tugPop'; $('hud').appendChild(el); }
   el.innerHTML = text; el.style.setProperty('--c', color || '#fff6e4');

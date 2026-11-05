@@ -1,7 +1,7 @@
 // Đất, nhà, vật liệu, trồng cây và cài đặt NPC (PLAN_LOGIC_GAME 11, 13, 14, 5.2). Máy chủ quyết định giá,
 // thời gian và tài sản; ở đây chỉ hiện bảng và gửi ý định.
 import { G, $, esc, openSheet, closeSheet, toast, showResult } from './ui.js';
-import { mat } from './models.js';
+import { mat, label } from './models.js';
 
 const T = window.THREE;
 const act = (a, args) => G.net.act(a, args);
@@ -79,9 +79,10 @@ export function houseSection(h) {
   if (h.tier < 1) return html + '<p class="mut">Mua lô đất ở Văn phòng đất nền của Ông Chủ Đầu Tư (cạnh cổng xóm) rồi tôi mới xây được.</p>';
   html += `<p class="mut" style="margin-bottom:4px">Màu mái: ${Object.entries(G.catalog.roofs).map(([k, v]) => `<label style="margin-right:8px"><input type="radio" name="roof" value="${k}" ${k === (c?.roof || 'do') ? 'checked' : ''}> ${esc(v)}</label>`).join('')}</p>`;
   html += options.map(({ d, m, r }) => {
-    const ok = h.tier >= d.minTier && me.thoc >= r.thoc && have(r.items);
-    return `<div class="row"><div class="ico" style="background:#e8f0dc">🏠</div><div class="meta"><div class="nm">${esc(d.name)} · ${MAT[m]}</div>
-      <div class="sub">🌾 ${fmt(r.thoc)} + ${need(r.items)} · ${r.minutes} phút${h.tier < d.minTier ? ` · cần ${esc(G.catalog.landTiers[d.minTier].name)}` : ''}</div></div>
+    const ok = h.tier >= d.minTier && me.level >= (d.minLevel || 0) && me.thoc >= r.thoc && have(r.items);
+    const lock = [me.level < (d.minLevel || 0) ? `mở ở cấp ${d.minLevel}` : '', h.tier < d.minTier ? `cần ${esc(G.catalog.landTiers[d.minTier].name)}` : ''].filter(Boolean).join(', ');
+    return `<div class="row"><div class="ico" style="background:#e8f0dc">${d.id === 'nha_hai_tang' ? '🏘️' : '🏠'}</div><div class="meta"><div class="nm">${esc(d.name)} · ${MAT[m]}</div>
+      <div class="sub">🌾 ${fmt(r.thoc)} + ${need(r.items)} · ${r.minutes} phút${lock ? ` · ${lock}` : ''}</div></div>
       <div class="act"><button class="mini ${ok ? 'hot' : 'sec'}" data-build="${d.id}" data-mat="${m}" ${ok ? '' : 'disabled'}>Xây</button></div></div>`;
   }).join('');
   return html;
@@ -137,7 +138,18 @@ export function dialogBed(it) {
       : wilt > 0 ? `<p>${crop?.emo || '🌿'} ${esc(crop?.name || '')} chín rồi! Thu trong ${Math.ceil(wilt / 60)} phút kẻo héo.</p><button class="btn block hot" id="harvest">🧺 Thu hoạch</button>`
         : `<p>🥀 Cây héo mất rồi. Thu dọn để lấy 1 phân ủ.</p><button class="btn block sec" id="harvest">Thu dọn</button>`;
   }
+  // Cây của bạn bè trên cùng luống (PLAN_LOGIC_GAME 14): tưới giúp được, không thu hoạch được.
+  const friends = (G.friendBeds || []).filter((f) => f.key === key);
+  if (friends.length) {
+    body += '<h2>Cây của bạn bè</h2>' + friends.map((f) => {
+      const left = ago(f.ready), seed = itemOf(f.seed);
+      const state = left > 0 ? `chín sau ${Math.ceil(left / 60)} phút` : ago(f.wilt) > 0 ? 'đã chín, chờ chủ thu hoạch' : 'đã héo';
+      return `<div class="row"><div class="ico" style="background:#e8f0dc">🌱</div><div class="meta"><div class="nm">${esc(seed?.name || '')} của ${esc(f.name)}</div><div class="sub">${state}${f.watered ? ' · đã tưới' : ''}</div></div>
+        <div class="act">${left > 0 && !f.watered ? `<button class="mini good" data-waterfor="${f.pid}">💧 Tưới giúp</button>` : ''}</div></div>`;
+    }).join('') + '<p class="mut">Tưới giúp bạn: bạn đồng hành của bạn +1 thân thiết. Chỉ chủ cây mới thu hoạch được.</p>';
+  }
   openSheet('bed', key.startsWith('park:') ? '🌱 Luống cộng đồng' : '🌱 Luống rau nhà', body);
+  document.querySelectorAll('[data-waterfor]').forEach((b) => (b.onclick = async () => { b.disabled = true; if (showResult(await act('water_friend', { id: it.id, target: b.dataset.waterfor }))) closeSheet(); }));
   document.querySelectorAll('[data-plant]').forEach((b) => (b.onclick = async () => { if (showResult(await act('plant', { id: it.id, mode: b.dataset.plant, eat: !!$('fert')?.checked }))) closeSheet(); }));
   if ($('water')) $('water').onclick = async () => { if (showResult(await act('water', { id: it.id }))) closeSheet(); };
   if ($('harvest')) $('harvest').onclick = async () => { if (showResult(await act('harvest', { id: it.id }))) closeSheet(); };
@@ -149,18 +161,21 @@ let plantAt = 0;
 export function updatePlants() {
   if (!G.me || performance.now() - plantAt < 1500) return;
   plantAt = performance.now();
-  const beds = G.me.beds || {}, seen = new Set();
-  for (const [key, pl] of Object.entries(beds)) {
+  const beds = Object.entries(G.me.beds || {}).map(([key, pl]) => ({ id: key, key, pl, dx: 0 }));
+  for (const f of G.friendBeds || []) beds.push({ id: `f:${f.pid}:${f.key}`, key: f.key, pl: f, dx: 0.42, name: f.name });
+  const seen = new Set();
+  for (const { id, key, pl, dx, name } of beds) {
     const pos = bedPos(key);
     if (!pos) continue;
-    seen.add(key);
+    seen.add(id);
     const total = (Date.parse(pl.ready) - Date.parse(pl.at)) / 1000, grown = (Date.now() - Date.parse(pl.at)) / 1000;
     const stage = Date.now() > Date.parse(pl.wilt) ? 'wilt' : grown >= total ? 'ripe' : grown > total * 0.35 ? 'bush' : 'sprout';
-    const cur = plants.get(key);
+    const cur = plants.get(id);
     if (cur && cur.stage === stage) continue;
     if (cur) G.world.scene.remove(cur.mesh);
-    const mesh = plantMesh(pl.seed, stage); mesh.position.set(pos.x, 0.32, pos.z); G.world.scene.add(mesh);
-    plants.set(key, { stage, mesh });
+    const mesh = plantMesh(pl.seed, stage); mesh.position.set(pos.x + dx, 0.32, pos.z + dx * 0.5); G.world.scene.add(mesh);
+    if (name) { const tag = label(`🌱 ${name}`, { bg: 'rgba(79,138,69,.8)', scale: 0.32 }); tag.position.y = 0.9; mesh.add(tag); }
+    plants.set(id, { stage, mesh });
   }
   for (const [key, p] of plants) if (!seen.has(key)) { G.world.scene.remove(p.mesh); plants.delete(key); }
 }
@@ -183,6 +198,23 @@ function plantMesh(seed, stage) {
     }
   }
   return g;
+}
+
+// ---------- Lô trưng bày ở Xóm Rơm Vàng (PLAN_LOGIC_GAME 13.2) ----------
+
+export function dialogLot(it) {
+  const lot = G.showLots?.[+it.id.split('_')[1] - 1];
+  if (!lot) {
+    openSheet('npc', '🏡 Nhà mẫu', `${npcBox('🐓', '#f0e2b0', 'Ông Chủ Đầu Tư', 'NHÀ MẪU – LIÊN HỆ CHỦ ĐẦU TƯ! Lô này đang chờ một chủ nhân như cháu. Mua đất, xây nhà, rồi nhà cháu sẽ hiện ở đây cho cả xóm ngắm khi cháu online!')}
+      <button class="btn block" id="lotInvestor">Xem bảng lô đất</button>`);
+    $('lotInvestor').onclick = () => { closeSheet(); dialogInvestor(); };
+    return;
+  }
+  const d = G.catalog.houseDesigns.find((x) => x.id === lot.design);
+  openSheet('npc', `🏡 Nhà ${esc(lot.name)}`, `<p>${esc(d?.name || 'Nhà')} bằng ${MAT[lot.material]?.toLowerCase() || ''}${lot.state === 'building' ? ' · Bò Mộc đang xây' : ''}${lot.friend ? ' · bạn bè' : ''}.</p>
+    <p class="mut">Lô trưng bày hiện nhà của người đang online trong kênh, nhà mình và nhà bạn bè lên trước.</p>
+    <button class="btn block" id="lotVisit">${lot.mine ? '🏠 Về nhà mình' : '🚪 Ghé thăm'}</button>`);
+  $('lotVisit').onclick = () => { closeSheet(); G.net.raw({ t: 'visit', owner: lot.mine ? 'me' : lot.owner }); };
 }
 
 // ---------- Cài đặt NPC (PLAN_LOGIC_GAME 5.2) ----------

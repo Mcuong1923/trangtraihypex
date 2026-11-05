@@ -143,6 +143,8 @@ type Account struct {
 	Beds           map[string]*Plant    `json:"beds"`                 // luống đang trồng: mã luống → cây
 	HouseBuilt     bool                 `json:"houseBuilt,omitempty"` // nhà riêng đã xây xong (mở chuồng nuôi thú cưng)
 	Week           WeekStats            `json:"week"`                 // thành tích tuần cho bảng xếp hạng
+	FishReadyAt    time.Time            `json:"fishReadyAt"`          // câu cá: hồi câu
+	FishCaught     int                  `json:"fishCaught,omitempty"`
 
 	Recent      map[string]ActResult `json:"recent"` // request ID → kết quả (idempotency)
 	RecentOrder []string             `json:"recentOrder"`
@@ -906,6 +908,8 @@ type AccountView struct {
 	RationReady     bool                `json:"rationReady"`
 	CompanionCap    int                 `json:"companionCap"`
 	HouseBuilt      bool                `json:"houseBuilt"`
+	FishReadyIn     float64             `json:"fishReadyIn"`
+	FishCaught      int                 `json:"fishCaught"`
 }
 
 func (a *Account) View(now time.Time, b Balance) AccountView {
@@ -928,6 +932,7 @@ func (a *Account) View(now time.Time, b Balance) AccountView {
 		Items: a.Items, StorageCount: a.StorageCount(), StorageCap: StorageCap, LevelRewarded: a.LevelRewarded,
 		Coupons: a.couponView(now), BusTokens: a.Tokens(now, b), NextTokenIn: a.NextTokenIn(now, b), Prefs: a.Prefs,
 		CheckIn: a.CheckInView(now), Beds: a.Beds, StarterGranted: a.StarterGranted, CompanionCap: a.CompanionCap(), HouseBuilt: a.HouseBuilt,
+		FishReadyIn: math.Max(0, a.FishReadyAt.Sub(now).Seconds()), FishCaught: a.FishCaught,
 		RationReady: a.RationDay != DayKey(now) && a.Mana < 10 && a.Thoc < 5 && !a.hasEdibleOrSellable(),
 	}
 }

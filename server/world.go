@@ -326,11 +326,17 @@ func buildHypex() map[string]*Zone {
 			{ID: "bo_moc", Kind: "npc_cow", Label: "Bò Mộc", X: 9.6, Z: 12.4, R: 2.6},
 			{ID: "hoi_ga", Kind: "guild_board", Label: "Nhà Hội Gà", X: 9, Z: -8, R: 3},
 		},
-		// Bốn chuồng có sân, Nhà Hội phía sau và khung nhà Bò Mộc đang dựng (ảnh B02-07).
-		Obstacles: []Obstacle{{-13, -12, 5, 7, 4}, {13, -12, 5, 7, 4}, {-13, 4, 5, 7, 4}, {13, 4, 5, 7, 4}, {12, -16, 7, 4, 4}, {14.4, 13, 4.6, 4.6, 3}, {6.4, 13.6, 3, 1.2, 1.1}}}
+		// Bốn chuồng có sân và bốn lô nhỏ dọc đường là 8 lô trưng bày (showcase.go), Nhà Hội phía sau và khung
+		// nhà Bò Mộc đang dựng (ảnh B02-07).
+		Obstacles: []Obstacle{{-13, -12, 5, 7, 4}, {13, -12, 5, 7, 4}, {-13, 4, 5, 7, 4}, {13, 4, 5, 7, 4},
+			{-12, -3.8, 5, 5, 4}, {12, -3.8, 5, 5, 4}, {-12, 12, 5, 5, 4}, {-12, -19.4, 5, 4.6, 4},
+			{12, -16, 7, 4, 4}, {14.4, 13, 4.6, 4.6, 3}, {6.4, 13.6, 3, 1.2, 1.1}}}
+	neighborhood.Items = append(neighborhood.Items, showcaseItems()...)
 
 	park := &Zone{ID: "park", Title: "Ao và vườn", HalfX: 26, HalfZ: 24, Spawns: []Vec{{0, 20}, {1.5, 20}, {-1.5, 20}},
-		Items:     []Item{{ID: "hoi_cho", Kind: "board", Label: "Lễ hội của làng", X: 12, Z: 5, R: 2.6}},
+		Items: []Item{{ID: "hoi_cho", Kind: "board", Label: "Lễ hội của làng", X: 12, Z: 5, R: 2.6},
+			// Đầu cầu ao: câu cá (PLAN_LOGIC_GAME 16).
+			{ID: "cau_ca", Kind: "fish", Label: "Câu cá ở cầu ao", Emo: "🎣", X: -1.2, Z: 4.8, R: 1.8}},
 		Obstacles: []Obstacle{{0, -2, 18, 12, .1}}}
 	// 12 luống cộng đồng trên ba luống rau bên phải ao (PLAN_LOGIC_GAME 14): mỗi người giữ tối đa một luống.
 	for row, z := range []float64{-6, -2.4, 1.2} {

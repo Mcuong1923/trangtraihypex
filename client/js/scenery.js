@@ -870,8 +870,18 @@ function neighborhood(g, data, cosmetics, info) {
   ground(g, 48, 48, C.grass, 'grass', .004);
   path(g, [[0, 24], [0, 10], [0, -10], [0, -22]], 5.4, C.path);
   for (let z = 19; z > -18; z -= 2.6) { const p = box(g, 1.2, .07, .55, timber(0x8a6c4b), (z * 7 % 3 - 1) * .25, .06, z); p.rotation.y = (z % 2) * .15; }
+  // 8 lô trưng bày (PLAN_LOGIC_GAME 13.2; trùng ShowcaseLots ở server/showcase.go): nhà do world.setShowcase dựng
+  // theo người chơi đang online trong kênh, thiếu thì nhà mẫu. Bốn sân lớn có vườn rau, bốn lô nhỏ dọc đường.
+  info.lots = [[-13, -12], [13, -12], [-13, 4], [13, 4], [-12, -3.8], [12, -3.8], [-12, 12], [-12, -19.4]].map(([x, z]) => ({ x, z, ry: x < 0 ? Math.PI / 2 : -Math.PI / 2 }));
+  for (const { x, z } of info.lots.slice(4)) {
+    const sx = Math.sign(x);
+    box(g, 6.6, .02, 5, 0x9a7446, (x + sx * 4.2) / 2 + sx * .6, .015, z).receiveShadow = true;
+    fence(g, [[sx * 4.2, z - 2.6], [x + sx * 2.8, z - 2.6]], 1); fence(g, [[sx * 4.2, z + 2.6], [x + sx * 2.8, z + 2.6]], 1);
+    fence(g, [[x + sx * 2.8, z - 2.6], [x + sx * 2.8, z + 2.6]], 1); fence(g, [[sx * 4.2, z - 2.6], [sx * 4.2, z - 1.2]], 1);
+    flowers(g, sx * 5.6, z + 1.8, .8, 8, 50 + z);
+  }
   for (const sx of [-1, 1]) for (const z of [-12, 4]) {
-    coopShed(g, sx * 13, z, 7, 4.6, -sx * Math.PI / 2, ['🐓', '🐤', '🌾', '🥚'][(sx + 1) + (z > 0 ? 1 : 0)]);
+    box(g, 5.4, .02, 7.4, 0x9a7446, sx * 13, .015, z).receiveShadow = true;
     fence(g, [[sx * 4.2, z - 4], [sx * 10, z - 4]], 1.1); fence(g, [[sx * 4.2, z + 4.2], [sx * 10, z + 4.2]], 1.1); fence(g, [[sx * 4.2, z - 4], [sx * 4.2, z - 1]], 1.1);
     vegBed(g, sx * 7.4, z + 2.4, 3.6, 1.6, 40 + z + sx); trough(g, sx * 8.6, z - 2, false, 2);
     hay(g, sx * 9.4, z - 3.2, .5); lampPost(g, sx * 3.6, z + 4.6, 3);
@@ -891,7 +901,7 @@ function neighborhood(g, data, cosmetics, info) {
   // Village roofs in the distance.
   for (const [x, z] of [[-8, -30], [4, -32], [16, -29], [-18, -27]]) shed(g, x, z, 4.4, 3, 2.2);
   surround(g, 23, 23, 22, [[0, 25, 7]], .7);
-  grass(g, 22, 22, 220, 22, (x, z) => Math.abs(x) < 3.5 || Math.abs(x) > 4 && Math.abs(x) < 16 && (Math.abs(z + 12) < 4.5 || Math.abs(z - 4) < 4.5));
+  grass(g, 22, 22, 220, 22, (x, z) => Math.abs(x) < 3.5 || Math.abs(x) > 4 && Math.abs(x) < 16 && (Math.abs(z + 12) < 4.5 || Math.abs(z - 4) < 4.5 || Math.abs(z + 3.8) < 3 || x < 0 && (Math.abs(z - 12) < 3 || Math.abs(z + 19.4) < 3)));
   resident(g, info.ambient, cosmetics, 'Gà Đi Dạo', 2.2, 8.6, 'walk', 'trang', 'luc', 0, { route: [[2.2, 8.6], [1.4, -6]] });
   resident(g, info.ambient, cosmetics, 'Gà Chào Bạn', 1.6, 15.4, 'greet', 'trang', 'luc', 2.8);
   // Văn phòng đất nền của Ông Chủ Đầu Tư (server: chu_dau_tu 6.4,15.4; quầy 6.4,13.6).

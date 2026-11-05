@@ -176,19 +176,10 @@ func (r *Room) act(p *Player, m *inMsg) {
 			fail(errors.New("Lượt đào đã hết hạn."))
 			return
 		}
-		if len(m.Ev) > 400 {
-			fail(errors.New("Dữ liệu giằng co không hợp lệ."))
+		events, err := tugEvents(m.Ev, d.Params)
+		if err != nil {
+			fail(err)
 			return
-		}
-		events := make([]TugEvent, 0, len(m.Ev))
-		last := -1.0
-		for _, e := range m.Ev {
-			if math.IsNaN(e[0]) || e[0] < last || e[0] > d.Params.MaxSec+1 {
-				fail(errors.New("Dữ liệu giằng co không hợp lệ."))
-				return
-			}
-			last = e[0]
-			events = append(events, TugEvent{T: e[0], Hold: e[1] > 0})
 		}
 		res := SimulateTug(d.Params, TugBursts(d.Seed, d.Params), events)
 		// Không được xong sớm hơn đồng hồ máy chủ (dung sai trễ mạng 0,6 giây, co theo nhịp của bộ cân bằng).
@@ -480,11 +471,14 @@ func (r *Room) act(p *Player, m *inMsg) {
 	case "pk_bot", "pk_invite", "pk_accept", "pk_decline", "pk_tap", "pk_pick":
 		r.pkAct(p, m, reply, fail)
 
-	case "eat_item", "item_buy", "item_sell", "plant", "water", "harvest", "prefs", "land_buy", "land_info", "pet_ride", "weekly":
+	case "eat_item", "item_buy", "item_sell", "plant", "water", "harvest", "prefs", "land_buy", "land_info", "pet_ride", "weekly", "water_friend":
 		r.logicAct(p, m, reply, fail, txn)
 
 	case "bus_stops", "bus_board", "bus_alight", "xeom_accept", "xeom_decline", "xeom_call", "xeom_leave", "npc_choice":
 		r.npcAct(p, m, reply, fail, txn)
+
+	case "fish_start", "fish_cancel", "fish_finish":
+		r.fishAct(p, m, reply, fail, txn)
 
 	default:
 		fail(errors.New("Hành động không hợp lệ."))

@@ -33,8 +33,9 @@ export class CameraController {
   update(dt,pos,moving,reduced,vehicle){
     if(this.mode==='closeup'&&this.close){
       const c=this.close,fx=Math.sin(c.ry),fz=Math.cos(c.ry),rx=Math.cos(c.ry),rz=-Math.sin(c.ry),k=1-Math.exp(-(reduced?100:5)*dt);
-      this.focus.lerp(new T.Vector3(c.x+fx*.62,.48,c.z+fz*.62),k);
-      this.camera.position.lerp(new T.Vector3(c.x+rx*1.25+fx*1.55,1.05,c.z+rz*1.25+fz*1.55),k);
+      // Câu cá: nhìn qua vai gà ra phao (c.far); đào giun: cận cảnh mỏ gà và miệng hố.
+      if(c.far){this.focus.lerp(new T.Vector3(c.x+fx*c.far,.3,c.z+fz*c.far),k);this.camera.position.lerp(new T.Vector3(c.x+rx*1.1-fx*1.7,1.75,c.z+rz*1.1-fz*1.7),k);}
+      else{this.focus.lerp(new T.Vector3(c.x+fx*.62,.48,c.z+fz*.62),k);this.camera.position.lerp(new T.Vector3(c.x+rx*1.25+fx*1.55,1.05,c.z+rz*1.25+fz*1.55),k);}
       if(Math.abs(this.camera.fov-50)>.05){this.camera.fov=damp(this.camera.fov,50,k0(reduced),dt);this.camera.updateProjectionMatrix();}
       this.camera.lookAt(this.focus);return;
     }

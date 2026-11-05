@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -122,4 +124,73 @@ func (a *Account) Harvest(bed string, now time.Time) (string, int, error) {
 	}
 	delete(a.Beds, bed)
 	return crop, n, nil
+}
+
+// ---------- Tưới giúp bạn bè (PLAN_LOGIC_GAME 14) ----------
+// Cây là tài sản trong tài khoản người trồng, nên chỉ tưới giúp được khi người bạn ấy đang ở cùng phòng
+// (cùng kênh ở Ao và vườn, hoặc đang ở nhà khi mình sang thăm): phòng giữ tài khoản của cả hai người.
+
+// friendBeds: cây của bạn bè cùng phòng mà người xem nhìn thấy được (luống cộng đồng; luống nhà khi đang ở
+// trong nhà của chính bạn ấy).
+func (r *Room) friendBeds(v *Player) []map[string]any {
+	out := []map[string]any{}
+	for _, q := range r.players {
+		if q == v || q.acc.Char == nil || !q.goneAt.IsZero() || !r.hub.store.Social.AreFriends(v.acc.ID, q.acc.ID) {
+			continue
+		}
+		for key, pl := range q.acc.Beds {
+			home := strings.HasPrefix(key, "home:")
+			if home && (r.home == nil || r.Owner != q.acc.ID) || !home && r.zones["park"] == nil {
+				continue
+			}
+			out = append(out, map[string]any{"pid": q.PID, "name": q.acc.Char.Name, "key": key, "seed": pl.Seed,
+				"at": pl.At, "ready": pl.Ready, "wilt": pl.Wilt, "watered": pl.Watered})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i]["pid"].(string)+out[i]["key"].(string) < out[j]["pid"].(string)+out[j]["key"].(string)
+	})
+	return out
+}
+
+// syncFriendBeds gửi lại danh sách cây của bạn bè cho ai có thay đổi (gọi mỗi giây khi phòng đánh dấu bẩn).
+func (r *Room) syncFriendBeds() {
+	if !r.fbedsDirty {
+		return
+	}
+	r.fbedsDirty = false
+	for _, v := range r.players {
+		list := r.friendBeds(v)
+		b, _ := json.Marshal(list)
+		if string(b) == v.fbedsSent {
+			continue
+		}
+		v.fbedsSent = string(b)
+		v.sess.Send(map[string]any{"t": "fbeds", "beds": list})
+	}
+}
+
+// friendBedKey kiểm tra người tưới đứng cạnh luống có cây của bạn q.
+func (r *Room) friendBedKey(p, q *Player, id string) (string, error) {
+	if strings.HasPrefix(id, "home:") {
+		if r.home == nil || r.Owner != q.acc.ID {
+			return "", errors.New("Chỉ tưới giúp luống trong nhà khi chủ nhà đang ở nhà.")
+		}
+		oid := strings.TrimPrefix(id, "home:")
+		for _, o := range r.home.Objects {
+			if o.ID == oid && (o.Kind == "luong_rau" || o.Kind == "luong_ca_rot") {
+				if p.pos.Dist(Vec{float64(o.X), float64(o.Z)}) > 2.4 {
+					return "", errors.New("Lại gần luống rau hơn.")
+				}
+				return id, nil
+			}
+		}
+		return "", errors.New("Không tìm thấy luống rau này.")
+	}
+	zone := r.zones[p.zone]
+	it := zone.Item(id)
+	if it == nil || it.Kind != "bed" || p.pos.Dist(it.Pos()) > it.R+InteractSlack {
+		return "", errors.New("Lại gần luống của bạn ấy ở Ao và vườn.")
+	}
+	return "park:" + id, nil
 }

@@ -32,6 +32,36 @@ function skateboard() {
   return g;
 }
 
+// Đèn pha bật khi trời tối (PLAN_LOGIC_GAME 9.1): bóng đèn, quầng sáng và vệt sáng trên mặt đường phía trước.
+let glowMat = null;
+function glowMaterial() {
+  if (!glowMat) {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+    const c = cv.getContext('2d'), gr = c.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,244,200,1)'); gr.addColorStop(0.3, 'rgba(255,226,150,.5)'); gr.addColorStop(1, 'rgba(255,210,120,0)');
+    c.fillStyle = gr; c.fillRect(0, 0, 64, 64);
+    glowMat = new T.SpriteMaterial({ map: new T.CanvasTexture(cv), blending: T.AdditiveBlending, depthWrite: false, transparent: true });
+  }
+  return glowMat;
+}
+function headlights(root, ride) {
+  root.updateMatrixWorld(true);
+  const box = new T.Box3().setFromObject(root), size = box.getSize(new T.Vector3());
+  const g = new T.Group(), n = ride === 'xe_dap' || ride === 'xe_may' ? 1 : 2, big = ride === 'bus';
+  for (let i = 0; i < n; i++) {
+    const lamp = new T.Mesh(new T.SphereGeometry(big ? 0.13 : 0.08, 8, 6), new T.MeshBasicMaterial({ color: 0xfff3c4 }));
+    lamp.position.set(n === 1 ? 0 : (i ? 1 : -1) * size.x * 0.3, box.min.y + size.y * (big ? 0.22 : 0.42), box.max.z + 0.03);
+    const glow = new T.Sprite(glowMaterial()); glow.scale.setScalar(big ? 1.7 : 1.1); glow.position.copy(lamp.position);
+    g.add(lamp, glow);
+  }
+  const beam = new T.Mesh(new T.CircleGeometry(1, 20), new T.MeshBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0.16, depthWrite: false }));
+  beam.rotation.x = -Math.PI / 2; beam.scale.set(n === 1 ? 0.8 : 1.5, big ? 3.4 : 2.4, 1); beam.position.set(0, 0.05, box.max.z + (big ? 3.4 : 2.3));
+  g.add(beam);
+  g.visible = false;
+  root.add(g);
+  return g;
+}
+
 function buildActor(info) {
   const look = info.look || {};
   const root = new T.Group();
@@ -53,6 +83,7 @@ function buildActor(info) {
     if (look.tray) { const tray = new T.Mesh(new T.CylinderGeometry(0.32, 0.28, 0.08, 14), mat(0xb88b54)); tray.position.set(0, 0.95, 0.55); rider.add(tray); for (let i = 0; i < 3; i++) { const b = new T.Mesh(new T.SphereGeometry(0.08, 8, 6), mat([0xe7b23e, 0x87a650, 0xe7b23e][i])); b.position.set(-0.12 + i * 0.12, 1.02, 0.55); rider.add(b); } }
   }
   root.userData.rider = rider;
+  if (['bus', 'xe_may', 'xe_dap', 'o_to'].includes(info.ride)) root.userData.lights = headlights(root, info.ride);
   const tag = label(`${info.name} · NPC`, { bg: 'rgba(89,54,29,.78)', scale: 0.42 });
   tag.position.y = (ROLE_LIFT[info.role] || 0) + 2.15; tag.visible = false; root.add(tag); root.userData.tag = tag;
   return root;
@@ -95,8 +126,9 @@ export function onSnap(rows) {
 const lerpAngle = (a, b, t) => { let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI; if (d < -Math.PI) d += Math.PI * 2; return a + d * t; };
 
 export function update(dt, me) {
-  const k = 1 - Math.exp(-dt * 10);
+  const k = 1 - Math.exp(-dt * 10), night = (G.world.nightK || 0) > 0.45;
   for (const a of G.actors.values()) {
+    if (a.mesh.userData.lights) a.mesh.userData.lights.visible = night;
     a.mesh.position.lerp(a.target, k);
     a.mesh.rotation.y = lerpAngle(a.mesh.rotation.y, a.ry, 0.2);
     const r = a.mesh.userData.rider, p = r?.userData.parts;

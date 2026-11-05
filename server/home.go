@@ -57,6 +57,7 @@ var LandTiers = []LandTier{
 	{"Tổ nhỏ", 0, 1, 4.5, 4},
 	{"Lô tiêu chuẩn", 1200, 3, 6.5, 5.5},
 	{"Lô rộng", 3000, 6, 8.5, 7},
+	{"Lô đồi", 6000, 12, 10.5, 8.5}, // cấp 11–20: lô trên đồi, đủ chỗ cho nhà gạch hai tầng
 }
 
 const (
@@ -151,9 +152,8 @@ func (h *Home) cellOK(x, z int, ignore string) error {
 		return errors.New("Không đặt đồ chắn lối vào.")
 	}
 	if h.Tier >= 1 {
-		cx, cz := coopCell(t)
-		if x >= cx-1 && x <= cx+1 && z >= cz-1 && z <= cz {
-			return errors.New("Đây là nền chuồng, chọn ô khác.")
+		if x0, x1, z0, z1 := h.houseFoot(); x >= x0 && x <= x1 && z >= z0 && z <= z1 {
+			return errors.New("Đây là nền nhà, chọn ô khác.")
 		}
 	}
 	for _, o := range h.Objects {
@@ -166,6 +166,38 @@ func (h *Home) cellOK(x, z int, ignore string) error {
 
 func coopCell(t LandTier) (int, int) {
 	return -int(t.HalfX) + 2, -int(t.HalfZ) + 2
+}
+
+// houseFoot: các ô nền nhà quanh coopCell; nhà lớn (PLAN_LOGIC_GAME 13.3, 16) chiếm nhiều ô hơn.
+func (h *Home) houseFoot() (x0, x1, z0, z1 int) {
+	cx, cz := coopCell(h.tier())
+	design := ""
+	if h.Coop != nil {
+		design = h.Coop.Design
+	}
+	switch design {
+	case "nha_hai_gian":
+		return cx - 2, cx + 2, cz - 2, cz
+	case "nha_hai_tang":
+		return cx - 2, cx + 2, cz - 2, cz + 1
+	}
+	return cx - 1, cx + 1, cz - 1, cz
+}
+
+// clearFoot đưa đồ trang trí nằm trên nền nhà mới về kho, không mất đồ.
+func (h *Home) clearFoot() int {
+	x0, x1, z0, z1 := h.houseFoot()
+	keep, moved := h.Objects[:0:0], 0
+	for _, o := range h.Objects {
+		if o.X >= x0 && o.X <= x1 && o.Z >= z0 && o.Z <= z1 {
+			h.Storage[o.Kind]++
+			moved++
+			continue
+		}
+		keep = append(keep, o)
+	}
+	h.Objects = keep
+	return moved
 }
 
 func (h *Home) BuyDecor(a *Account, id string, now time.Time) error {
@@ -305,6 +337,20 @@ type HomeIndexEntry struct {
 	Access   string    `json:"access"`
 	Tier     int       `json:"tier"`
 	PartyEnd time.Time `json:"partyEnd"`
+	// Nhà đang có, để lô trưng bày ở Xóm vẽ đúng nhà mà không phải mở phòng nhà riêng (PLAN_LOGIC_GAME 13.2).
+	Design   string    `json:"design,omitempty"`
+	Material string    `json:"material,omitempty"`
+	Roof     string    `json:"roof,omitempty"`
+	State    string    `json:"state,omitempty"`
+	DoneAt   time.Time `json:"doneAt,omitempty"`
+}
+
+func indexEntry(h *Home) HomeIndexEntry {
+	e := HomeIndexEntry{Name: h.OwnerName, Access: h.Access, Tier: h.Tier, PartyEnd: h.PartyEnd}
+	if c := h.Coop; c != nil {
+		e.Design, e.Material, e.Roof, e.State, e.DoneAt = c.Design, c.Material, c.Roof, c.State, c.DoneAt
+	}
+	return e
 }
 
 type HomeStore struct {
@@ -322,6 +368,19 @@ func OpenHomes(dir string) (*HomeStore, error) {
 	s := &HomeStore{dir: hdir, cache: map[string]*Home{}, index: map[string]HomeIndexEntry{}}
 	if b, err := os.ReadFile(filepath.Join(hdir, "index.json")); err == nil {
 		json.Unmarshal(b, &s.index)
+	}
+	// Chỉ mục cũ chưa ghi nhà: đọc lại từng nhà một lần để lô trưng bày thấy được nhà đã xây trước bản này.
+	for owner, e := range s.index {
+		if e.Design != "" {
+			continue
+		}
+		if b, err := os.ReadFile(filepath.Join(hdir, owner+".json")); err == nil {
+			h := &Home{}
+			if json.Unmarshal(b, h) == nil && h.Coop != nil {
+				h.normalizeHouse()
+				s.index[owner] = indexEntry(h)
+			}
+		}
 	}
 	return s, nil
 }
@@ -357,7 +416,7 @@ func (s *HomeStore) saveLocked(h *Home) error {
 	if err := writeAtomic(filepath.Join(s.dir, h.Owner+".json"), h); err != nil {
 		return err
 	}
-	s.index[h.Owner] = HomeIndexEntry{h.OwnerName, h.Access, h.Tier, h.PartyEnd}
+	s.index[h.Owner] = indexEntry(h)
 	return writeAtomic(filepath.Join(s.dir, "index.json"), s.index)
 }
 
@@ -378,6 +437,19 @@ func (s *HomeStore) Access(owner string) (string, bool) {
 		return "public", true // đang mở tiệc: ai không bị chặn cũng ghé được
 	}
 	return e.Access, true
+}
+
+// Houses trả nhà (đã có thiết kế) của các chủ trong danh sách, cho lô trưng bày.
+func (s *HomeStore) Houses(owners []string) map[string]HomeIndexEntry {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[string]HomeIndexEntry{}
+	for _, id := range owners {
+		if e, ok := s.index[id]; ok && e.Design != "" {
+			out[id] = e
+		}
+	}
+	return out
 }
 
 func (s *HomeStore) Public() map[string]HomeIndexEntry {
