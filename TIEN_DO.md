@@ -1,5 +1,14 @@
 # Tiến độ dự án Trang trại gà Hypex
 
+## Rà soát logic và sửa lỗi (05/11/2026)
+
+Chi tiết: [plans/reports/code-reviewer-261105-1412-game-logic-review.md](plans/reports/code-reviewer-261105-1412-game-logic-review.md). Hiện có 95 test, chạy `go test -count=1 -timeout 25m ./...` (~12 phút); máy Windows hiện chưa có cgo nên chưa chạy `-race`.
+
+- **Lỗi nghiêm trọng C1–C5, H1–H5:** chặn ID tài khoản đi vòng đường dẫn, bán giun lạ làm sập server, đổi kênh né hồi đất, recover panic trong phòng, hai phiên một tài khoản, gà "ma" khi chuyển phòng, giới hạn tốc độ message, trần câu cá 60/ngày, giới hạn báo cáo.
+- **Lỗi chặn tính năng R1, B1–B3, D1:** "Bán hết" một lệnh, giao dịch và xe ôm không còn tự huỷ, nút xuống xe/mời xuống, Úp ngửa có hạn chọn 10 giây.
+- **Đồng bộ với plan:** chỉ Mổ nhanh với người thật tính thắng (bảng tuần, điểm hội, "Cao thủ PK"); gà con cũ có kỹ năng Mỏ Thính; sức chứa nhà rơm 8/gỗ 12/gạch 16; quà cấp khi kho đầy vào hàng chờ (Túi đồ → Kho); bỏ lệnh nâng đất cũ `home_upgrade`; giao dịch có vật liệu, hạt giống, nông sản; xe liên trại chạy theo lịch 3 phút; client dọn màn giằng co khi lượt đào/câu bị huỷ.
+- **Chưa chốt:** giới hạn luống rau nhà, trần câu cá, trần thân thiết thú cưng, thắng do đối thủ bỏ trận, kho 200 có tính nông sản/cá, khách nghỉ ổ, cấp 11–20 trong plan.
+
 ## Logic game v2 (02/11/2026, theo [PLAN_LOGIC_GAME.md](PLAN_LOGIC_GAME.md))
 
 Đủ các giai đoạn P0–P7 của plan. Server mặc định chạy bộ cân bằng `live` (`go run .`); `-balance demo` để thử nhanh. Toàn bộ 69 test xanh với `-race` (~12 phút), gồm so khớp giằng co Go ↔ JS bằng Node. Ảnh kiểm tra trên trình duyệt: [docs/visual-qa/logic/](docs/visual-qa/logic/).
@@ -115,7 +124,7 @@ Cách chạy:
   - Chăm sóc tăng độ thân thiết; tối đa 3 con.
 - **Bến xe Chim Chíp & trại Ven Suối (mục 8.5, ảnh 9, 11):**
   - Vùng thứ hai có 4 loại giun đặc sản.
-  - Xe buýt 8 ghế; 3 lượt miễn phí/ngày, hết thì 10 thóc; huỷ vé hoàn đúng một lần.
+  - Xe liên trại 8 ghế, chạy theo lịch mỗi 3 phút (cửa mở 20 giây trước giờ chạy); dùng chung 2 lượt miễn phí hồi 5 phút, hết thì 10 thóc; huỷ vé hoàn đúng một lần.
   - Về Hypex miễn phí; đối soát chuyến dở khi máy chủ lỗi.
 - **Xe đạp chở bạn (mục 8.4, ảnh 10):**
   - Cửa hàng xe, lấy/cất ở điểm đỗ, mời bạn lên ghế.

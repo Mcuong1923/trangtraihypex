@@ -38,14 +38,14 @@ func TestHomeUpgradeAndBuild(t *testing.T) {
 	if err := h.HireBuild(a, "do", t0, time.Minute); err == nil {
 		t.Fatal("tổ nhỏ chưa xây chuồng được")
 	}
-	if _, err := h.UpgradeLand(a, t0); err == nil || a.Thoc != 5000 {
+	if _, _, err := h.BuyLot(a, h.Tier+1, "duong", t0); err == nil || a.Thoc != 5000 {
 		t.Fatal("cấp 1 chưa được mua đất, không trừ tiền")
 	}
 	a.Level = 3
 	// Đặt một món vào ô sẽ thành nền chuồng ở hạng đất mới để kiểm tra trả về kho.
 	cx, cz := coopCell(LandTiers[1])
 	h.Objects = append(h.Objects, PlacedObj{ID: "x", Kind: "thung_go", X: cx, Z: cz})
-	moved, err := h.UpgradeLand(a, t0)
+	moved, _, err := h.BuyLot(a, h.Tier+1, "duong", t0)
 	if err != nil || h.Tier != 1 || a.Thoc != 3800 || moved != 1 || h.Storage["thung_go"] != 1 {
 		t.Fatalf("nâng đất: %v tier %d thóc %d chuyển %d", err, h.Tier, a.Thoc, moved)
 	}
@@ -72,8 +72,8 @@ func TestHomeUpgradeAndBuild(t *testing.T) {
 	if _, err := h.Place("thung_go", cx, cz, 0); err == nil {
 		t.Fatal("không đặt đồ lên nền chuồng")
 	}
-	a.Thoc = 100
-	if _, err := h.UpgradeLand(a, t0); err == nil || h.Tier != 1 {
+	a.Thoc, a.Level = 100, 6
+	if _, _, err := h.BuyLot(a, h.Tier+1, "duong", t0); err == nil || h.Tier != 1 {
 		t.Fatal("thiếu thóc không được nâng đất")
 	}
 }

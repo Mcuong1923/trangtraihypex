@@ -334,6 +334,7 @@ func (h *Hub) Visit(s *Session, owner, token string) error {
 			return errors.New("Đang trong trận PK, chưa đi được.")
 		}
 	}
+	capacity := h.store.Homes.Capacity(owner, time.Now()) // rơm 8 · gỗ 12 · gạch 16 (PLAN_LOGIC_GAME 13.3)
 	h.mu.Lock()
 	target := h.homes[owner]
 	if target == nil {
@@ -341,9 +342,9 @@ func (h *Hub) Visit(s *Session, owner, token string) error {
 		h.homes[owner] = target
 		go target.Run()
 	}
-	if target.Count() >= HomeCapacity {
+	if target.Count() >= capacity {
 		h.mu.Unlock()
-		return errors.New("Chuồng đang đủ 8 người, thử lại sau nhé.")
+		return fmt.Errorf("Chuồng đang đủ %d người, thử lại sau nhé.", capacity)
 	}
 	target.reserve()
 	h.mu.Unlock()

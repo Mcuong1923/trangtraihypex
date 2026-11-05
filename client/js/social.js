@@ -256,9 +256,9 @@ export function openHomeBoard() {
   openSheet('homeboard', 'Bảng nhà', `
     <h2 style="margin-top:0">Ai được vào chuồng?</h2>
     <div class="tabs">${['private', 'friends', 'public'].map((a) => `<button class="tab" data-acc="${a}" aria-selected="${h.access === a}">${ACCESS_NAME[a]}</button>`).join('')}</div>
-    <p class="mut">Riêng tư: chỉ khách có lời mời. Bạn bè: bạn bè vào tự do. Công khai: hiện trong danh sách “chuồng mở cửa”. Tối đa ${G.catalog.homeCap} người.</p>
+    <p class="mut">Riêng tư: chỉ khách có lời mời. Bạn bè: bạn bè vào tự do. Công khai: hiện trong danh sách “chuồng mở cửa”. Tối đa ${h.cap || G.catalog.homeCap} người (rơm 8 · gỗ 12 · gạch 16).</p>
     <h2>Bữa tiệc sân nhà</h2>
-    ${h.partyLeft > 0 ? `<p>🎉 Tiệc đang mở — còn khoảng ${Math.ceil(h.partyLeft / 60)} phút. Ai cũng ghé được (trừ người bị chặn), tối đa ${G.catalog.homeCap} người.</p>`
+    ${h.partyLeft > 0 ? `<p>🎉 Tiệc đang mở — còn khoảng ${Math.ceil(h.partyLeft / 60)} phút. Ai cũng ghé được (trừ người bị chặn), tối đa ${h.cap || G.catalog.homeCap} người.</p>`
       : `<p class="mut">Mở tiệc để chuồng hiện trong danh sách “đang mở tiệc”; khách ăn mừng ở Bàn tiệc và chụp ảnh. Cần đặt ít nhất một Bàn tiệc.</p>
       <div class="coinbtns"><button class="mini hot" data-party="30">Mở tiệc 30 phút</button><button class="mini hot" data-party="60">Mở tiệc 60 phút</button></div>`}
     <h2>Trang trí</h2>

@@ -22,7 +22,7 @@ func testBalance() Balance {
 	return finalize(Balance{Name: "test", DigCooldown: 300 * time.Millisecond, DigDailyLimit: 120, DigMinDuration: 50 * time.Millisecond,
 		ManaDrainPerSec: 0.01, ManaPerDig: 1, HungerSlowSec: 300, HungerExhaustSec: 600,
 		RescueDuration: time.Second, RescueReward: 5, TutorialReward: 100, ShowcaseEvery: 60 * time.Second,
-		BuildDuration: time.Second, StarterThoc: -1, TugSpeed: 10, BusLoopSpeed: 45, BusLoopDwell: 2 * time.Second, JoinGiftsOff: true}) // quà khởi nghiệp có test riêng; tắt để các test đếm thóc giữ nguyên
+		BuildDuration: time.Second, BusEvery: time.Second, BusWait: time.Second, StarterThoc: -1, TugSpeed: 10, BusLoopSpeed: 45, BusLoopDwell: 2 * time.Second, JoinGiftsOff: true}) // quà khởi nghiệp có test riêng; tắt để các test đếm thóc giữ nguyên
 }
 
 type env struct {

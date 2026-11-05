@@ -22,6 +22,19 @@ func (r *Room) logicAct(p *Player, m *inMsg, reply func(ActResult), fail func(er
 			return ActResult{Msg: fmt.Sprintf("Ăn %s: +%d độ no", itemByID(m.ID).Name, gain)}, nil
 		})
 
+	case "pending_claim":
+		txn(func() (ActResult, error) {
+			moved, err := p.acc.ClaimPending()
+			if err != nil {
+				return ActResult{}, err
+			}
+			msg := "Đã nhận vào kho: " + itemsText(moved)
+			if len(p.acc.PendingItems) > 0 {
+				msg += " (kho đầy, phần còn lại vẫn chờ)"
+			}
+			return ActResult{Msg: msg}, nil
+		})
+
 	case "item_buy":
 		shop := ""
 		switch {

@@ -139,9 +139,19 @@ function openStore() {
       <div class="act">${it.mana ? `<button class="mini hot" data-eatitem="${it.id}" ${me.mana >= 100 ? 'disabled' : ''}>Ăn</button>` : ''}</div></div>`).join('');
   }).join('');
   openSheet('bag', 'Túi đồ', `${bagTabs('store')}${manaLine()}<p class="mut" style="margin:-6px 0 10px">Kho ${me.storageCount}/${me.storageCap} (trứng không tính)</p>
-    ${groups || '<div class="empty">Kho trống. Quà lên cấp, điểm danh và tiệm vật liệu của Bò Mộc sẽ lấp đầy chỗ này.</div>'}`);
+    ${pendingRow(me)}${groups || '<div class="empty">Kho trống. Quà lên cấp, điểm danh và tiệm vật liệu của Bò Mộc sẽ lấp đầy chỗ này.</div>'}`);
   document.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => openBag(b.dataset.tab)));
   document.querySelectorAll('[data-eatitem]').forEach((b) => (b.onclick = async () => { b.disabled = true; showResult(await act('eat_item', { id: b.dataset.eatitem })); openStore(); }));
+  if ($('pendingClaim')) $('pendingClaim').onclick = async () => { $('pendingClaim').disabled = true; showResult(await act('pending_claim')); openStore(); };
+}
+
+// Quà chờ nhận: quà lên cấp không vào được kho vì kho đầy (PLAN.md 7.1), bấm để chuyển vào khi đã có chỗ.
+function pendingRow(me) {
+  const list = Object.entries(me.pendingItems || {}).filter(([, n]) => n > 0);
+  if (!list.length) return '';
+  const text = list.map(([id, n]) => { const it = G.catalog.items.find((x) => x.id === id); return `${n} ${esc(it?.name || id)}`; }).join(', ');
+  return `<div class="row"><div class="ico" style="background:#fde3c8">🎁</div><div class="meta"><div class="nm">Quà chờ nhận</div><div class="sub">${text}</div></div>
+    <div class="act"><button class="mini good" id="pendingClaim" ${me.storageCount >= me.storageCap ? 'disabled title="Kho đầy"' : ''}>Nhận vào kho</button></div></div>`;
 }
 
 // Quà lên cấp (PLAN_LOGIC_GAME 12): Cụ Cục chúc mừng, bảng liệt kê quà đã vào ví/kho.
@@ -149,6 +159,8 @@ export function showLevelReward(level, rw) {
   const list = [`🌾 ${rw.thoc} thóc`, ...Object.entries(rw.food || {}).map(([id, n]) => `${foodById(id)?.emo || '🍱'} ${n} ${foodById(id)?.name || id}`),
     ...Object.entries(rw.items || {}).map(([id, n]) => { const it = G.catalog.items.find((x) => x.id === id); return `${it?.emo || '🎁'} ${n} ${it?.name || id}`; })];
   if (rw.title) list.push('🏅 Danh hiệu mới');
+  if (rw.queued) list.push('📦 Kho đầy: vật liệu vào hàng chờ, nhận ở Túi đồ → Kho');
+  if (rw.dropped) list.push(`⚠️ Hàng chờ cũng đầy: ${rw.dropped} món không nhận được`);
   sfx('level');
   openSheet('reward', `Lên cấp ${level}!`, `<div class="lootcard"><div class="big">🎁</div><div class="nm">Quà cấp ${level}</div>
     <ul class="rewardlist">${list.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>${rw.unlock ? `<p class="mut">Mở khoá: <b>${esc(rw.unlock)}</b></p>` : ''}

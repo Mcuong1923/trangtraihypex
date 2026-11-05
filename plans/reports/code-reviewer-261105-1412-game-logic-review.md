@@ -190,3 +190,33 @@ Kiểm thử sau khi cài Go 1.27.3 (winget):
 5. Hết giờ chọn ở Úp ngửa: máy chủ chọn ngẫu nhiên hay xử vòng đó cho bên kia?
 6. Thân thiết thú cưng có cần trần mỗi ngày không?
 7. Mất mạng 1 giây giữa lượt đào thì mất lượt ngay (hiện tại), hay giữ lượt đến hết 15 giây chờ nối lại?
+
+---
+
+## Cập nhật: đồng bộ với plan (nhóm câu hỏi plan đã có đáp án)
+
+| Mục | Plan | Đã làm |
+|---|---|---|
+| A1 xe liên trại | PLAN_LOGIC 7.3 | Lịch cố định `BusEvery` (live 3 phút); chỉ giữ ghế khi cửa mở `BusWait` (live 20 giây) trước giờ chạy; bảng bến luôn hiện chuyến kế, nút đặt vé tự bật khi cửa mở |
+| A2 sức chứa nhà | 13.3 | `houseCapacity`: rơm 8, gỗ 12, gạch 16; `Visit` đọc qua chỉ mục `HomeStore.Capacity` (không chạm *Home của phòng) |
+| A3 giao dịch vật phẩm | 11 | `TradeOffer.Items` theo cờ `ItemDef.Trade` (trứng, phiếu không); kho người nhận đầy thì hoàn nguyên cả hai |
+| A4 gà con cũ | 15.2 | `normalize`: loài trống/lạ thành `ga_con` |
+| A7, D3 xếp hạng PK | PLAN.md 10.1 | `Match.ranked()`: chỉ Mổ nhanh giữa hai người thật cộng `PKWins`, bảng tuần, điểm hội |
+| Quà cấp khi kho đầy | PLAN.md 7.1 | `PendingItems` (tối đa 200), lệnh `pending_claim`, dòng "Quà chờ nhận" trong Túi đồ |
+| `home_upgrade` | 13.2 | Bỏ lệnh và `UpgradeLand`; mua đất chỉ qua Ông Chủ Đầu Tư (`land_buy`) |
+| Mất mạng giữa lượt đào | 4.3 | Giữ luật huỷ lượt; client (B4) dọn màn giằng co khi nhận `welcome` |
+
+Test mới: `server/plan_alignment_regression_test.go` (7 test). Test balance đặt `BusEvery`/`BusWait` 1 giây.
+
+Review đợt này: không lỗi nghiêm trọng. Đã sửa theo góp ý:
+- Nhà đang xây/nâng cấp chỉ nhận 8 khách. `Capacity` xét thêm `DoneAt` vì `State` trong chỉ mục có thể cũ.
+- Hàng chờ đầy thì báo số món bị bỏ (`Reward.Dropped`).
+- Bảng bến chỉ chạy một vòng đếm; chuyến đã quá giờ quay về lịch.
+- Đề nghị giao dịch không gửi lại món đã hết.
+- Test PK ép người chơi thắng để luôn kiểm nhánh thắng Gà Máy.
+- Test xe dùng chu kỳ 1000 giờ để không chập chờn theo đồng hồ thật.
+
+Câu hỏi còn mở (đợt này):
+- `PKWins` cũ kiếm từ Gà Máy/Úp ngửa có reset không? Hiện giữ nguyên.
+- Hàng chờ quà 200 món có đủ, hay không giới hạn?
+- Đang nâng cấp nhà thì sức chứa về 8 (hiện tại) hay giữ theo vật liệu cũ?

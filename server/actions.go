@@ -472,7 +472,7 @@ func (r *Room) act(p *Player, m *inMsg) {
 			return ActResult{}, nil
 		})
 
-	case "home_buy", "home_place", "home_move", "home_pickup", "home_upgrade", "home_build", "home_upgrade_house", "home_access", "home_kick", "home_party", "party_cheer":
+	case "home_buy", "home_place", "home_move", "home_pickup", "home_build", "home_upgrade_house", "home_access", "home_kick", "home_party", "party_cheer":
 		r.homeAct(p, m, reply, fail)
 
 	case "eggs_claim", "incubate", "hatch", "follow", "rename_pet", "care", "book", "cancel_booking",
@@ -491,7 +491,7 @@ func (r *Room) act(p *Player, m *inMsg) {
 	case "pk_bot", "pk_invite", "pk_accept", "pk_decline", "pk_tap", "pk_pick":
 		r.pkAct(p, m, reply, fail)
 
-	case "eat_item", "item_buy", "item_sell", "plant", "water", "harvest", "prefs", "land_buy", "land_info", "pet_ride", "weekly", "water_friend":
+	case "eat_item", "pending_claim", "item_buy", "item_sell", "plant", "water", "harvest", "prefs", "land_buy", "land_info", "pet_ride", "weekly", "water_friend":
 		r.logicAct(p, m, reply, fail, txn)
 
 	case "bus_stops", "bus_board", "bus_alight", "xeom_accept", "xeom_decline", "xeom_call", "xeom_leave", "npc_choice":

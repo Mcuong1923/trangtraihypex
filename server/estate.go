@@ -88,18 +88,28 @@ func buildScale(b Balance) float64 { return b.BuildDuration.Seconds() / 600 }
 // houseDone: nhà đã xây xong (có thể đang nâng cấp thì vẫn chưa xong).
 func (h *Home) houseDone() bool { return h.Coop != nil && h.Coop.State == "done" }
 
+// houseCapacity: sức chứa khách theo vật liệu nhà (rơm 8, gỗ 12, gạch 16, PLAN_LOGIC_GAME 13.3) cộng phần thiết kế.
+// Chưa có nhà (Tổ nhỏ) hoặc đang xây thì không dưới HomeCapacity.
+func houseCapacity(material, design string) int {
+	capacity := Comfort[material].Cap
+	if d := designByID(design); d != nil && material != "" {
+		capacity += d.ExtraCap
+	}
+	return max(HomeCapacity, capacity)
+}
+
 // comfort trả độ hồi độ no khi ngủ ổ và sức chứa khách hiện tại.
 func (h *Home) comfort() (float64, int) {
 	if h.Coop == nil || h.Coop.Material == "" {
 		return 0, HomeCapacity
 	}
-	c := Comfort[h.Coop.Material]
-	regen, capacity := c.Regen, c.Cap
-	if d := designByID(h.Coop.Design); d != nil {
-		regen, capacity = regen+d.ExtraRegen, capacity+d.ExtraCap
-	}
 	if !h.houseDone() {
-		return 0, max(HomeCapacity, capacity)
+		return 0, HomeCapacity // đang xây hoặc nâng cấp: chưa tính sức chứa của nhà mới
+	}
+	capacity := houseCapacity(h.Coop.Material, h.Coop.Design)
+	regen := Comfort[h.Coop.Material].Regen
+	if d := designByID(h.Coop.Design); d != nil {
+		regen += d.ExtraRegen
 	}
 	return regen, capacity
 }
@@ -259,4 +269,10 @@ func (h *Hub) withHome(owner, name string, f func(*Home) error) error {
 	case <-time.After(3 * time.Second):
 		return errors.New("Nhà đang bận, thử lại sau.")
 	}
+}
+
+// capacity: sức chứa khách hiện tại của nhà (xem houseCapacity).
+func (h *Home) capacity() int {
+	_, c := h.comfort()
+	return c
 }

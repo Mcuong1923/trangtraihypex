@@ -149,7 +149,7 @@ type Balance struct {
 	ReconnectGrace   time.Duration `json:"-"` // giữ chỗ khi mất kết nối (mục 6.3, 10.2)
 	HatchDuration    time.Duration `json:"-"` // trứng đầu 2 giờ (mục 12)
 	HatchSec         float64       `json:"hatchSec"`
-	BusWait          time.Duration `json:"-"` // chờ khách tối đa trước khi xe chạy (mục 8.5)
+	BusWait          time.Duration `json:"-"` // cửa xe liên trại mở trước giờ chạy (PLAN_LOGIC_GAME 7.3)
 	BusWaitSec       float64       `json:"busWaitSec"`
 	ContractWork     int           `json:"contractWork"` // số lần thi công để hoàn thành mẫu chuồng
 	ContractTTL      time.Duration `json:"-"`

@@ -46,6 +46,10 @@ func (m *Match) side(p *Player) int {
 
 func (m *Match) chooser() int { return m.Round % 2 } // luân phiên bên chọn trước
 
+// ranked: chỉ Mổ nhanh giữa hai người thật được tính thắng (bảng tuần, điểm hội, danh hiệu).
+// Úp ngửa là may rủi, không dùng cho xếp hạng kỹ năng (PLAN.md 10.1); thắng Gà Máy không phải đấu với người.
+func (m *Match) ranked() bool { return !m.Bot && m.Mode == "peck" }
+
 func (m *Match) send(r *Room, v map[string]any) {
 	m.A.sess.Send(v)
 	if !m.Bot {
@@ -340,11 +344,11 @@ func (r *Room) finishMatch(mt *Match, leaver string) {
 		p.acc.step("first_social")
 		fx := "ko" // người thua ngã KO rồi đứng dậy; không mất đồ hay cấp
 		if winner == i {
-			p.acc.Stats.PKWins++
-			if !mt.Bot {
-				r.hub.weeklyPKWin(p.acc, time.Now()) // bảng tuần chỉ tính trận với người thật
+			if mt.ranked() {
+				p.acc.Stats.PKWins++ // danh hiệu "Cao thủ PK" đếm theo số này
+				r.hub.weeklyPKWin(p.acc, time.Now())
+				go r.hub.store.Guilds.AddWin(p.acc.ID)
 			}
-			go r.hub.store.Guilds.AddWin(p.acc.ID)
 			fx = "win"
 		} else if winner == -1 {
 			fx = "tie"

@@ -46,6 +46,7 @@ export async function startFish(item) {
   const tugAt = performance.now() + d.biteMs + d.revealMs;
   let bitten = false;
   setTimeout(() => {
+    if (!live) return; // lượt đã bị huỷ trước khi cá cắn câu
     bitten = true;
     pop(`<small>Phao chìm rồi! Cá cắn câu!</small><b>🎣 ${info.name}</b><span>${RARITY[tier]}</span>`, info.color, Math.max(900, d.revealMs + 600));
     sfx(tier >= 2 ? 'rare' : 'pop');
@@ -84,6 +85,8 @@ export async function startFish(item) {
       toast(`🐟 ${info.name} giật đứt mồi rồi lặn mất! (+${r.data.xp} XP an ủi)`, 'warn');
     }
   };
+  // Máy chủ đã huỷ lượt câu (đổi phòng, chuyển vùng, nối lại): chỉ dọn màn giằng co, không gửi gì.
+  G.abortTug = () => { if (!live) return; live = false; end({ ok: false, err: 'Lượt bị huỷ vì đổi phòng hoặc mất kết nối giữa chừng.' }); };
   const finish = async () => {
     live = false;
     let r = await G.net.act('fish_finish', { id: d.id, ev: events });

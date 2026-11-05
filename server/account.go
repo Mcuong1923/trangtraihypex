@@ -138,6 +138,7 @@ type Account struct {
 	RationDay      string               `json:"rationDay,omitempty"`
 	Items          map[string]int       `json:"items"`         // kho: vật liệu, hạt giống, nông sản, trứng
 	LevelRewarded  map[int]bool         `json:"levelRewarded"` // cấp đã nhận quà
+	PendingItems   map[string]int       `json:"pendingItems,omitempty"` // quà chưa vào được kho vì kho đầy (hàng chờ có giới hạn)
 	Coupons        map[string]time.Time `json:"coupons"`       // mã phiếu → hạn dùng
 	BusTokens      int                  `json:"busTokens"`     // lượt xe miễn phí đang có (tối đa 2)
 	BusTokenAt     time.Time            `json:"busTokenAt"`    // mốc bắt đầu tính lượt hồi kế tiếp
@@ -217,6 +218,9 @@ func (a *Account) normalize() {
 	if a.LevelRewarded == nil {
 		a.LevelRewarded = map[int]bool{}
 	}
+	if a.PendingItems == nil {
+		a.PendingItems = map[string]int{}
+	}
 	if a.Coupons == nil {
 		a.Coupons = map[string]time.Time{}
 	}
@@ -233,6 +237,12 @@ func (a *Account) normalize() {
 	}
 	if !a.TokensInit {
 		a.TokensInit, a.BusTokens = true, MaxBusTokens
+	}
+	for i := range a.Companions {
+		// Gà con nở trước bản v2 không có loài: giữ "Gà con" và có kỹ năng "Mỏ Thính" ngay (PLAN_LOGIC_GAME 15.2).
+		if speciesByID(a.Companions[i].Species) == nil {
+			a.Companions[i].Species = "ga_con"
+		}
 	}
 	if a.Level < 1 {
 		a.Level = 1
@@ -914,6 +924,7 @@ type AccountView struct {
 	StorageCount    int                 `json:"storageCount"`
 	StorageCap      int                 `json:"storageCap"`
 	LevelRewarded   map[int]bool        `json:"levelRewarded"`
+	PendingItems    map[string]int      `json:"pendingItems"`
 	Coupons         map[string]float64  `json:"coupons"` // mã → giây còn hiệu lực
 	BusTokens       int                 `json:"busTokens"`
 	NextTokenIn     float64             `json:"nextTokenIn"`
@@ -945,7 +956,7 @@ func (a *Account) View(now time.Time, b Balance) AccountView {
 		Orders: a.OrderViews(now), Festival: a.Festival,
 		Eggs: a.eggCount(), EggsClaimed: a.EggsClaimed, Incubation: a.Incubation, HatchIn: a.hatchIn(now), Companions: a.Companions,
 		Following: a.Following, Booking: a.Booking, TripsLeft: a.TripsLeft(now, b), OwnedVehicles: a.OwnedVehicles, Reputation: a.Reputation,
-		Items: a.Items, StorageCount: a.StorageCount(), StorageCap: StorageCap, LevelRewarded: a.LevelRewarded,
+		Items: a.Items, StorageCount: a.StorageCount(), StorageCap: StorageCap, LevelRewarded: a.LevelRewarded, PendingItems: a.PendingItems,
 		Coupons: a.couponView(now), BusTokens: a.Tokens(now, b), NextTokenIn: a.NextTokenIn(now, b), Prefs: a.Prefs,
 		CheckIn: a.CheckInView(now), Beds: a.Beds, StarterGranted: a.StarterGranted, CompanionCap: a.CompanionCap(), HouseBuilt: a.HouseBuilt,
 		FishReadyIn: math.Max(0, a.FishReadyAt.Sub(now).Seconds()), FishCaught: a.FishCaught,

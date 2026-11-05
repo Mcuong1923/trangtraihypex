@@ -251,6 +251,7 @@ N.on('kicked', (m) => {
 });
 
 N.on('welcome', (m) => {
+  G.abortTug?.(); // lượt đào/câu dở bị máy chủ huỷ khi đổi phòng hoặc nối lại
   const first = !G.catalog;
   G.catalog = m.catalog;
   G.zones = m.zones;

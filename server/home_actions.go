@@ -118,21 +118,6 @@ func (r *Room) homeAct(p *Player, m *inMsg, reply func(ActResult), fail func(err
 		})
 	case "home_pickup":
 		commit(func() (ActResult, error) { return ActResult{Msg: "Đã cất vào kho."}, h.Pickup(m.ID) })
-	case "home_upgrade":
-		if !needCow() {
-			return
-		}
-		commit(func() (ActResult, error) {
-			moved, err := h.UpgradeLand(p.acc, now)
-			if err != nil {
-				return ActResult{}, err
-			}
-			msg := "Đã nâng lên " + h.tier().Name + "!"
-			if moved > 0 {
-				msg += fmt.Sprintf(" %d món không còn chỗ hợp lệ đã về kho.", moved)
-			}
-			return ActResult{Msg: msg}, nil
-		})
 	case "home_build":
 		if !needCow() {
 			return
@@ -180,7 +165,7 @@ func (r *Room) homeAct(p *Player, m *inMsg, reply func(ActResult), fail func(err
 			if err := h.OpenParty(m.I, now); err != nil {
 				return ActResult{}, err
 			}
-			r.system(fmt.Sprintf("🎉 %s mở tiệc %d phút! Ai cũng ghé được — tối đa %d người.", h.OwnerName, m.I, HomeCapacity))
+			r.system(fmt.Sprintf("🎉 %s mở tiệc %d phút! Ai cũng ghé được — tối đa %d người.", h.OwnerName, m.I, h.capacity()))
 			return ActResult{Msg: "Đã mở tiệc, chuồng hiện trong danh sách “đang mở tiệc”."}, nil
 		})
 	case "home_kick":

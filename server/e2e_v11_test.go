@@ -303,7 +303,7 @@ func TestGuildFlow(t *testing.T) {
 }
 
 func TestLeaveStationCancelsBooking(t *testing.T) {
-	e := newEnvBal(t, t.TempDir(), func(b *Balance) { b.BusWait = time.Minute })
+	e := newEnvBal(t, t.TempDir(), func(b *Balance) { b.BusEvery, b.BusWait = 1000*time.Hour, 1000*time.Hour })
 	a, _ := e.seeded(t, "rongchoi", "Gà Rong", func(a *Account) { a.Level = 3 })
 	a.goZone("ra_ben", "station")
 	a.walkToItem("station", "tram_bus")

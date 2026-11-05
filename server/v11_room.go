@@ -53,12 +53,20 @@ func (r *Room) seatsBooked(to string) int {
 	return n
 }
 
+// busInfo: chuyến liên trại kế tiếp theo lịch cố định BusEvery (PLAN_LOGIC_GAME 7.3); cửa mở BusWait giây trước giờ chạy.
 func (r *Room) busInfo() map[string]any {
-	out := map[string]any{}
-	for to, b := range r.buses {
-		out[to] = map[string]any{"departIn": math.Max(0, time.Until(b.DepartAt).Seconds()), "seats": r.seatsBooked(to), "trip": b.Trip}
+	now := time.Now()
+	to := r.otherRegion()
+	info := map[string]any{"departIn": r.nextIntercity(now), "seats": r.seatsBooked(to), "every": r.hub.bal.BusEvery.Seconds(), "open": r.busDoorOpen(now)}
+	if b := r.buses[to]; b != nil {
+		info["departIn"], info["trip"] = math.Max(0, time.Until(b.DepartAt).Seconds()), b.Trip
 	}
-	return out
+	return map[string]any{to: info}
+}
+
+// busDoorOpen: chỉ giữ ghế trong BusWait giây cuối trước giờ xuất bến.
+func (r *Room) busDoorOpen(now time.Time) bool {
+	return r.nextIntercity(now) <= r.hub.bal.BusWait.Seconds()
 }
 
 func (r *Room) broadcastBus() {
@@ -341,6 +349,10 @@ func (r *Room) v11Act(p *Player, m *inMsg, reply func(ActResult), fail func(erro
 			return
 		}
 		to := r.otherRegion()
+		if left := r.nextIntercity(now); !r.busDoorOpen(now) {
+			fail(fmt.Errorf("Xe chạy sau %s; cửa mở %.0f giây trước giờ chạy.", humanDur(time.Duration(left*float64(time.Second))), b.BusWait.Seconds()))
+			return
+		}
 		if r.seatsBooked(to) >= BusSeats {
 			fail(fmt.Errorf("Chuyến này đã đủ %d ghế, chờ chuyến sau nhé.", BusSeats))
 			return
@@ -350,8 +362,9 @@ func (r *Room) v11Act(p *Player, m *inMsg, reply func(ActResult), fail func(erro
 			if err != nil {
 				return ActResult{}, err
 			}
-			if r.buses[to] == nil {
-				r.buses[to] = &Bus{To: to, Trip: fmt.Sprintf("trip%d", now.UnixNano()), DepartAt: now.Add(b.BusWait)}
+			if r.buses[to] == nil { // chuyến của giờ lịch kế tiếp
+				depart := now.Add(time.Duration(r.nextIntercity(now) * float64(time.Second)))
+				r.buses[to] = &Bus{To: to, Trip: fmt.Sprintf("trip%d", depart.UnixMilli()), DepartAt: depart}
 			}
 			r.broadcastBus()
 			how := "dùng 1 lượt miễn phí"

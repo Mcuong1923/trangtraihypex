@@ -186,6 +186,56 @@ type Reward struct {
 	Food   map[string]int `json:"food,omitempty"`
 	Title  string         `json:"title,omitempty"`
 	Unlock string         `json:"unlock,omitempty"`
+	Queued  bool          `json:"queued,omitempty"`  // kho đầy: vật phẩm (trừ trứng) đã vào hàng chờ
+	Dropped int           `json:"dropped,omitempty"` // hàng chờ cũng đầy: số vật phẩm bị bỏ
+}
+
+// PendingCap: hàng chờ quà tối đa 200 đơn vị; vượt thì phần dư bỏ (đã báo khi trao quà).
+const PendingCap = 200
+
+func (a *Account) pendingCount() int {
+	n := 0
+	for _, c := range a.PendingItems {
+		n += c
+	}
+	return n
+}
+
+// queuePending đưa vật phẩm chưa vào được kho vào hàng chờ, trong giới hạn PendingCap; trả số bị bỏ vì hàng chờ đầy.
+func (a *Account) queuePending(id string, n int) int {
+	k := max(0, min(n, PendingCap-a.pendingCount()))
+	if k > 0 {
+		a.PendingItems[id] += k
+	}
+	return n - k
+}
+
+// ClaimPending chuyển quà chờ vào kho, được bao nhiêu chuyển bấy nhiêu (theo thứ tự mã cho ổn định).
+func (a *Account) ClaimPending() (map[string]int, error) {
+	if len(a.PendingItems) == 0 {
+		return nil, errors.New("Không có quà nào đang chờ.")
+	}
+	ids := make([]string, 0, len(a.PendingItems))
+	for id := range a.PendingItems {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	moved := map[string]int{}
+	for _, id := range ids {
+		n := min(a.PendingItems[id], StorageCap-a.StorageCount())
+		if n <= 0 {
+			break
+		}
+		a.Items[id] += n
+		moved[id] = n
+		if a.PendingItems[id] -= n; a.PendingItems[id] <= 0 {
+			delete(a.PendingItems, id)
+		}
+	}
+	if len(moved) == 0 {
+		return nil, fmt.Errorf("Kho đầy (%d/%d). Dùng bớt đồ rồi nhận quà chờ.", a.StorageCount(), StorageCap)
+	}
+	return moved, nil
 }
 
 // LevelRewards: bảng mục 12. Mốc trứng cũ (cấp 5/7/9) nằm trong bảng; ai đã nhận qua Vịt Bông thì bỏ phần trứng.
@@ -212,8 +262,8 @@ var LevelRewards = map[int]Reward{
 	20: {Thoc: 700, Items: map[string]int{"trung_vang": 1}, Title: "truong_lang", Unlock: "Danh hiệu Trưởng Làng"},
 }
 
-// ClaimLevelRewards trao quà mọi cấp đã đạt mà chưa nhận (idempotent theo cấp). Kho đầy thì phần vật phẩm
-// vượt sức chứa bỏ qua nhưng thóc, thức ăn và trứng vẫn nhận, cấp vẫn đánh dấu để không nhận lặp.
+// ClaimLevelRewards trao quà mọi cấp đã đạt mà chưa nhận (idempotent theo cấp). Kho đầy thì vật phẩm (trừ trứng)
+// vào hàng chờ PendingItems; thóc, thức ăn và trứng vẫn nhận ngay, cấp vẫn đánh dấu để không nhận lặp.
 func (a *Account) ClaimLevelRewards(now time.Time) map[int]Reward {
 	got := map[int]Reward{}
 	for lv := 2; lv <= a.Level; lv++ {
@@ -230,14 +280,18 @@ func (a *Account) ClaimLevelRewards(now time.Time) map[int]Reward {
 			give.Items[id] = n
 		}
 		if a.addItems(give.Items) != nil {
+			// Kho đầy: trứng vẫn nhận ngay (không tính kho), phần còn lại vào hàng chờ thay vì mất (PLAN.md 7.1).
 			eggs := map[string]int{}
 			for id, n := range give.Items {
 				if strings.HasPrefix(id, "trung_") {
 					eggs[id] = n
+				} else {
+					give.Dropped += a.queuePending(id, n)
 				}
 			}
 			give.Items = eggs
 			_ = a.addItems(eggs)
+			give.Queued = true
 		}
 		for id, n := range rw.Food {
 			a.Food[id] += n
@@ -275,6 +329,12 @@ func rewardText(rw Reward) string {
 	}
 	if t := itemsText(rw.Items); t != "" {
 		parts = append(parts, t)
+	}
+	if rw.Queued {
+		parts = append(parts, "kho đầy nên vật liệu vào hàng chờ (Túi đồ → Kho)")
+	}
+	if rw.Dropped > 0 {
+		parts = append(parts, fmt.Sprintf("hàng chờ cũng đầy, bỏ %d món", rw.Dropped))
 	}
 	if rw.Title != "" {
 		parts = append(parts, "danh hiệu "+titleName(rw.Title))

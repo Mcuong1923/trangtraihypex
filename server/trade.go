@@ -14,6 +14,7 @@ import (
 type TradeOffer struct {
 	Thoc  int            `json:"thoc"`
 	Worms map[string]int `json:"worms"`
+	Items map[string]int `json:"items,omitempty"` // vật liệu, hạt giống, nông sản (PLAN_LOGIC_GAME 11)
 }
 
 type Trade struct {
@@ -55,8 +56,18 @@ func (r *Room) closeTrade(t *Trade, why string) {
 	}
 }
 
-// validOffer chỉ cho giun tự đào và thóc, không vượt số đang có.
+// validOffer: thóc, giun tự đào và vật phẩm kho có cờ Trade (vật liệu, hạt giống, nông sản; trứng và phiếu thì không),
+// không vượt số đang có.
 func validOffer(a *Account, o TradeOffer) error {
+	for id, n := range o.Items {
+		it := itemByID(id)
+		if it == nil || !it.Trade || n < 0 {
+			return errors.New("Món này không giao dịch được.")
+		}
+		if a.Items[id] < n {
+			return fmt.Errorf("Không đủ %d %s.", n, it.Name)
+		}
+	}
 	if o.Thoc < 0 || o.Thoc > a.Thoc {
 		return fmt.Errorf("Không đủ %d thóc để đưa ra.", o.Thoc)
 	}
@@ -110,10 +121,15 @@ func (r *Room) tradeAct(p *Player, m *inMsg, reply func(ActResult), fail func(er
 			fail(errors.New("Không có giao dịch đang mở."))
 			return
 		}
-		o := TradeOffer{Thoc: m.I, Worms: map[string]int{}}
+		o := TradeOffer{Thoc: m.I, Worms: map[string]int{}, Items: map[string]int{}}
 		for k, v := range m.Offer {
 			if v > 0 {
 				o.Worms[k] = v
+			}
+		}
+		for k, v := range m.Items {
+			if v > 0 {
+				o.Items[k] = v
 			}
 		}
 		if err := validOffer(p.acc, o); err != nil {
@@ -178,9 +194,23 @@ func (r *Room) executeTrade(t *Trade, now time.Time) error {
 			from.Worms[id] -= n
 			to.Worms[id] += n
 		}
+		for id, n := range o.Items {
+			from.Items[id] -= n
+		}
 	}
 	move(a, b, t.Offer[0])
 	move(b, a, t.Offer[1])
+	// Cộng vật phẩm sau khi cả hai đã trừ phần đưa đi: kho người nhận phải đủ chỗ, không thì hoàn nguyên cả hai.
+	if err := a.addItems(t.Offer[1].Items); err != nil {
+		restore(a, snapA)
+		restore(b, snapB)
+		return errors.New(a.Char.Name + ": " + err.Error())
+	}
+	if err := b.addItems(t.Offer[0].Items); err != nil {
+		restore(a, snapA)
+		restore(b, snapB)
+		return errors.New(b.Char.Name + ": " + err.Error())
+	}
 	if err := r.hub.store.Save(a); err != nil {
 		restore(a, snapA)
 		restore(b, snapB)

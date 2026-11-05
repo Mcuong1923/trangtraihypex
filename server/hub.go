@@ -191,6 +191,7 @@ type inMsg struct {
 	Eyes     string         `json:"eyes"`
 	Resume   bool           `json:"resume"`
 	Offer    map[string]int `json:"offer"`
+	Items    map[string]int `json:"items"` // trade_offer: vật phẩm kho đưa ra (giun ở Offer)
 }
 
 func (s *Session) readPump() {

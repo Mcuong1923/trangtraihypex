@@ -260,32 +260,6 @@ func (h *Home) Pickup(id string) error {
 	return nil
 }
 
-// UpgradeLand nâng hạng đất; đồ còn hợp lệ giữ nguyên, đồ bị ảnh hưởng trả về kho, không mất (mục 9.1).
-func (h *Home) UpgradeLand(a *Account, now time.Time) (int, error) {
-	if h.Tier+1 >= len(LandTiers) {
-		return 0, errors.New("Đã ở hạng đất cao nhất.")
-	}
-	next := LandTiers[h.Tier+1]
-	if a.Level < next.Level {
-		return 0, fmt.Errorf("Cần cấp %d để mua %s.", next.Level, next.Name)
-	}
-	if err := a.addThoc(-next.Cost, "buy_land", next.Name, now); err != nil {
-		return 0, err
-	}
-	h.Tier++
-	keep, moved := h.Objects[:0:0], 0
-	for _, o := range h.Objects {
-		if h.cellOK(o.X, o.Z, o.ID) == nil {
-			keep = append(keep, o)
-		} else {
-			h.Storage[o.Kind]++
-			moved++
-		}
-	}
-	h.Objects = keep
-	return moved, nil
-}
-
 // HireBuild giữ tên cũ cho chỗ gọi cũ: Bò Mộc xây "Chuồng nhỏ" bằng gỗ (cần vật liệu như mọi nhà mới).
 func (h *Home) HireBuild(a *Account, roof string, now time.Time, dur time.Duration) error {
 	_, err := h.BuildHouse(a, "chuong_nho", "go", roof, now, dur.Seconds()/float64(HouseDesigns[0].Recipes["go"].Minutes*60))
@@ -430,6 +404,18 @@ func (s *HomeStore) Save(h *Home) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.saveLocked(h)
+}
+
+// Capacity đọc sức chứa khách từ chỉ mục (không chạm *Home đang do goroutine phòng nhà sửa). Chỉ nhà đã xây xong
+// mới tính theo vật liệu; State trong chỉ mục có thể cũ khi chủ offline nên xét thêm DoneAt.
+func (s *HomeStore) Capacity(owner string, now time.Time) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e := s.index[owner]
+	if e.State != "done" && (e.DoneAt.IsZero() || now.Before(e.DoneAt)) {
+		return HomeCapacity
+	}
+	return houseCapacity(e.Material, e.Design)
 }
 
 func (s *HomeStore) Access(owner string) (string, bool) {

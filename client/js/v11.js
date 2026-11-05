@@ -118,6 +118,7 @@ export function dialogDuck() {
 
 // ---------- Bến xe & vùng ----------
 
+let busTickId = 0; // chỉ vòng đếm của lần vẽ mới nhất được chạy
 export function onBus(m) { G.bus = m.bus; G.busAt = performance.now(); if (G.modal === 'bus') openBus(); }
 const since = (t) => (performance.now() - (t || performance.now())) / 1000;
 const dur = (sec) => (sec >= 3600 ? `${Math.round(sec / 3600)} giờ` : sec >= 60 ? `${Math.round(sec / 60)} phút` : `${Math.round(sec)} giây`);
@@ -127,25 +128,37 @@ export function openBus() {
   const to = region === 'hypex' ? 'vensuoi' : 'hypex';
   const reg = G.catalog.regions[to];
   const busRaw = G.bus?.[to];
-  const bus = busRaw && { ...busRaw, departIn: Math.max(0, busRaw.departIn - since(G.busAt)) };
+  // Lịch cố định: còn bao lâu tới chuyến kế (quay vòng theo chu kỳ), cửa mở busWaitSec giây trước giờ chạy.
+  const every = busRaw?.every || G.catalog.balance.busEverySec || 180, wait = G.catalog.balance.busWaitSec;
+  // Chuyến đã giữ ghế đếm tới giờ chạy; đã quá giờ (thông tin cũ khi rời bến rồi quay lại) thì quay về lịch.
+  const leftNow = () => { const l = (busRaw?.departIn ?? every) - since(G.busAt); return busRaw?.trip && l > 0 ? l : ((l % every) + every) % every; };
+  const bus = busRaw && { ...busRaw, departIn: leftNow() };
+  const tripLive = !!busRaw?.trip && busRaw.departIn - since(G.busAt) > 0;
+  const doorOpen = !!bus && (tripLive || bus.departIn <= wait);
   const bk = me.booking;
   const atStop = nearKind('bus_stop');
   openSheet('bus', '🚌 Trạm xe buýt Chim Chíp', `
     <div class="row"><div class="ico" style="background:#fff0cf">🗺️</div><div class="meta"><div class="nm">Tuyến ${esc(G.catalog.regions[region].title)} → ${esc(reg.title)}</div>
-      <div class="sub">Tuyến gần · ${G.catalog.busSeats} ghế · chờ tối đa ${G.catalog.balance.busWaitSec} giây · cần cấp ${reg.level}</div></div></div>
-    <div class="kvs" style="margin:10px 0"><b>Lượt miễn phí hôm nay</b><span>${me.tripsLeft}/${G.catalog.freeTrips} (reset 0:00)</span>
+      <div class="sub">Chạy mỗi ${dur(every)} · ${G.catalog.busSeats} ghế · cửa mở ${wait} giây trước giờ chạy · cần cấp ${reg.level}</div></div></div>
+    <div class="kvs" style="margin:10px 0"><b>Lượt miễn phí</b><span>${me.tripsLeft}/${G.catalog.freeTrips} (hồi 1 lượt mỗi ${dur(G.catalog.balance.tokenEverySec || 300)})</span>
       <b>Giá khi hết lượt</b><span>🌾 ${G.catalog.busFare}</span>
-      <b>Chuyến sắp chạy</b><span>${bus ? `còn <b id="busLeft">${Math.ceil(bus.departIn)}</b> giây · ${bus.seats}/${G.catalog.busSeats} ghế đã giữ` : 'Chưa có — đặt vé để mở chuyến'}</span></div>
+      <b>Chuyến sắp chạy</b><span>${bus ? `còn <b id="busLeft">${Math.ceil(bus.departIn)}</b> giây · ${bus.seats}/${G.catalog.busSeats} ghế đã giữ · ${doorOpen ? 'đang mở cửa' : 'chưa mở cửa'}` : 'Đang tải lịch xe…'}</span></div>
     ${bk ? `<div class="note">🎫 Vé ${bk.free ? 'miễn phí' : bk.paid + ' thóc'} đi ${esc(G.catalog.regions[bk.to].title)}. Đứng ở bến chờ xe; rời bến trước giờ chạy sẽ tự huỷ và hoàn.</div>
       <button class="btn sec block" id="cancelBk">Huỷ vé</button>`
-      : `<button class="btn block" id="bookBtn" ${!atStop || me.level < reg.level ? 'disabled' : ''}>${me.tripsLeft > 0 ? 'Đặt vé (dùng lượt miễn phí)' : `Đặt vé · ${G.catalog.busFare} thóc`}</button>
+      : `<button class="btn block" id="bookBtn" ${!atStop || !doorOpen || me.level < reg.level ? 'disabled' : ''}>${me.tripsLeft > 0 ? 'Đặt vé (dùng lượt miễn phí)' : `Đặt vé · ${G.catalog.busFare} thóc`}</button>
         ${atStop ? '' : '<p class="mut">Đứng cạnh Trạm xe buýt để đặt vé.</p>'}${me.level < reg.level ? `<p class="mut">Cần cấp ${reg.level} để tới ${esc(reg.title)}.</p>` : ''}`}
     <p class="mut">Không có ghế thì không trừ tiền hay lượt. Huỷ trước giờ chạy được hoàn đúng một lần. Về sảnh chuồng Hypex luôn miễn phí.</p>`);
   if ($('bookBtn')) $('bookBtn').onclick = async () => { $('bookBtn').disabled = true; if (showResult(await act('book'))) openBus(); };
   if ($('cancelBk')) $('cancelBk').onclick = async () => { if (showResult(await act('cancel_booking'))) openBus(); };
   if (bus) {
-    const end = performance.now() + bus.departIn * 1000;
-    (function tick() { const el = $('busLeft'); if (!el) return; el.textContent = Math.max(0, Math.ceil((end - performance.now()) / 1000)); requestAnimationFrame(tick); })();
+    // Vẽ lại khi cửa vừa mở hoặc sang chuyến kế, để nút đặt vé bật/tắt đúng lúc.
+    const my = ++busTickId;
+    (function tick() {
+      const el = $('busLeft'); if (my !== busTickId || !el || G.modal !== 'bus') return;
+      const left = leftNow();
+      if ((left <= wait) !== doorOpen && !tripLive) { openBus(); return; }
+      el.textContent = Math.ceil(left); requestAnimationFrame(tick);
+    })();
   }
 }
 
@@ -234,10 +247,14 @@ export function onTradeInvite(m) {
 let tradeDraft = null;
 export function onTrade(t) {
   G.trade = t;
-  if (!tradeDraft || tradeDraft.id !== t.id) tradeDraft = { id: t.id, thoc: t.offer[t.you].thoc || 0, worms: { ...(t.offer[t.you].worms || {}) } };
+  if (!tradeDraft || tradeDraft.id !== t.id) tradeDraft = { id: t.id, thoc: t.offer[t.you].thoc || 0, worms: { ...(t.offer[t.you].worms || {}) }, items: { ...(t.offer[t.you].items || {}) } };
   const me = G.me, you = t.you, other = 1 - you;
-  const offerText = (o) => [o.thoc ? `🌾 ${fmt(o.thoc)}` : '', ...Object.entries(o.worms || {}).filter(([, n]) => n > 0).map(([id, n]) => `${n} ${esc(wormById(id)?.name || id)}`)].filter(Boolean).join(' · ') || 'Chưa đưa gì';
+  const itemName = (id) => G.catalog.items.find((x) => x.id === id)?.name || id;
+  const offerText = (o) => [o.thoc ? `🌾 ${fmt(o.thoc)}` : '', ...Object.entries(o.worms || {}).filter(([, n]) => n > 0).map(([id, n]) => `${n} ${esc(wormById(id)?.name || id)}`),
+    ...Object.entries(o.items || {}).filter(([, n]) => n > 0).map(([id, n]) => `${n} ${esc(itemName(id))}`)].filter(Boolean).join(' · ') || 'Chưa đưa gì';
   const mine = G.catalog.worms.filter((w) => (me.worms[w.id] || 0) > 0);
+  // Vật phẩm kho giao dịch được (PLAN_LOGIC_GAME 11): vật liệu, hạt giống, nông sản; trứng và phiếu thì không.
+  const myItems = G.catalog.items.filter((it) => it.trade && (me.items?.[it.id] || 0) > 0);
   openSheet('trade', `🤝 Giao dịch với ${esc(t.names[other])}`, `
     <div class="row"><div class="meta"><div class="nm">${esc(t.names[other])} đưa</div><div class="sub">${offerText(t.offer[other])}</div></div>
       <div class="act">${t.locked[other] ? '<span class="rtag" style="background:var(--good)">Đã khoá</span>' : '<span class="rtag" style="background:#8a8a8a">Đang chọn</span>'}${t.confirmed[other] ? ' <span class="rtag" style="background:var(--accent)">Đã xác nhận</span>' : ''}</div></div>
@@ -245,7 +262,9 @@ export function onTrade(t) {
     <div class="row"><div class="meta"><label class="nm" for="trThoc">Thóc (ví ${fmt(me.thoc)})</label></div><div class="act"><input type="number" id="trThoc" min="0" max="${me.thoc}" value="${tradeDraft.thoc}" style="width:110px;padding:8px;border-radius:10px;border:2px solid var(--line)"></div></div>
     ${mine.map((w) => `<div class="row"><div class="meta"><div class="nm">${esc(w.name)}</div><div class="sub">Đang có ${me.worms[w.id]}</div></div>
       <div class="act"><input type="number" data-trw="${w.id}" min="0" max="${me.worms[w.id]}" value="${tradeDraft.worms[w.id] || 0}" style="width:80px;padding:8px;border-radius:10px;border:2px solid var(--line)"></div></div>`).join('') || '<p class="mut">Không có giun để đưa.</p>'}
-    <p class="mut">Chỉ trao đổi giun tự đào và thóc. Sửa đề nghị thì cả hai phải khoá lại. Cả hai khoá rồi xác nhận, máy chủ kiểm lại và đổi cùng lúc.</p>
+    ${myItems.map((it) => `<div class="row"><div class="meta"><div class="nm">${it.emo} ${esc(it.name)}</div><div class="sub">Trong kho ${me.items[it.id]}</div></div>
+      <div class="act"><input type="number" data-tri="${it.id}" min="0" max="${me.items[it.id]}" value="${tradeDraft.items[it.id] || 0}" style="width:80px;padding:8px;border-radius:10px;border:2px solid var(--line)"></div></div>`).join('')}
+    <p class="mut">Trao đổi thóc, giun tự đào, vật liệu, hạt giống và nông sản (trứng, phiếu thì không). Kho người nhận phải đủ chỗ. Sửa đề nghị thì cả hai phải khoá lại. Cả hai khoá rồi xác nhận, máy chủ kiểm lại và đổi cùng lúc.</p>
     <div class="cart"><button class="mini sec" id="trUpdate">Cập nhật đề nghị</button>
       <button class="mini good" id="trLock" ${t.locked[you] ? 'disabled' : ''}>${t.locked[you] ? 'Đã khoá' : 'Khoá đề nghị'}</button>
       <button class="mini hot" id="trConfirm" ${!(t.locked[0] && t.locked[1]) || t.confirmed[you] ? 'disabled' : ''}>Xác nhận</button>
@@ -253,9 +272,11 @@ export function onTrade(t) {
     { close: () => { if (G.trade) raw({ t: 'act', a: 'trade_cancel', id: G.trade.id, rid: 'tc' + Date.now() }); } });
   const read = () => {
     tradeDraft.thoc = Math.max(0, Math.floor(+$('trThoc').value || 0));
+    tradeDraft.worms = {}; tradeDraft.items = {};
     document.querySelectorAll('[data-trw]').forEach((i) => (tradeDraft.worms[i.dataset.trw] = Math.max(0, Math.floor(+i.value || 0))));
+    document.querySelectorAll('[data-tri]').forEach((i) => (tradeDraft.items[i.dataset.tri] = Math.max(0, Math.floor(+i.value || 0))));
   };
-  $('trUpdate').onclick = async () => { read(); showResult(await act('trade_offer', { id: t.id, i: tradeDraft.thoc, offer: tradeDraft.worms }), { quiet: true }); };
+  $('trUpdate').onclick = async () => { read(); showResult(await act('trade_offer', { id: t.id, i: tradeDraft.thoc, offer: tradeDraft.worms, items: tradeDraft.items }), { quiet: true }); };
   $('trLock').onclick = async () => showResult(await act('trade_lock', { id: t.id }), { quiet: true });
   $('trConfirm').onclick = async () => showResult(await act('trade_confirm', { id: t.id }));
   $('trCancel').onclick = () => closeSheet();

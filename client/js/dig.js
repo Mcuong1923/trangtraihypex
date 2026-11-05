@@ -75,6 +75,7 @@ export async function startDig(item) {
   sfx('dig');
   const tugAt = performance.now() + d.peckMs + d.revealMs;
   setTimeout(() => {
+    if (!live) return; // lượt đã bị huỷ trước khi giun ló
     pop(`<small>Có gì đó ngọ nguậy…!</small><b>🪱 ${esc(w.name)}</b><span>${RARITY[tier]}</span>`, w.color, Math.max(900, d.revealMs + 500));
     sfx(tier >= 2 ? 'rare' : 'pop');
     G.world.controls.closeup({ x: G.self.pos.x, z: G.self.pos.z, ry: me.rotation.y });
@@ -121,6 +122,8 @@ export async function startDig(item) {
   };
   const cancel = () => { if (!live) return; live = false; G.net.raw({ t: 'act', a: 'dig_cancel' }); end({ ok: true, data: { caught: false, xp: 0 } }); };
   G.cancelDig = cancel;
+  // Máy chủ đã huỷ lượt (đổi phòng, chuyển vùng, nối lại): chỉ dọn màn giằng co, không gửi gì (PLAN_LOGIC_GAME 4.3).
+  G.abortTug = () => { if (!live) return; live = false; window.removeEventListener('keydown', key, true); window.removeEventListener('keyup', key, true); end({ ok: false, err: 'Lượt bị huỷ vì đổi phòng hoặc mất kết nối giữa chừng.' }); };
 
   function frame() {
     if (!live) return;
