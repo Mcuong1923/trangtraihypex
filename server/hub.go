@@ -35,6 +35,15 @@ type Hub struct {
 	maintText   string
 	festival    *Festival
 	weekly      *Weekly
+
+	accLocks sync.Map // account ID → *sync.Mutex: tuần tự hoá Hello của cùng một tài khoản
+}
+
+// accountLock trả về khoá riêng của một tài khoản. Hai "hello" cùng lúc phải chạy lần lượt, nếu không
+// cả hai cùng thấy chưa có phiên cũ và một tài khoản có hai phiên điều khiển (nhân đồ, sập vì ghi map đồng thời).
+func (h *Hub) accountLock(id string) *sync.Mutex {
+	l, _ := h.accLocks.LoadOrStore(id, &sync.Mutex{})
+	return l.(*sync.Mutex)
 }
 
 func NewHub(store *Store, bal Balance) *Hub {
@@ -62,6 +71,12 @@ type Session struct {
 	arrive  *arrival    // nơi xuất hiện ở phòng kế tiếp (đặt trước khi add, đọc trong goroutine phòng)
 	inBurst float64
 	inAt    time.Time
+	// msgBurst/msgAt: xô rò cho mọi message khác "in"/"ping" (chỉ goroutine đọc của phiên chạm vào).
+	msgBurst float64
+	msgAt    time.Time
+	// moveMu tuần tự hoá mọi lần đổi phòng của phiên (đổi kênh, sang vùng, vào/ra nhà, Nhà Hội, bị thay phiên).
+	// Thiếu nó, hai lần chuyển chạy song song có thể thêm cùng một phiên vào phòng hai lần (gà "ma") hoặc vào hai phòng.
+	moveMu sync.Mutex
 }
 
 func (s *Session) Send(v any) {
@@ -137,7 +152,8 @@ func (s *Session) writePump() {
 }
 
 type inMsg struct {
-	T     string  `json:"t"`
+	throttled bool // do allowMsg đặt, không đến từ JSON: act vượt giới hạn tần suất
+	T         string  `json:"t"`
 	Token string  `json:"token"`
 	X     float64 `json:"x"`
 	Z     float64 `json:"z"`
@@ -210,12 +226,52 @@ func (s *Session) handleSafe(m *inMsg) (ok bool) {
 	return true
 }
 
+// Giới hạn tần suất cho mọi message ngoài "in"/"ping": mỗi act thành công ghi cả tài khoản xuống đĩa trên
+// goroutine phòng, mỗi lệnh xã hội ghi file; spam không giới hạn sẽ làm chậm tick của cả phòng.
+const (
+	MsgRatePerSec = 20.0
+	MsgBurst      = 40.0
+)
+
+// Kết quả rateMsg.
+const (
+	msgAllow    = iota // xử lý bình thường
+	msgThrottle        // vượt MsgBurst: act nhận "res" lỗi, message khác bị bỏ
+	msgDrop            // vượt 2×MsgBurst: bỏ hẳn, không đẩy gì vào hàng đợi phòng
+)
+
+// rateMsg: xô rò MsgRatePerSec/giây. Message bị từ chối vẫn tính vào xô (tối đa 2×MsgBurst+1) để kẻ spam
+// không trả lời được thì bị bỏ hẳn: nếu không, act bị chặn vẫn đầy hộp thư của phòng và làm nghẽn người khác.
+func (s *Session) rateMsg(now time.Time) int {
+	s.msgBurst = max(0, s.msgBurst-now.Sub(s.msgAt).Seconds()*MsgRatePerSec)
+	s.msgAt = now
+	s.msgBurst = min(s.msgBurst+1, 2*MsgBurst+1)
+	switch {
+	case s.msgBurst <= MsgBurst:
+		return msgAllow
+	case s.msgBurst <= 2*MsgBurst:
+		return msgThrottle
+	}
+	return msgDrop
+}
+
 func (s *Session) handle(m *inMsg) {
 	if s.acc == nil {
 		if m.T == "hello" {
 			s.hub.Hello(s, m.Token, m.Resume)
 		}
 		return
+	}
+	if m.T != "in" && m.T != "ping" {
+		switch s.rateMsg(time.Now()) {
+		case msgThrottle:
+			if m.T != "act" {
+				return
+			}
+			m.throttled = true // vẫn chuyển vào phòng để trả "res" lỗi, client không phải chờ mãi
+		case msgDrop:
+			return
+		}
 	}
 	switch m.T {
 	case "create_char":
@@ -262,6 +318,9 @@ func (h *Hub) Hello(s *Session, token string, resume bool) {
 		s.Send(map[string]any{"t": "auth_fail", "err": "Phiên đăng nhập hết hạn, hãy đăng nhập lại."})
 		return
 	}
+	lk := h.accountLock(id)
+	lk.Lock()
+	defer lk.Unlock()
 	acc, err := h.store.Account(id)
 	if err != nil {
 		s.Send(map[string]any{"t": "auth_fail", "err": "Không đọc được tài khoản."})
@@ -303,10 +362,12 @@ func (h *Hub) Hello(s *Session, token string, resume bool) {
 	if old != nil && old != s {
 		old.kicked.Store(true)
 		old.Send(map[string]any{"t": "kicked", "reason": "Tài khoản vừa vào game ở nơi khác."})
+		old.moveMu.Lock() // chờ lần đổi phòng đang dở của phiên cũ xong, rồi mới gỡ nó khỏi phòng hiện tại
 		if r := old.room.Load(); r != nil {
 			r.DoWait(func() { r.remove(old) }) // phiên cũ mất quyền trước khi phiên mới hoạt động
 		}
 		old.room.Store(nil)
+		old.moveMu.Unlock()
 		time.AfterFunc(300*time.Millisecond, old.Close)
 	}
 	if acc.Char != nil {
@@ -423,8 +484,22 @@ func (h *Hub) newRoomLocked(region string) *Room {
 	return r
 }
 
+// emptyOrNewRoomLocked phục vụ "chuồng mới": dùng lại một chuồng đang trống của vùng, chỉ mở chuồng mới khi
+// không còn chuồng trống. Phòng công khai không bao giờ đóng, nên nếu luôn mở mới thì một client lặp lệnh
+// sẽ đẻ vô hạn goroutine 20 tick/giây. Cách này giữ số phòng ≤ số phòng có người + 1.
+func (h *Hub) emptyOrNewRoomLocked(region string, cur *Room) *Room {
+	for _, r := range h.rooms {
+		if r != cur && r.Region == region && r.Count() == 0 {
+			return r
+		}
+	}
+	return h.newRoomLocked(region)
+}
+
 // Switch đổi sang bản sao chuồng khác trong cùng vùng, không tốn vé (mục 8.5).
 func (h *Hub) Switch(s *Session, roomID string) {
+	s.moveMu.Lock()
+	defer s.moveMu.Unlock()
 	cur := s.room.Load()
 	if cur == nil || cur.ID == roomID {
 		return
@@ -441,7 +516,7 @@ func (h *Hub) Switch(s *Session, roomID string) {
 		}
 	}
 	if target == nil && roomID == "new" {
-		target = h.newRoomLocked(region)
+		target = h.emptyOrNewRoomLocked(region, cur)
 	}
 	if target == nil || target.Count() >= RoomCapacity {
 		h.mu.Unlock()
@@ -487,21 +562,34 @@ func (h *Hub) TransferRegion(group []*Session, region string, arrs []*arrival) {
 	}
 	h.mu.Unlock()
 	for i, s := range group {
-		if cur := s.room.Load(); cur != nil {
-			cur.DoWait(func() { cur.remove(s) })
-		}
-		if s.closed.Load() {
-			target.unreserve()
-			continue
-		}
-		s.arrive = arrs[i]
-		s.room.Store(target)
-		target.DoWait(func() { target.add(s) })
+		h.transferOne(s, target, arrs[i])
 	}
+}
+
+// transferOne chuyển một phiên sang phòng đích đã giữ chỗ, dưới khoá đổi phòng của phiên.
+func (h *Hub) transferOne(s *Session, target *Room, arr *arrival) {
+	s.moveMu.Lock()
+	defer s.moveMu.Unlock()
+	if cur := s.room.Load(); cur != nil {
+		cur.DoWait(func() { cur.remove(s) })
+	}
+	if s.closed.Load() || s.kicked.Load() {
+		s.room.Store(nil)
+		target.unreserve()
+		h.mu.Lock()
+		delete(h.lastPublic, s) // TransferRegion vừa ghi mục này; phiên đã đóng thì dropSession có thể đã chạy xong
+		h.mu.Unlock()
+		return
+	}
+	s.arrive = arr
+	s.room.Store(target)
+	target.DoWait(func() { target.add(s) })
 }
 
 func (h *Hub) Leave(s *Session) {
 	// Mất kết nối: giữ chỗ trong phòng một lúc để nối lại, nhất là khi đang đấu PK (mục 10.2).
+	s.moveMu.Lock() // đợi lần đổi phòng đang dở xong để đánh dấu mất kết nối đúng phòng
+	defer s.moveMu.Unlock()
 	if r := s.room.Load(); r != nil && !s.kicked.Load() && s.acc != nil && s.acc.Char != nil {
 		s.Close()
 		r.Do(func() { r.markGone(s) })

@@ -286,6 +286,11 @@ func (h *Hub) social(s *Session, m *inMsg) {
 // Visit đưa phiên vào nhà riêng của owner nếu có quyền: chủ nhà, khách có lời mời còn hạn,
 // bạn bè khi nhà để "bạn bè", mọi người khi "công khai". Người đã chặn nhau luôn bị từ chối.
 func (h *Hub) Visit(s *Session, owner, token string) error {
+	s.moveMu.Lock()
+	defer s.moveMu.Unlock()
+	if s.kicked.Load() || s.room.Load() == nil {
+		return errors.New("Phiên này không còn trong game.")
+	}
 	me := s.acc.ID
 	if owner != me {
 		if h.store.Social.Blocked(me, owner) {
@@ -352,6 +357,11 @@ func (h *Hub) Visit(s *Session, owner, token string) error {
 
 // LeaveHome đưa phiên từ nhà riêng về sảnh chuồng công cộng gần nhất đã ở.
 func (h *Hub) LeaveHome(s *Session) {
+	s.moveMu.Lock()
+	defer s.moveMu.Unlock()
+	if s.kicked.Load() {
+		return
+	}
 	cur := s.room.Load()
 	if cur == nil || cur.Kind == "public" {
 		return

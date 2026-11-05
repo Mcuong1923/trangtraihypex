@@ -133,6 +133,7 @@ type Balance struct {
 	DigCooldown      time.Duration `json:"-"` // 1 phần thưởng đào mỗi khoảng này, theo tài khoản (mục 7.1)
 	DigCooldownSec   float64       `json:"digCooldownSec"`
 	DigDailyLimit    int           `json:"digDailyLimit"`
+	FishDailyLimit   int           `json:"fishDailyLimit"` // số cá câu được mỗi ngày; 0 → FishDailyDefault
 	DigMinDuration   time.Duration `json:"-"` // thao tác nhanh hơn mức này coi là bất thường
 	ManaDrainPerSec  float64       `json:"manaDrainPerSec"`
 	ManaPerDig       float64       `json:"manaPerDig"` // trừ thêm mỗi lượt đào có thưởng (mục 7.4)
@@ -204,8 +205,15 @@ func DemoBalance() Balance {
 	})
 }
 
+// FishDailyDefault: trần cá mỗi ngày. Kỳ vọng ~12 thóc/con → ~720 thóc/ngày, dưới ngân sách ~1.150 thóc
+// của 120 lượt đào (PLAN_LOGIC_GAME 17). Không có trần thì câu cá thành nguồn thóc/XP vô hạn (~2.800 thóc/giờ).
+const FishDailyDefault = 60
+
 func finalize(b Balance) Balance {
 	b.DigCooldownSec = b.DigCooldown.Seconds()
+	if b.FishDailyLimit == 0 {
+		b.FishDailyLimit = FishDailyDefault
+	}
 	b.RescueSec = b.RescueDuration.Seconds()
 	b.BuildSec = b.BuildDuration.Seconds()
 	if b.ReconnectGrace == 0 {

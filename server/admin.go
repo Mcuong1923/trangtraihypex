@@ -342,6 +342,10 @@ func (h *Hub) moderate(st staffCtx, id, action string, minutes int, reason strin
 
 // kick đưa phiên ra khỏi phòng ngay, không giữ chỗ nối lại.
 func (h *Hub) kick(id, reason string) {
+	// Cùng khoá với Hello: một lần đăng nhập đang dở không thể ghi lại phiên sau khi đã bị kick/khoá.
+	lk := h.accountLock(id)
+	lk.Lock()
+	defer lk.Unlock()
 	h.mu.Lock()
 	s := h.sessions[id]
 	delete(h.sessions, id)
@@ -351,9 +355,11 @@ func (h *Hub) kick(id, reason string) {
 	}
 	s.kicked.Store(true)
 	s.Send(map[string]any{"t": "kicked", "reason": reason, "final": true})
+	s.moveMu.Lock() // đợi lần đổi phòng đang dở xong rồi mới gỡ khỏi phòng hiện tại
 	if r := s.room.Swap(nil); r != nil {
 		r.DoWait(func() { r.remove(s) })
 	}
+	s.moveMu.Unlock()
 	time.AfterFunc(300*time.Millisecond, s.Close)
 }
 

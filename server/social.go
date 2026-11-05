@@ -351,12 +351,45 @@ func (s *SocialStore) Report(r Report) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Mỗi người tối đa ReportsPerDay báo cáo đang mở trong 24 giờ: chặn spam đẩy báo cáo thật ra khỏi hàng đợi.
+	n := 0
+	for _, x := range s.reports {
+		if x.Reporter == r.Reporter && x.Status == "open" && r.At.Sub(x.At) < 24*time.Hour {
+			n++
+		}
+	}
+	if n >= ReportsPerDay {
+		return errors.New("Bạn đã gửi nhiều báo cáo, kiểm duyệt viên đang xem. Thử lại sau nhé.")
+	}
 	r.ID, r.Status = "rp"+randHex(5), "open"
 	s.reports = append(s.reports, r)
-	if len(s.reports) > 2000 {
-		s.reports = s.reports[len(s.reports)-2000:]
-	}
+	s.reports = trimReports(s.reports, MaxReports)
 	return writeAtomic(s.repPath, s.reports)
+}
+
+const (
+	ReportsPerDay = 10
+	MaxReports    = 2000
+)
+
+// trimReports giữ tối đa max báo cáo: bỏ báo cáo đã xử lý cũ nhất trước, chỉ bỏ báo cáo đang mở khi bất đắc dĩ.
+func trimReports(rs []Report, max int) []Report {
+	extra := len(rs) - max
+	if extra <= 0 {
+		return rs
+	}
+	out := rs[:0:0]
+	for _, x := range rs {
+		if extra > 0 && x.Status != "open" {
+			extra--
+			continue
+		}
+		out = append(out, x)
+	}
+	if len(out) > max {
+		out = out[len(out)-max:]
+	}
+	return out
 }
 
 // Reports trả hàng đợi báo cáo cho kiểm duyệt viên, báo cáo đang mở lên trước.

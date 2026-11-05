@@ -34,6 +34,8 @@ const (
 	SayRadius    = 30.0
 	SayPerSec    = 3 // câu NPC không nhắm ai, toàn phòng, mỗi giây
 	TeasePerHour = 6
+
+	ShipperTipsPerDay = 5 // chỉ đường đúng cho shipper: +1 thóc, tối đa 5 lần/ngày/tài khoản
 )
 
 type cue struct {
@@ -108,8 +110,6 @@ type npcMemo struct {
 	reactAt    time.Time
 	hungryAt   time.Time
 	markSent   string
-	shipDay    string
-	shipGifts  int
 	welcomeAt  time.Time // Cụ Cục gọi gà mới / chào sau điểm danh
 	checkinDay int
 }
@@ -1008,14 +1008,14 @@ func (r *Room) npcChoice(p *Player, id string, i int, txn func(func() (ActResult
 				return ActResult{Msg: "Shipper chạy đi hướng đó… hình như sai rồi!"}, nil
 			}
 			day := DayKey(now)
-			if p.memo.shipDay != day {
-				p.memo.shipDay, p.memo.shipGifts = day, 0
+			if p.acc.ShipTipDay != day {
+				p.acc.ShipTipDay, p.acc.ShipTips = day, 0
 			}
 			r.say(a.ID, a.Name, NPCLines["shipper.thanks"][0], a.Pos, p)
-			if p.memo.shipGifts >= 5 {
+			if p.acc.ShipTips >= ShipperTipsPerDay {
 				return ActResult{Msg: "Chỉ đường đúng rồi!"}, nil
 			}
-			p.memo.shipGifts++
+			p.acc.ShipTips++
 			_ = p.acc.addThoc(1, "npc_tip", "shipper", now)
 			return ActResult{Msg: "Chỉ đường đúng: +1 thóc"}, nil
 		})

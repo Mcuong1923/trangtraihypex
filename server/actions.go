@@ -26,6 +26,10 @@ func (r *Room) act(p *Player, m *inMsg) {
 		reply(prev)
 		return
 	}
+	if m.throttled {
+		fail(errors.New("Thao tác nhanh quá, chậm lại một chút nhé."))
+		return
+	}
 
 	// txn bọc một thay đổi tài sản nguyên tử và idempotent.
 	txn := func(apply func() (ActResult, error)) {

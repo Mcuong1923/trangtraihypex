@@ -98,6 +98,11 @@ type Account struct {
 	DigReadyAt time.Time `json:"digReadyAt"`
 	DailyKey   string    `json:"dailyKey"`
 	DailyDigs  int       `json:"dailyDigs"`
+	DailyFish  int       `json:"dailyFish,omitempty"` // cá câu được hôm nay (trần Balance.FishDailyLimit)
+	// Quà chỉ đường cho shipper (+1 thóc, tối đa ShipperTipsPerDay/ngày). Lưu theo tài khoản, không theo phiên:
+	// trước đây đổi kênh là đếm lại từ 0 nên farm được thóc vô hạn.
+	ShipTipDay string `json:"shipTipDay,omitempty"`
+	ShipTips   int    `json:"shipTips,omitempty"`
 	Daily      []Quest   `json:"daily"`
 
 	Tutorial        map[string]bool `json:"tutorial"`
@@ -343,6 +348,7 @@ func (a *Account) EnsureDaily(now time.Time) {
 	}
 	a.DailyKey = k
 	a.DailyDigs = 0
+	a.DailyFish = 0
 	// Tổng thưởng 3 nhiệm vụ ngày: 60 thóc (mục 8.2).
 	a.Daily = []Quest{
 		{ID: "dig", Text: "Đào 5 giun ở Vườn giun", Need: 5, Reward: 20},

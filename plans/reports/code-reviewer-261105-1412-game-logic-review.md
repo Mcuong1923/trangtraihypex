@@ -18,6 +18,19 @@ Kiểm thử sau khi cài Go 1.27.3 (winget):
 - **C4:** `ContractStore.Work(id, worker, homeOwner, now)` kiểm chủ nhà trước khi cộng tiến độ.
 - **Test hồi quy:** `server/security_regression_test.go` (C1, C2, C3); phần C4 nằm trong `TestContractStoreRules` (`v11_test.go`).
 
+## Cập nhật 05/11/2026 tối: đã sửa C5, H1–H5 (chưa commit)
+
+- **C5:** `Hub.Hello` giữ khoá theo tài khoản (`accountLock`) suốt lệnh; `kick` của admin dùng cùng khoá.
+- **H3:** `Session.moveMu` tuần tự hoá mọi lần đổi phòng: `Switch`, `transferOne` (từ `TransferRegion`), `Visit`, `VisitGuild`, `LeaveHome`, `Leave`, việc thay phiên trong `Hello` và `kick`. Phiên đã kick/đóng thì bỏ qua và dọn `lastPublic`. `Room.add` đánh dấu `goneAt` nếu socket đã đóng.
+- **H1:** `switch_room "new"` dùng lại chuồng trống của vùng (`emptyOrNewRoomLocked`). Số phòng ≤ số phòng có người + 1.
+- **H2:** trần câu cá `Balance.FishDailyLimit`, mặc định `FishDailyDefault` = 60 con/ngày (~720 thóc). **Số tạm chọn, cần chủ dự án chốt.**
+- **H4:** bộ đếm quà shipper chuyển sang `Account.ShipTipDay/ShipTips` (lưu bền, không reset khi đổi kênh).
+- **H5:** xô rò 20 msg/s, chứa 40 cho mọi message ngoài `in`/`ping`. Vượt 40: `act` nhận `res` lỗi, message khác bị bỏ. Vượt 80: bỏ hẳn. Báo cáo: tối đa 10 báo cáo đang mở/người/24 giờ; cắt hàng đợi bỏ báo cáo đã xử lý trước.
+- **Test hồi quy:** `server/concurrency_limits_regression_test.go` (7 test). Chạy 3 test C5/H1/H3 trên code gốc (worktree tạm): cả 3 fail đúng lỗi (2 nhân vật/1 tài khoản; 7 phòng; sĩ số 2 với 1 người). Trên code mới đều PASS.
+- **Review độc lập:** không có deadlock. Thứ tự khoá: khoá tài khoản → `moveMu` → `DoWait` phòng; goroutine phòng không bao giờ lấy hai khoá này. Cần giữ bất biến này: không được `DoWait` vào phòng đã dừng khi đang giữ `moveMu`.
+- Toàn bộ test sau khi sửa theo review: `go test -count=1 -timeout 25m ./...` **84/84 PASS** (~11 phút, không `-race`).
+- Chưa làm trong nhóm này: các bộ đếm NPC khác (trêu, cameo, xe ôm, hụt hơi) vẫn đặt lại khi đổi kênh. Chỉ ảnh hưởng tần suất NPC, không tạo ra thóc.
+
 ## Nghiêm trọng (sửa trước khi cho người ngoài chơi)
 
 | # | Lỗi | Vị trí | Kịch bản | XM |

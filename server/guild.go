@@ -613,6 +613,11 @@ func NewGuildRoom(h *Hub, gid, name string) *Room {
 
 // VisitGuild đưa thành viên vào Nhà Hội của hội mình.
 func (h *Hub) VisitGuild(s *Session) error {
+	s.moveMu.Lock()
+	defer s.moveMu.Unlock()
+	if s.kicked.Load() || s.room.Load() == nil {
+		return errors.New("Phiên này không còn trong game.")
+	}
 	gid, name, _ := h.store.Guilds.GuildOf(s.acc.ID)
 	if gid == "" {
 		return errors.New("Bạn chưa ở trong hội nào.")

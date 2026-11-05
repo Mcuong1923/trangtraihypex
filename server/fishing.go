@@ -96,6 +96,7 @@ func (a *Account) CatchFish(f FishDef, now time.Time, b Balance, cd time.Duratio
 	a.FishReadyAt = now.Add(cd)
 	a.Mana = math.Max(0, a.Mana-b.ManaPerDig)
 	a.FishCaught++
+	a.DailyFish++
 	return a.addXP(DigXP[f.Tier] * FishXPMult), nil
 }
 
@@ -134,7 +135,11 @@ func (r *Room) fishAct(p *Player, m *inMsg, reply func(ActResult), fail func(err
 		}
 		r.abandonFish(p)
 		r.abandonDig(p)
+		p.acc.EnsureDaily(now)
 		switch {
+		case p.acc.DailyFish >= b.FishDailyLimit:
+			fail(fmt.Errorf("Hôm nay đã câu đủ %d con cá, mai quay lại nhé.", b.FishDailyLimit))
+			return
 		case now.Before(p.acc.FishReadyAt):
 			fail(fmt.Errorf("Cá còn lặn, thả câu lại sau %.0f giây.", math.Ceil(p.acc.FishReadyAt.Sub(now).Seconds())))
 			return

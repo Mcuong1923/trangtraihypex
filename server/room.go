@@ -232,6 +232,11 @@ func (r *Room) add(s *Session) {
 	p.lastStage = p.acc.HungerStage(r.hub.bal)
 	r.players[s] = p
 	now := time.Now()
+	if s.closed.Load() {
+		// Socket đóng ngay trước khi vào phòng: Leave không thấy phòng này nên không đánh dấu. Tự đánh dấu để
+		// hết giờ giữ chỗ thì gỡ ra, không để lại gà "ma" vĩnh viễn.
+		p.goneAt = now
+	}
 	if r.home != nil && p.acc.ID == r.Owner && r.home.houseDone() && !p.acc.HouseBuilt {
 		p.acc.HouseBuilt, p.dirty = true, true // chuồng nuôi thêm 6 bạn đồng hành
 	}
