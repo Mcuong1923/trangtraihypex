@@ -1,14 +1,16 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 )
 
 // Hành động của PLAN_LOGIC_GAME: kho đồ, tiệm vật liệu/hạt giống, trồng cây, điểm danh, cài đặt NPC.
-func (r *Room) logicAct(p *Player, m *inMsg, reply func(ActResult), fail func(error), txn func(func() (ActResult, error))) {
+func (r *Room) logicAct(p *Player, m *inMsg, reply func(ActResult), fail func(error), txn txnFunc) {
 	now := time.Now()
 	zone := r.zones[p.zone]
 	switch m.A {
@@ -156,22 +158,39 @@ func (r *Room) logicAct(p *Player, m *inMsg, reply func(ActResult), fail func(er
 			fail(errors.New("Mua đất ở Văn phòng đất nền của Ông Chủ Đầu Tư, cạnh cổng Xóm Rơm Vàng."))
 			return
 		}
-		txn(func() (ActResult, error) {
-			var moved, cost int
-			err := r.hub.withHome(p.acc.ID, p.acc.Char.Name, func(h *Home) error {
-				var e error
-				moved, cost, e = h.BuyLot(p.acc, m.I, m.Mode, now)
+		// RID đã xử lý được act trả kết quả cũ từ trước. Trừ thóc và lên hạng đất chốt cùng nhau trong closure của withHome (goroutine của người mua đang chờ):
+		// lưu tài khoản trước khi lưu nhà, lưu lỗi thì hoàn cả nhà lẫn tài khoản ngay tại chỗ (M4).
+		var res ActResult
+		err := r.hub.withHome(p.acc.ID, p.acc.Char.Name, func(h *Home) error {
+			snapH, _ := json.Marshal(h)
+			snapA, _ := json.Marshal(p.acc)
+			moved, cost, e := h.BuyLot(p.acc, m.I, m.Mode, now)
+			if e != nil {
+				restore(p.acc, snapA)
 				return e
-			})
-			if err != nil {
-				return ActResult{}, err
 			}
 			msg := fmt.Sprintf("Đã mua %s · %s (−%d thóc). Vào nhà riêng để xem đất mới!", LandTiers[m.I].Name, placeByID(m.Mode).Name, cost)
 			if moved > 0 {
 				msg += fmt.Sprintf(" %d món đồ không còn chỗ hợp lệ đã về kho.", moved)
 			}
-			return ActResult{Msg: msg}, nil
+			res = ActResult{OK: true, Msg: msg}
+			p.acc.Remember(m.RID, res)
+			if err := r.hub.store.Save(p.acc); err != nil {
+				log.Printf("save %s: %v", p.acc.ID, err)
+				restore(p.acc, snapA)
+				var old Home
+				if json.Unmarshal(snapH, &old) == nil {
+					*h = old
+				}
+				return errors.New("Máy chủ tạm không lưu được, chưa mua đất. Thử lại sau.")
+			}
+			return nil
 		})
+		if err != nil {
+			fail(err)
+			return
+		}
+		reply(res)
 
 	case "pet_ride":
 		switch {
@@ -216,7 +235,7 @@ func (r *Room) bedKey(p *Player, id string) (string, error) {
 		}
 		oid := strings.TrimPrefix(id, "home:")
 		for _, o := range r.home.Objects {
-			if o.ID == oid && (o.Kind == "luong_rau" || o.Kind == "luong_ca_rot") {
+			if o.ID == oid && (isHomeBedKind(o.Kind)) {
 				if p.pos.Dist(Vec{float64(o.X), float64(o.Z)}) > 2.4 {
 					return "", errors.New("Lại gần luống rau hơn.")
 				}

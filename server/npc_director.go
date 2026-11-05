@@ -574,7 +574,7 @@ func (r *Room) nextIntercity(now time.Time) float64 {
 
 // ---------- Hành động: xe buýt, xe ôm, trả lời NPC ----------
 
-func (r *Room) npcAct(p *Player, m *inMsg, reply func(ActResult), fail func(error), txn func(func() (ActResult, error))) {
+func (r *Room) npcAct(p *Player, m *inMsg, reply func(ActResult), fail func(error), txn txnFunc) {
 	now := time.Now()
 	b := r.hub.bal
 	rn := r.roads()

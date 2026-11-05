@@ -220,3 +220,26 @@ Câu hỏi còn mở (đợt này):
 - `PKWins` cũ kiếm từ Gà Máy/Úp ngửa có reset không? Hiện giữ nguyên.
 - Hàng chờ quà 200 món có đủ, hay không giới hạn?
 - Đang nâng cấp nhà thì sức chứa về 8 (hiện tại) hay giữ theo vật liệu cũ?
+
+---
+
+## Cập nhật: sửa nhóm mất tiền/mất đồ (M1, M2, M4–M6, M12–M14)
+
+| # | Đã làm |
+|---|---|
+| M1 | `eat_worm` gọi `levelUp`: lên cấp do ăn nhận quà ngay |
+| M2 | `uprootHomeBed`: luống về kho do đổi lô (`BuyLot`) hoặc xây nhà (`clearFoot`) thì chín thu, chưa chín trả hạt (+phân ủ); `home_pickup` chặn luống đang có cây |
+| M4 | `txn` trả bool (`txnFunc`). `contract_create` lỗi lưu → `Discard`; `guild_create` lỗi → `Leave` giải thể; `land_buy` lưu tài khoản trong closure `withHome` trước khi lưu nhà, lỗi thì hoàn cả hai tại chỗ |
+| M5 | `Work` lưu lỗi gỡ khoản công vừa ghi; nghiệm thu mà lưu nhà lỗi vẫn giữ chuồng (thợ đã được trả) |
+| M6 | `GuildStore.Do` chụp hội, lỗi/lưu hỏng thì `rollbackLocked`; `UndoFund` (bù trừ) không rollback, lưu lỗi chỉ log |
+| M12 | Điểm danh kho đầy: vật phẩm vào hàng chờ, không mất chuỗi ngày |
+| M13 | `withHome`: CAS 0/1/2 + defer gửi kết quả (panic không treo); dựng lại `zones["home"]` sau khi đổi lô |
+| M14 | `dig_finish`/`fish_finish` giữ phiên tới khi txn xong; lỗi thì `abandonDig`/`abandonFish` (vẫn tính hồi) |
+
+Test mới: `server/save_failure_regression_test.go` (12 test; giả lập lưu hỏng bằng thư mục trùng tên file `.tmp`). Review: 2 lỗi do chính bản sửa (treo khi closure panic, `UndoFund` bị rollback) đã sửa. Mục "RID cũ đóng phiên đào né hồi" không xảy ra được vì `act` trả kết quả cũ trước mọi xử lý; có test giữ hành vi này.
+
+Còn lại (thấp):
+- Có thể có thợ nhận hợp đồng trong khoảng thời gian giữa `Create` và `Discard`, lúc đó `Discard` không chạy. Khoảng này chỉ dài bằng một lần lưu tài khoản. Cách triệt để: tạo hợp đồng ở trạng thái "pending".
+- `Discard`/`Leave` mà lưu lỗi thì bản trên đĩa còn hợp đồng hoặc hội. Server khởi động lại thì chúng sống lại.
+- Nghiệm thu mà lưu nhà lỗi thì không thử lưu lại.
+- `land_buy` mà lưu nhà lỗi sau khi đã lưu tài khoản: người chơi bị báo lỗi dù đã trả tiền. Đất mới vẫn còn trong bộ nhớ.

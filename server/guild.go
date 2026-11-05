@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -205,10 +206,32 @@ func (g *GuildStore) Do(actor string, f func(gd *Guild) error) (*Guild, error) {
 	if gd == nil {
 		return nil, errors.New("Bạn chưa ở trong hội nào.")
 	}
+	snap, _ := json.Marshal(gd)
 	if err := f(gd); err != nil {
+		g.rollbackLocked(gd.ID, snap)
 		return nil, err
 	}
-	return gd, g.saveLocked()
+	if err := g.saveLocked(); err != nil {
+		g.rollbackLocked(gd.ID, snap) // không để quỹ/thành viên đổi trong bộ nhớ rồi lần lưu sau ghi lại (M6)
+		return nil, err
+	}
+	return gd, nil
+}
+
+// rollbackLocked trả hội id về bản chụp trước thao tác và dựng lại bảng thành viên → hội.
+func (g *GuildStore) rollbackLocked(id string, snap []byte) {
+	var old Guild
+	if err := json.Unmarshal(snap, &old); err != nil {
+		log.Printf("guild rollback %s: %v", id, err)
+		return
+	}
+	g.Guilds[id] = &old
+	g.member = map[string]string{}
+	for gid, gd := range g.Guilds {
+		for m := range gd.Members {
+			g.member[m] = gid
+		}
+	}
 }
 
 func (g *GuildStore) Join(id, name, guildID string) (string, error) {
@@ -259,12 +282,20 @@ func (g *GuildStore) AddFund(id string, n int) (*Guild, error) {
 }
 
 func (g *GuildStore) UndoFund(id string, n int) {
-	g.Do(id, func(gd *Guild) error {
-		gd.Fund -= n
-		gd.Members[id].Contributed -= n
-		gd.Ledger = gd.Ledger[:max(0, len(gd.Ledger)-1)]
-		return nil
-	})
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	gd := g.of(id)
+	if gd == nil {
+		return
+	}
+	gd.Fund -= n
+	if mb := gd.Members[id]; mb != nil {
+		mb.Contributed -= n
+	}
+	gd.Ledger = gd.Ledger[:max(0, len(gd.Ledger)-1)]
+	if err := g.saveLocked(); err != nil {
+		log.Printf("guild undo fund %s: %v", id, err) // giữ phần trừ trong bộ nhớ; lần lưu hội sau ghi lại
+	}
 }
 
 func (g *GuildStore) Touch(id string) {
@@ -670,7 +701,7 @@ func (h *Hub) sendGuild(s *Session) {
 }
 
 // guildAct: phần chạm ví chạy trong goroutine phòng (lập hội, góp quỹ).
-func (r *Room) guildAct(p *Player, m *inMsg, reply func(ActResult), fail func(error), txn func(func() (ActResult, error))) {
+func (r *Room) guildAct(p *Player, m *inMsg, reply func(ActResult), fail func(error), txn txnFunc) {
 	now := time.Now()
 	gs := r.hub.store.Guilds
 	switch m.A {
@@ -683,7 +714,8 @@ func (r *Room) guildAct(p *Player, m *inMsg, reply func(ActResult), fail func(er
 			fail(errors.New("Bạn đang ở trong một hội."))
 			return
 		}
-		txn(func() (ActResult, error) {
+		created := false
+		ok := txn(func() (ActResult, error) {
 			if err := p.acc.addThoc(-GuildCost, "guild_create", m.Text, now); err != nil {
 				return ActResult{}, err
 			}
@@ -691,9 +723,17 @@ func (r *Room) guildAct(p *Player, m *inMsg, reply func(ActResult), fail func(er
 			if err != nil {
 				return ActResult{}, err
 			}
+			created = true
 			r.broadcastLook(p)
 			return ActResult{Msg: "Đã lập " + gd.Emblem + " " + gd.Name + "!"}, nil
 		})
+		if !ok && created {
+			// Phí lập hội đã hoàn nguyên: giải thể hội vừa lập (một thành viên rời là hội tự giải thể), không có hội miễn phí (M4).
+			if err := gs.Leave(p.acc.ID); err != nil {
+				log.Printf("guild create rollback %s: %v", p.acc.ID, err)
+			}
+			r.broadcastLook(p)
+		}
 	case "guild_give":
 		n := m.I
 		if n <= 0 || n > p.acc.Thoc {

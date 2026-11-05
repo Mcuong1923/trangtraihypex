@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -141,6 +142,18 @@ func (c *ContractStore) Create(owner, ownerName, roof string, price int, need in
 	return &cp, nil
 }
 
+// Discard xoá hợp đồng vừa tạo khi giao dịch giữ ký quỹ của chủ không lưu được (M4): chủ chưa mất gì nên không hoàn.
+func (c *ContractStore) Discard(id string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if k := c.Contracts[id]; k != nil && k.State == "open" {
+		delete(c.Contracts, id)
+		if err := c.saveLocked(); err != nil {
+			log.Printf("contracts discard %s: %v", id, err)
+		}
+	}
+}
+
 func (c *ContractStore) List(me string) []Contract {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -213,6 +226,7 @@ func (c *ContractStore) Work(id, worker, homeOwner string, now time.Time) (*Cont
 	}
 	k.Progress++
 	k.LastWork = now
+	paid := len(c.Credits[worker])
 	if k.Progress >= k.Need {
 		k.State = "done"
 		c.creditLocked(worker, Credit{Amount: k.Price, Reason: "contract_pay", Ref: k.ID, Note: "Tiền công xây chuồng cho " + k.OwnerName})
@@ -220,6 +234,10 @@ func (c *ContractStore) Work(id, worker, homeOwner string, now time.Time) (*Cont
 	if err := c.saveLocked(); err != nil {
 		k.Progress--
 		k.State = "taken"
+		c.Credits[worker] = c.Credits[worker][:paid] // gỡ khoản công vừa ghi (M5)
+		if paid == 0 {
+			delete(c.Credits, worker)
+		}
 		return nil, err
 	}
 	cp := *k
@@ -298,7 +316,7 @@ func weekKey(t time.Time) string {
 }
 
 // contractAct: tạo/nhận/thi công/huỷ hợp đồng.
-func (r *Room) contractAct(p *Player, m *inMsg, reply func(ActResult), fail func(error), txn func(func() (ActResult, error))) {
+func (r *Room) contractAct(p *Player, m *inMsg, reply func(ActResult), fail func(error), txn txnFunc) {
 	now := time.Now()
 	b := r.hub.bal
 	cs := r.hub.store.Contracts
@@ -331,7 +349,8 @@ func (r *Room) contractAct(p *Player, m *inMsg, reply func(ActResult), fail func
 			fail(errors.New("Chọn vật liệu: rơm, gỗ hoặc gạch."))
 			return
 		}
-		txn(func() (ActResult, error) {
+		created := ""
+		saved := txn(func() (ActResult, error) {
 			// Chủ phải gom đủ vật liệu: giữ cùng ký quỹ, thợ chỉ góp công (PLAN_LOGIC_GAME 13.3).
 			if err := p.acc.takeItems(rc.Items); err != nil {
 				return ActResult{}, err
@@ -343,9 +362,13 @@ func (r *Room) contractAct(p *Player, m *inMsg, reply func(ActResult), fail func
 			if err != nil {
 				return ActResult{}, err
 			}
+			created = k.ID
 			cs.SetMaterials(k.ID, material, rc.Items)
 			return ActResult{Msg: fmt.Sprintf("Đã đăng hợp đồng: giữ %d thóc ký quỹ, hạn %s.", k.Price, humanDur(b.ContractTTL))}, nil
 		})
+		if !saved && created != "" {
+			cs.Discard(created) // ví chủ đã hoàn nguyên: hợp đồng không được tồn tại, nếu không huỷ sẽ hoàn ký quỹ lần hai
+		}
 	case "contract_take":
 		if p.acc.Level < ContractLevel {
 			fail(fmt.Errorf("Nghề thợ xây mở từ cấp %d.", ContractLevel))
@@ -395,7 +418,7 @@ func (r *Room) contractAct(p *Player, m *inMsg, reply func(ActResult), fail func
 		}
 		h.Coop = &CoopJob{Roof: k.Roof, Design: "chuong_nho", Material: mat, State: "done", StartAt: now, DoneAt: now}
 		if err := r.hub.store.Homes.Save(h); err != nil {
-			h.Coop = nil
+			log.Printf("save home %s after contract %s: %v", h.Owner, k.ID, err) // giữ chuồng: thợ đã được trả công (M5)
 		}
 		pair := k.Owner + ":" + weekKey(now)
 		if !p.acc.RepPairs[pair] {

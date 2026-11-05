@@ -44,8 +44,12 @@ func (a *Account) DoCheckIn(now time.Time) (int, Reward, error) {
 	}
 	day := a.nextStreak(now)
 	rw := CheckInRewards[day-1]
-	if err := a.addItems(rw.Items); err != nil {
-		return 0, Reward{}, err
+	if a.addItems(rw.Items) != nil {
+		// Kho đầy: vẫn điểm danh (không mất chuỗi ngày), vật phẩm vào hàng chờ như quà cấp (M12, PLAN.md 7.1).
+		for id, n := range rw.Items {
+			rw.Dropped += a.queuePending(id, n)
+		}
+		rw.Queued = true
 	}
 	for id, n := range rw.Food {
 		a.Food[id] += n

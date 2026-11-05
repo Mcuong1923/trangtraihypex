@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 )
 
@@ -161,6 +162,9 @@ func (h *Home) BuyLot(a *Account, tier int, place string, now time.Time) (int, i
 		} else {
 			h.Storage[o.Kind]++
 			moved++
+			if isHomeBedKind(o.Kind) {
+				a.uprootHomeBed(o.ID, now) // luống về kho thì cây đang trồng không bị mất
+			}
 		}
 	}
 	h.Objects = keep
@@ -202,7 +206,7 @@ func (h *Home) BuildHouse(a *Account, design, material, roof string, now time.Ti
 	_ = a.addThoc(-rc.Thoc, "build_house", design+":"+material, now)
 	dur := time.Duration(float64(rc.Minutes) * float64(time.Minute) * scale)
 	h.Coop = &CoopJob{Roof: roof, Design: design, Material: material, State: "building", StartAt: now, DoneAt: now.Add(dur)}
-	h.clearFoot()
+	h.clearFoot(a, now)
 	return dur, nil
 }
 
@@ -253,21 +257,32 @@ func (h *Hub) withHome(owner, name string, f func(*Home) error) error {
 		return h.store.Homes.Save(home)
 	}
 	h.mu.Unlock()
+	// 0 chờ · 1 đang chạy · 2 đã bỏ. Hết giờ chỉ được bỏ khi closure chưa bắt đầu; đã chạy thì chờ nó xong, để không
+	// bao giờ có closure chạm tài khoản sau khi caller đã trả lỗi và đi tiếp (M13).
+	var state atomic.Int32
 	errc := make(chan error, 1)
 	room.Do(func() {
+		if !state.CompareAndSwap(0, 1) {
+			return
+		}
+		err := errors.New("Lỗi máy chủ, chưa sửa được nhà.")
+		defer func() { errc <- err }() // panic ở dưới vẫn trả lời caller (safely của phòng bắt panic)
 		room.home.normalizeHouse()
-		err := f(room.home)
+		err = f(room.home)
 		if err == nil {
+			room.zones["home"] = room.home.Zone() // đổi lô/vị trí: dựng lại khu nhà cho người đang ở trong (M13)
 			err = h.store.Homes.Save(room.home)
 			room.broadcastHome()
 		}
-		errc <- err
 	})
 	select {
 	case err := <-errc:
 		return err
 	case <-time.After(3 * time.Second):
-		return errors.New("Nhà đang bận, thử lại sau.")
+		if state.CompareAndSwap(0, 2) {
+			return errors.New("Nhà đang bận, thử lại sau.")
+		}
+		return <-errc
 	}
 }
 

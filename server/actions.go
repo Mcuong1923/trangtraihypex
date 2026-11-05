@@ -9,8 +9,12 @@ import (
 	"time"
 )
 
+// txnFunc: giao dịch trên tài khoản người chơi (xem txn trong act); true khi đã lưu bền vững.
+type txnFunc func(func() (ActResult, error)) bool
+
 // act xử lý một hành động của người chơi. Hành động chạm tài sản đi qua txn():
 // kiểm tra request ID → áp dụng → lưu bền vững → mới trả kết quả; lưu lỗi thì hoàn nguyên.
+
 
 func (r *Room) act(p *Player, m *inMsg) {
 	now := time.Now()
@@ -32,10 +36,12 @@ func (r *Room) act(p *Player, m *inMsg) {
 	}
 
 	// txn bọc một thay đổi tài sản nguyên tử và idempotent.
-	txn := func(apply func() (ActResult, error)) {
-		if prev, ok := p.acc.Remembered(m.RID); ok {
+	// txn chạy apply như một giao dịch trên tài khoản: lỗi, panic hoặc lưu hỏng thì hoàn nguyên. Trả true khi đã
+	// lưu bền vững (kể cả retry trả kết quả cũ), để caller chỉ dọn trạng thái phòng khi giao dịch thật sự xong.
+	txn := func(apply func() (ActResult, error)) (ok bool) {
+		if prev, done := p.acc.Remembered(m.RID); done {
 			reply(prev) // retry sau timeout: trả đúng kết quả cũ, không cộng lần hai
-			return
+			return true
 		}
 		snap, _ := json.Marshal(p.acc)
 		// Panic giữa apply: hoàn nguyên tài khoản rồi báo lỗi, để bản dở dang không bị lưu ở lần Save sau.
@@ -44,13 +50,14 @@ func (r *Room) act(p *Player, m *inMsg) {
 				restore(p.acc, snap)
 				logPanic("txn "+m.A, e)
 				fail(errors.New("Lỗi máy chủ, giao dịch chưa thực hiện."))
+				ok = false
 			}
 		}()
 		res, err := apply()
 		if err != nil {
 			restore(p.acc, snap)
 			fail(err)
-			return
+			return false
 		}
 		res.OK = true
 		p.acc.Remember(m.RID, res)
@@ -58,9 +65,10 @@ func (r *Room) act(p *Player, m *inMsg) {
 			log.Printf("save %s: %v", p.acc.ID, err)
 			restore(p.acc, snap)
 			fail(errors.New("Máy chủ tạm không lưu được, giao dịch chưa thực hiện. Thử lại sau."))
-			return
+			return false
 		}
 		reply(res)
+		return true
 	}
 
 	// Đang ngồi xe buýt / xe ôm: chỉ được xuống xe, trả lời NPC và vài thao tác không đổi vị trí.
@@ -199,7 +207,6 @@ func (r *Room) act(p *Player, m *inMsg) {
 			fail(fmt.Errorf("Giun chưa chịu ra đâu, giữ thêm %.1f giây nữa!", wait))
 			return
 		}
-		p.dig = nil
 		cd := 1.0
 		if d.Exhausted {
 			cd = 1.5
@@ -207,7 +214,9 @@ func (r *Room) act(p *Player, m *inMsg) {
 		if GameClock(now).Rain {
 			cd *= RainDigCut // mưa: giun ngoi lên, ụ hồi nhanh hơn
 		}
-		txn(func() (ActResult, error) {
+		// Giữ phiên đào tới khi giao dịch chốt xong: lỗi giữa chừng thì tính như bỏ dở (vẫn hồi đất), không để
+		// mất phiên mà không tính hồi, rồi đào lại ngay để gieo lại loài giun (M14).
+		ok := txn(func() (ActResult, error) {
 			if res.Caught {
 				if err := p.acc.CanDig(now, b); err != nil {
 					return ActResult{}, err
@@ -235,6 +244,11 @@ func (r *Room) act(p *Player, m *inMsg) {
 			return ActResult{Msg: d.Worm.Name + " chuồn mất rồi! Lượt này không tính vào hạn đào trong ngày.",
 				Data: map[string]any{"caught": false, "escaped": true, "worm": d.Worm.ID, "slips": res.Slips, "xp": EscapeXP, "notes": notes}}, nil
 		})
+		if ok {
+			p.dig = nil
+		} else {
+			r.abandonDig(p)
+		}
 
 	case "eat_raw":
 		txn(func() (ActResult, error) {
@@ -286,6 +300,7 @@ func (r *Room) act(p *Player, m *inMsg) {
 			r.broadcastZone(p.zone, nil, map[string]any{"t": "fx", "pid": p.PID, "fx": "eat"})
 			if lv > 0 {
 				r.broadcastZone(p.zone, nil, map[string]any{"t": "fx", "pid": p.PID, "fx": "levelup", "level": p.acc.Level})
+				r.levelUp(p, lv, now, &notes) // ăn là nguồn XP chính: lên cấp thì nhận quà ngay (PLAN_LOGIC_GAME 12)
 			}
 			return ActResult{Msg: fmt.Sprintf("Chế biến & ăn %s: −%d thóc, +%d XP, +%d mana", w.Name, w.Fee, w.XP, w.Mana),
 				Data: map[string]any{"notes": notes, "levelUp": lv}}, nil

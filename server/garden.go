@@ -126,6 +126,38 @@ func (a *Account) Harvest(bed string, now time.Time) (string, int, error) {
 	return crop, n, nil
 }
 
+// isHomeBedKind: đồ trang trí trồng được cây trong nhà riêng.
+func isHomeBedKind(kind string) bool { return kind == "luong_rau" || kind == "luong_ca_rot" }
+
+// uprootHomeBed: luống nhà bị dời vào kho (đổi lô) khi đang có cây thì không để cây mồ côi (M2): chín thì thu như
+// hái, chưa chín thì trả lại hạt (và phân ủ nếu đã bón). Kho đầy thì vào hàng chờ quà.
+func (a *Account) uprootHomeBed(oid string, now time.Time) {
+	key := "home:" + oid
+	pl := a.Beds[key]
+	if pl == nil {
+		return
+	}
+	delete(a.Beds, key)
+	give := map[string]int{pl.Seed: 1}
+	if pl.Fertile {
+		give["phan_u"] = 1
+	}
+	if sd := seedByID(pl.Seed); sd != nil && !now.Before(pl.Ready) {
+		give = map[string]int{sd.Crop: sd.Yield}
+		if pl.Fertile {
+			give[sd.Crop]++
+		}
+		if now.After(pl.Wilt) {
+			give = map[string]int{"phan_u": 1}
+		}
+	}
+	if a.addItems(give) != nil {
+		for id, n := range give {
+			a.queuePending(id, n)
+		}
+	}
+}
+
 // ---------- Tưới giúp bạn bè (PLAN_LOGIC_GAME 14) ----------
 // Cây là tài sản trong tài khoản người trồng, nên chỉ tưới giúp được khi người bạn ấy đang ở cùng phòng
 // (cùng kênh ở Ao và vườn, hoặc đang ở nhà khi mình sang thăm): phòng giữ tài khoản của cả hai người.
@@ -178,7 +210,7 @@ func (r *Room) friendBedKey(p, q *Player, id string) (string, error) {
 		}
 		oid := strings.TrimPrefix(id, "home:")
 		for _, o := range r.home.Objects {
-			if o.ID == oid && (o.Kind == "luong_rau" || o.Kind == "luong_ca_rot") {
+			if o.ID == oid && (isHomeBedKind(o.Kind)) {
 				if p.pos.Dist(Vec{float64(o.X), float64(o.Z)}) > 2.4 {
 					return "", errors.New("Lại gần luống rau hơn.")
 				}

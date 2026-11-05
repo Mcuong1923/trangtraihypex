@@ -268,7 +268,7 @@ func (r *Room) arriveV11(p *Player, arr *arrival, now time.Time) {
 	}
 }
 
-func (r *Room) v11Act(p *Player, m *inMsg, reply func(ActResult), fail func(error), txn func(func() (ActResult, error))) {
+func (r *Room) v11Act(p *Player, m *inMsg, reply func(ActResult), fail func(error), txn txnFunc) {
 	now := time.Now()
 	b := r.hub.bal
 	zone := r.zones[p.zone]

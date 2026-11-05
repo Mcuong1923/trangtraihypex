@@ -117,6 +117,10 @@ func (r *Room) homeAct(p *Player, m *inMsg, reply func(ActResult), fail func(err
 			return ActResult{}, h.Move(m.ID, int(math.Round(m.X)), int(math.Round(m.Z)), m.I)
 		})
 	case "home_pickup":
+		if p.acc.Beds["home:"+m.ID] != nil {
+			fail(errors.New("Luống đang có cây. Thu hoạch xong rồi hãy cất luống vào kho."))
+			return
+		}
 		commit(func() (ActResult, error) { return ActResult{Msg: "Đã cất vào kho."}, h.Pickup(m.ID) })
 	case "home_build":
 		if !needCow() {

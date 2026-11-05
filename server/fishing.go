@@ -119,7 +119,7 @@ func (r *Room) abandonFish(p *Player) {
 	r.broadcastZone(p.zone, p, map[string]any{"t": "fx", "pid": p.PID, "fx": "fish_end"})
 }
 
-func (r *Room) fishAct(p *Player, m *inMsg, reply func(ActResult), fail func(error), txn func(func() (ActResult, error))) {
+func (r *Room) fishAct(p *Player, m *inMsg, reply func(ActResult), fail func(error), txn txnFunc) {
 	now, b := time.Now(), r.hub.bal
 	zone := r.zones[p.zone]
 	switch m.A {
@@ -185,10 +185,10 @@ func (r *Room) fishAct(p *Player, m *inMsg, reply func(ActResult), fail func(err
 			fail(fmt.Errorf("Cá chưa chịu lên đâu, giữ thêm %.1f giây nữa!", wait))
 			return
 		}
-		p.fish = nil
 		cd := fishCooldown(b, now, s.Exhausted)
 		item := itemByID(s.Fish.Item)
-		txn(func() (ActResult, error) {
+		// Như đào: giữ phiên tới khi chốt xong, lỗi thì tính như cá sổng (vẫn hồi) thay vì mất phiên (M14).
+		ok := txn(func() (ActResult, error) {
 			var notes []string
 			if res.Caught {
 				lv, err := p.acc.CatchFish(*s.Fish, now, b, cd)
@@ -217,5 +217,10 @@ func (r *Room) fishAct(p *Player, m *inMsg, reply func(ActResult), fail func(err
 			return ActResult{Msg: item.Name + " giật đứt mồi rồi lặn mất!", Data: map[string]any{"caught": false, "escaped": true, "item": item.ID,
 				"slips": res.Slips, "xp": EscapeXP, "notes": notes}}, nil
 		})
+		if ok {
+			p.fish = nil
+		} else {
+			r.abandonFish(p)
+		}
 	}
 }

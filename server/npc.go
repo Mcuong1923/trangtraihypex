@@ -982,7 +982,7 @@ func (r *Room) elderExercise(p *Player, now time.Time) bool {
 }
 
 // npcChoice: người chơi trả lời câu hỏi của cameo (chỉ đường, phỏng vấn, mua của bán rong).
-func (r *Room) npcChoice(p *Player, id string, i int, txn func(func() (ActResult, error)), fail func(error)) {
+func (r *Room) npcChoice(p *Player, id string, i int, txn txnFunc, fail func(error)) {
 	a := r.actors[id]
 	if a == nil || a.Target != p || a.State != "ask" {
 		fail(errors.New("Câu hỏi đã qua rồi."))

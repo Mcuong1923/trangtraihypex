@@ -184,14 +184,17 @@ func (h *Home) houseFoot() (x0, x1, z0, z1 int) {
 	return cx - 1, cx + 1, cz - 1, cz
 }
 
-// clearFoot đưa đồ trang trí nằm trên nền nhà mới về kho, không mất đồ.
-func (h *Home) clearFoot() int {
+// clearFoot đưa đồ trang trí nằm trên nền nhà mới về kho, không mất đồ; luống đang có cây thì thu/trả hạt (M2).
+func (h *Home) clearFoot(a *Account, now time.Time) int {
 	x0, x1, z0, z1 := h.houseFoot()
 	keep, moved := h.Objects[:0:0], 0
 	for _, o := range h.Objects {
 		if o.X >= x0 && o.X <= x1 && o.Z >= z0 && o.Z <= z1 {
 			h.Storage[o.Kind]++
 			moved++
+			if a != nil && isHomeBedKind(o.Kind) {
+				a.uprootHomeBed(o.ID, now)
+			}
 			continue
 		}
 		keep = append(keep, o)
