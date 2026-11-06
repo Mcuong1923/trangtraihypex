@@ -2,7 +2,7 @@
 
 ## Rà soát logic và sửa lỗi (05/11/2026)
 
-Chi tiết: [plans/reports/code-reviewer-261105-1412-game-logic-review.md](plans/reports/code-reviewer-261105-1412-game-logic-review.md). Hiện có 133 test, chạy `go test -count=1 -timeout 25m ./...` (~12 phút); máy Windows hiện chưa có cgo nên chưa chạy `-race`.
+Chi tiết: [plans/reports/code-reviewer-261105-1412-game-logic-review.md](plans/reports/code-reviewer-261105-1412-game-logic-review.md). Hiện có 134 test, chạy `go test -count=1 -timeout 25m ./...` (~12 phút); máy Windows hiện chưa có cgo nên chưa chạy `-race`.
 
 - **Lỗi nghiêm trọng C1–C5, H1–H5:** chặn ID tài khoản đi vòng đường dẫn, bán giun lạ làm sập server, đổi kênh né hồi đất, recover panic trong phòng, hai phiên một tài khoản, gà "ma" khi chuyển phòng, giới hạn tốc độ message, trần câu cá 60/ngày, giới hạn báo cáo.
 - **Lỗi chặn tính năng R1, B1–B3, D1:** "Bán hết" một lệnh, giao dịch và xe ôm không còn tự huỷ, nút xuống xe/mời xuống, Úp ngửa có hạn chọn 10 giây.
@@ -11,6 +11,7 @@ Chi tiết: [plans/reports/code-reviewer-261105-1412-game-logic-review.md](plans
 - **Chốt luật và sửa lỗi còn lại (06/11/2026):** chốt các luật bên dưới và đồng bộ code, plan, README; xe liên trại chạy lịch cố định 3 phút (demo 90 giây), cửa mở 20 giây trước giờ chạy; khu đông sảnh 50, khu khác 25; lời mời hội và chuyển chủ hết hạn sau 24 giờ; đăng nhập tính là có mặt.
 - **Giới hạn người trong khu (06/11/2026):** đi tới cổng khu đã đủ người thì đứng vào hàng chờ, người tới trước vào trước, còn đứng gần cổng là còn giữ chỗ (đi xa, mất mạng, lên xe thì mất), tới lượt được báo và có 30 giây để vào; người giữ vé luôn vào được bến xe; xuống xe (xe người chơi, xe buýt, xe ôm) hoặc đổi kênh ngay trong khu đã đầy thì được đặt ra ngoài cổng khu, kèm thông báo lý do.
 - **Hàng chờ kênh (06/11/2026):** chuồng công cộng đầy thì xếp hàng, được báo thứ tự; có chỗ là tự chuyển sang; người vào game hay đổi chuồng sau không chen trước; tới lượt mà đang PK/trên xe vẫn đứng đầu hàng; mất mạng ngắn vẫn giữ chỗ; huỷ chờ trong bảng Đổi chuồng; mất chỗ khi hết giờ giữ phiên, rời vùng, vào nhà hoặc chờ quá 10 phút.
+- **Cổng khu đầy hiển thị đúng (06/11/2026):** bị chặn ở cổng khu đầy thì client không còn tự cho gà bước lấn vào trong khu (server gửi `area_full`), thanh tên khu không còn đổi sang khu đang chặn.
 - **Đã chốt (06/11/2026):** luống rau nhà theo lô 2/4/6/8; câu cá tối đa 30 con/ngày, riêng 120 lượt đào; thân thiết từ bạn bè tối đa 60/ngày, tặng hoa +5; PK xếp hạng chỉ Mổ nhanh giữa người thật, bỏ trận chỉ tính đã chơi, thắng cùng đối thủ quá 5 trận/tuần không tính; kho 200 gồm nông sản và cá, quà đầy kho vào hàng chờ; khách nghỉ ổ trong nhà người khác như chủ; cấp tối đa 20. Đã làm: tưới giúp, lô trưng bày Xóm, đèn pha xe ban đêm, câu cá, cấp 11–20.
 
 ## Logic game v2 (02/11/2026, theo [PLAN_LOGIC_GAME.md](PLAN_LOGIC_GAME.md))

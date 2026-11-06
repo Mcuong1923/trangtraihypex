@@ -129,6 +129,31 @@ func (r *Room) areaFull(p *Player, area string) bool {
 	return true
 }
 
+// areaLookahead: khoảng nhìn trước khi đi tới cổng khu đầy (đủ bù độ trễ dự đoán của client).
+const areaLookahead = 1.5
+
+// areaWouldBlock giống areaFull nhưng chỉ đọc: không xếp hàng, không đổi hàng chờ.
+func (r *Room) areaWouldBlock(p *Player, area string) bool {
+	z := r.limitedZone(area)
+	if z == nil || area == p.zone || (area == r.stationZone() && p.acc.Booking != nil) {
+		return false
+	}
+	q := r.areaQ[area]
+	ahead := queueIndex(q, p)
+	if ahead < 0 {
+		ahead = len(q)
+	}
+	return r.areaOccupants(area, p)+ahead >= z.Capacity
+}
+
+// sendAreaFull báo client khu đang chặn (tối đa 4 lần/giây) để dự đoán cục bộ không bước lấn vào khu.
+func (r *Room) sendAreaFull(p *Player, area string, now time.Time) {
+	if now.Sub(p.crowdSentAt) > 250*time.Millisecond {
+		p.crowdSentAt = now
+		p.sess.Send(map[string]any{"t": "area_full", "area": area})
+	}
+}
+
 // areaQueuePos: thứ tự (từ 1) của p trong hàng chờ của khu, 0 nếu không chờ.
 func (r *Room) areaQueuePos(p *Player, area string) int {
 	return queueIndex(r.areaQ[area], p) + 1
