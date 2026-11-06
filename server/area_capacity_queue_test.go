@@ -137,3 +137,24 @@ func TestKeepOutSkipsSeatedRider(t *testing.T) {
 		rider.rideOf = nil
 	})
 }
+
+// Đổi kênh mà chỗ cũ nằm trong khu đã đầy ở kênh mới: đứng ngoài cổng và được báo lý do.
+func TestSwitchRoomIntoFullAreaToasts(t *testing.T) {
+	e := newEnv(t, t.TempDir())
+	a, _ := e.seeded(t, "doikenh", "Gà Đổi Kênh", func(*Account) {})
+	b, _ := e.seeded(t, "trongvuon2", "Gà Trong Vườn", func(*Account) {})
+	old := Zones["garden"].Capacity
+	Zones["garden"].Capacity = 1
+	t.Cleanup(func() { Zones["garden"].Capacity = old })
+	first := e.roomOf(t)
+	e.warp(b, "garden") // kênh đầu: vườn đã đủ 1 người
+	a.send(msg{"t": "switch_room", "room": "new"})
+	a.expect("welcome", 2*time.Second)
+	e.warp(a, "garden") // kênh mới: a đứng trong vườn
+	a.send(msg{"t": "switch_room", "room": first.ID})
+	w := a.expect("welcome", 2*time.Second)
+	if w["zone"] == "garden" {
+		t.Fatal("đổi về kênh có vườn đầy phải đứng ngoài cổng")
+	}
+	a.toastHas("đang đông nên bạn đứng ngoài cổng")
+}

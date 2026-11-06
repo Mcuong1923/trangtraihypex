@@ -246,7 +246,8 @@ func (r *Room) add(s *Session) {
 	p.ry = math.Pi
 	p.lastStage = p.acc.HungerStage(r.hub.bal)
 	r.players[s] = p
-	if r.keepOutOfFullArea(p) != "" { // đổi kênh/tới vùng ngay trong khu đã đầy: đứng ngoài cổng
+	crowded := r.keepOutOfFullArea(p) // đổi kênh/tới vùng ngay trong khu đã đầy: đứng ngoài cổng
+	if crowded != "" {
 		p.zone = r.world.AreaAt(p.pos)
 	}
 	now := time.Now()
@@ -265,7 +266,10 @@ func (r *Room) add(s *Session) {
 			log.Printf("starter %s: %v", p.acc.ID, err)
 		}
 	}
-	defer func() {
+	defer func() { // gửi sau welcome để client đã sẵn sàng hiện thông báo
+		if crowded != "" {
+			r.toast(p, "warn", crowded+" đang đông nên bạn đứng ngoài cổng. Đi tới cổng để xếp hàng vào nhé.")
+		}
 		if starter {
 			r.toast(p, "good", fmt.Sprintf("🎁 Cụ Cục tặng %d thóc khởi nghiệp. Tiêu cho khéo nhé!", r.hub.bal.StarterThoc))
 		}
