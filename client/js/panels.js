@@ -454,10 +454,12 @@ export function openRooms(list) {
   if (G.modal !== 'rooms') return;
   setSheetBody(`<p class="mut" style="margin:0 0 10px">Mọi chuồng có cùng bố cục và tiện ích. Đổi chuồng không reset nhiệm vụ, hồi đào hay phần thưởng; mỗi chuồng tối đa ${G.catalog.roomCap} người.</p>
     ${list.map((r) => `<div class="row"><div class="ico" style="background:#f1e3c6">🏠</div>
-      <div class="meta"><div class="nm">${esc(r.name)}</div><div class="sub">${r.count}/${r.cap} gà${r.here ? ' · bạn đang ở đây' : ''}</div></div>
-      <div class="act">${r.here ? '' : `<button class="mini hot" data-room="${r.id}" ${r.count >= r.cap ? 'disabled' : ''}>${r.count >= r.cap ? 'Đầy' : 'Đổi sang'}</button>`}</div></div>`).join('')}
+      <div class="meta"><div class="nm">${esc(r.name)}</div><div class="sub">${r.count}/${r.cap} gà${r.here ? ' · bạn đang ở đây' : ''}${r.queue ? ` · ${r.queue} đang chờ` : ''}${r.mine ? ` · bạn đứng thứ ${r.mine}` : ''}</div></div>
+      <div class="act">${r.here ? '' : r.mine ? '<button class="mini sec" data-unqueue>Huỷ chờ</button>'
+        : `<button class="mini hot" data-room="${r.id}">${r.count + r.queue >= r.cap ? 'Xếp hàng' : 'Đổi sang'}</button>`}</div></div>`).join('')}
     <button class="btn sec block" data-room="new">Mở chuồng mới</button>`);
   document.querySelectorAll('[data-room]').forEach((b) => (b.onclick = () => { closeSheet(); G.net.raw({ t: 'switch_room', room: b.dataset.room }); }));
+  document.querySelectorAll('[data-unqueue]').forEach((b) => (b.onclick = () => { closeSheet(); G.net.raw({ t: 'room_queue_cancel' }); }));
 }
 
 // ---------- Cứu đói ----------

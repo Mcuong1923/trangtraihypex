@@ -285,6 +285,7 @@ const (
 	BagCapacity   = 60  // tổng số giun trong túi
 	PKInviteTTL   = 20 * time.Second
 	PKReinviteGap = time.Minute      // mời PK lại cùng một người
+	RoomQueueHold = 10 * time.Minute // hàng chờ chuồng đầy: chờ quá lâu thì tự rời hàng
 	AreaQueueHold = 30 * time.Second // hàng chờ cổng khu: thôi đi vào quá lâu thì mất chỗ; tới lượt thì giữ chỗ chừng này
 	PeckDuration  = 8 * time.Second
 	PKCountdown   = 3 * time.Second
