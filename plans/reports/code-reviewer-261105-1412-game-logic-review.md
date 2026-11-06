@@ -297,4 +297,4 @@ Còn lại (thấp):
 
 Test mới: `server/rules_and_low_fixes_regression_test.go` (15 test). Tổng cộng 122 test.
 
-**Bổ sung 06/11/2026:** giới hạn người trong khu đã chặn cả xuống xe và đổi kênh vào khu đầy (đặt ra ngoài cổng), thêm hàng chờ ở cổng khu (`server/area_capacity_queue.go`, 6 test mới, tổng 128; vào kênh bị đặt ngoài cổng có thông báo lý do).
+**Bổ sung 06/11/2026:** giới hạn người trong khu đã chặn cả xuống xe và đổi kênh vào khu đầy (đặt ra ngoài cổng), thêm hàng chờ ở cổng khu (`server/area_capacity_queue.go`, 6 test mới, tổng 128; vào kênh bị đặt ngoài cổng có thông báo lý do). Thêm hàng chờ kênh khi chuồng công cộng đầy (`server/channel_queue.go`, 5 test, tổng 133).

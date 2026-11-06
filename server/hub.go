@@ -28,6 +28,7 @@ type Hub struct {
 	homes       map[string]*Room // chủ nhà → phòng nhà đang mở
 	homeInvites map[string]homeInvite
 	lastPublic  map[*Session]string
+	roomQ       map[string][]*roomWait // hàng chờ các chuồng đầy (channel_queue.go)
 
 	staff       map[string]string // username → mod | econ | admin
 	devWarp     bool              // -devwarp: cho phép "go" nhảy khu, chỉ để chụp ảnh QA
@@ -56,6 +57,7 @@ func NewHub(store *Store, bal Balance) *Hub {
 		homeInvites: map[string]homeInvite{}, lastPublic: map[*Session]string{}, staff: map[string]string{}, festival: fest,
 		weekly: OpenWeekly(store.dir)}
 	go h.contractJanitor()
+	go h.roomQueueLoop()
 	return h
 }
 
@@ -152,15 +154,15 @@ func (s *Session) writePump() {
 }
 
 type inMsg struct {
-	throttled bool // do allowMsg đặt, không đến từ JSON: act vượt giới hạn tần suất
+	throttled bool    // do allowMsg đặt, không đến từ JSON: act vượt giới hạn tần suất
 	T         string  `json:"t"`
-	Token string  `json:"token"`
-	X     float64 `json:"x"`
-	Z     float64 `json:"z"`
-	Text  string  `json:"text"`
-	E     string  `json:"e"`
-	Room  string  `json:"room"`
-	C     float64 `json:"c"`
+	Token     string  `json:"token"`
+	X         float64 `json:"x"`
+	Z         float64 `json:"z"`
+	Text      string  `json:"text"`
+	E         string  `json:"e"`
+	Room      string  `json:"room"`
+	C         float64 `json:"c"`
 	// tạo nhân vật
 	Name  string `json:"name"`
 	Color string `json:"color"`
@@ -281,6 +283,8 @@ func (s *Session) handle(m *inMsg) {
 		s.Send(map[string]any{"t": "rooms", "rooms": s.hub.RoomList(s)})
 	case "switch_room":
 		s.hub.Switch(s, m.Room)
+	case "room_queue_cancel":
+		s.hub.CancelRoomQueue(s)
 	case "ping":
 		s.Send(map[string]any{"t": "pong", "c": m.C})
 	case "guild", "guild_list", "guild_join", "guild_approve", "guild_deny", "guild_invite", "guild_leave", "guild_kick",
@@ -351,6 +355,7 @@ func (h *Hub) Hello(s *Session, token string, resume bool) {
 				h.sessions[id] = s
 				h.lastPublic[s] = h.lastPublic[old]
 				delete(h.lastPublic, old)
+				h.rebindQueueLocked(old, s)
 				h.mu.Unlock()
 				old.room.Store(nil)
 				s.room.Store(r)
@@ -452,14 +457,14 @@ func (h *Hub) placeIn(s *Session, prefer, region string, arr *arrival) {
 // pickRoomLocked chọn chuồng trong vùng còn đủ seats chỗ (cả nhóm đi cùng xe vào cùng một bản sao).
 func (h *Hub) pickRoomLocked(prefer, region string, seats int) *Room {
 	for _, r := range h.rooms {
-		if r.ID == prefer && r.Region == region && r.Count()+seats <= RoomCapacity {
+		if r.ID == prefer && r.Region == region && r.Count()+len(h.roomQ[r.ID])+seats <= RoomCapacity {
 			return r
 		}
 	}
 	var target *Room
 	best := -1
 	for _, r := range h.rooms {
-		if c := r.Count(); r.Region == region && c+seats <= RoomCapacity && c > best {
+		if c := r.Count(); r.Region == region && c+len(h.roomQ[r.ID])+seats <= RoomCapacity && c > best {
 			best, target = c, r
 		}
 	}
@@ -520,22 +525,46 @@ func (h *Hub) Switch(s *Session, roomID string) {
 	if target == nil && roomID == "new" {
 		target = h.emptyOrNewRoomLocked(region, cur)
 	}
-	if target == nil || target.Count() >= RoomCapacity {
+	if target == nil {
 		h.mu.Unlock()
-		s.Send(map[string]any{"t": "toast", "kind": "warn", "text": "Chuồng này đã đầy hoặc không ở cùng vùng. Chọn chuồng khác nhé."})
+		s.Send(map[string]any{"t": "toast", "kind": "warn", "text": "Chuồng này không ở cùng vùng. Chọn chuồng khác nhé."})
+		return
+	}
+	if target.Count()+h.queueAheadLocked(target.ID, s) >= RoomCapacity {
+		if cur.Kind != "public" {
+			h.mu.Unlock()
+			s.Send(map[string]any{"t": "toast", "kind": "warn", "text": target.Name + " đang đầy. Ra chuồng công cộng rồi xếp hàng nhé."})
+			return
+		}
+		pos := h.enqueueLocked(s, target.ID, time.Now())
+		h.mu.Unlock()
+		s.Send(map[string]any{"t": "toast", "kind": "warn", "text": fmt.Sprintf(
+			"%s đang đầy. Bạn đứng thứ %d trong hàng chờ, có chỗ sẽ tự chuyển sang (huỷ chờ trong bảng Đổi chuồng).", target.Name, pos)})
 		return
 	}
 	target.reserve()
-	h.lastPublic[s] = target.ID
 	h.mu.Unlock()
+	if !h.moveReserved(s, cur, target) {
+		s.Send(map[string]any{"t": "toast", "kind": "warn", "text": "Đang trong trận PK hoặc đang trên xe, chưa đổi chuồng được."})
+		return
+	}
+	h.mu.Lock()
+	h.leaveQueuesLocked(s) // đã sang chuồng khác thì thôi chờ
+	h.mu.Unlock()
+}
 
+// moveReserved chuyển phiên s từ cur sang target đã được giữ chỗ (gọi khi đang giữ s.moveMu). Không rời được
+// (đang PK, đang trên xe) thì trả chỗ và trả về false.
+func (h *Hub) moveReserved(s *Session, cur, target *Room) bool {
 	ok := true
 	cur.DoWait(func() { ok = cur.canLeave(s) })
 	if !ok {
 		target.unreserve()
-		s.Send(map[string]any{"t": "toast", "kind": "warn", "text": "Đang trong trận PK hoặc đang trên xe, chưa đổi chuồng được."})
-		return
+		return false
 	}
+	h.mu.Lock()
+	h.lastPublic[s] = target.ID
+	h.mu.Unlock()
 	var arr *arrival
 	cur.DoWait(func() {
 		if p := cur.players[s]; p != nil && cur.world != nil && cur.Region == target.Region {
@@ -547,6 +576,7 @@ func (h *Hub) Switch(s *Session, roomID string) {
 	s.arrive = arr
 	s.room.Store(target)
 	target.DoWait(func() { target.add(s) })
+	return true
 }
 
 // TransferRegion đưa một nhóm (1 người hoặc cả xe) sang vùng khác, giữ đủ chỗ trong cùng một bản sao trước khi chuyển.
@@ -607,6 +637,7 @@ func (h *Hub) dropSession(s *Session) {
 		delete(h.sessions, s.acc.ID)
 	}
 	delete(h.lastPublic, s)
+	h.leaveQueuesLocked(s)
 	h.mu.Unlock()
 	if r := s.room.Swap(nil); r != nil {
 		r.DoWait(func() { r.remove(s) })
@@ -620,6 +651,8 @@ type roomInfo struct {
 	Count int    `json:"count"`
 	Cap   int    `json:"cap"`
 	Here  bool   `json:"here"`
+	Queue int    `json:"queue"` // số người đang chờ
+	Mine  int    `json:"mine"`  // thứ tự của mình trong hàng (0: không chờ)
 }
 
 func (h *Hub) RoomList(s *Session) []roomInfo {
@@ -633,7 +666,11 @@ func (h *Hub) RoomList(s *Session) []roomInfo {
 	var out []roomInfo
 	for _, r := range h.rooms {
 		if r.Region == region {
-			out = append(out, roomInfo{r.ID, r.Name, r.Count(), RoomCapacity, r == cur})
+			mine := h.queueAheadLocked(r.ID, s) + 1
+			if mine > len(h.roomQ[r.ID]) {
+				mine = 0
+			}
+			out = append(out, roomInfo{r.ID, r.Name, r.Count(), RoomCapacity, r == cur, len(h.roomQ[r.ID]), mine})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })

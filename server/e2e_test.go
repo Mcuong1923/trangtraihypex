@@ -766,8 +766,12 @@ func TestRoomCapacityAndSwitch(t *testing.T) {
 	if w["room"].(map[string]any)["id"] != rooms[1].ID || w["zone"] != ZoneLobby {
 		t.Fatal("đổi chuồng phải vào sảnh chuồng đích")
 	}
+	// Người đang xếp hàng ở chuồng đầy được tự chuyển vào chỗ vừa trống (hàng chờ kênh).
+	if w := last.expect("welcome", 3*time.Second); w["room"].(map[string]any)["id"] != rooms[0].ID {
+		t.Fatal("người đứng chờ phải được chuyển vào chuồng vừa có chỗ")
+	}
 	time.Sleep(50 * time.Millisecond)
-	if rooms[0].Count() != RoomCapacity-1 || rooms[1].Count() != 2 {
+	if rooms[0].Count() != RoomCapacity || rooms[1].Count() != 1 {
 		t.Fatalf("sĩ số sau khi đổi: %d / %d", rooms[0].Count(), rooms[1].Count())
 	}
 }
