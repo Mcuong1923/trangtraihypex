@@ -7,6 +7,7 @@ import * as V from './v11.js';
 import * as MAP from './map.js';
 import { mulberry32 } from './tug.js';
 import { sfx } from './audio.js';
+import { setExhibition } from './arena-scoreboard.js';
 
 const T = window.THREE;
 G.actors = new Map();
@@ -339,6 +340,10 @@ export function onScene(m) {
   // Lịch các pha mổ từ seed: mọi client dựng cùng một trận.
   const hits = [];
   for (let t = 5; t < 51; t += 1.1 + rnd() * 0.7) hits.push({ t, who: rnd() < 0.5 ? 0 : 1 });
+  // Bên thắng (máy chủ chọn) phải mổ trúng nhiều hơn, để tỉ số trên bảng khớp kết quả KO; mọi client đổi giống nhau.
+  let lead = 0;
+  for (const h of hits) lead += h.who === m.winner ? 1 : -1;
+  for (let i = hits.length - 1; lead <= 0 && i >= 0; i--) if (hits[i].who !== m.winner) { hits[i].who = m.winner; lead += 2; }
   show = { m, f, hits, t0: performance.now() / 1000 - (m.since || 0), said: new Set() };
   // Ngày hội: Chó Mực đứng ở sân tỷ thí nên sân khấu ao có một bạn chó trọng tài riêng.
   if (where !== 'arena') {
@@ -347,12 +352,20 @@ export function onScene(m) {
   }
 }
 export function onSceneEnd(m) { if (show && (!m.id || show.m.id === m.id)) stopShow(); }
-function stopShow() { if (!show) return; for (const c of show.f) G.world.scene.remove(c); show = null; }
+function stopShow() { if (!show) return; for (const c of show.f) G.world.scene.remove(c); show = null; setExhibition(null); }
+// Tỉ số trận biểu diễn trên bảng gỗ ở Sân tỷ thí: đếm cú mổ đã diễn; sau giây 52 là KO.
+function showBoard(t) {
+  if ((show.m.where || 'arena') !== 'arena') return;
+  const sc = [0, 0];
+  for (const h of show.hits) if (h.t <= Math.min(t, 52)) sc[h.who]++;
+  setExhibition({ names: show.m.names, a: sc[0], b: sc[1], winner: show.m.winner, ko: t > 52 });
+}
 
 function updateShow() {
   if (!show) return;
   const t = performance.now() / 1000 - show.t0, m = show.m, [a, b] = show.f;
   if (t > m.dur) { stopShow(); return; }
+  showBoard(t);
   const near = Math.min(1, Math.max(0, (t - 0.5) / 3));
   const pa = arenaPoint(-3.6 + 2.3 * near, 0.2), pb = arenaPoint(3.6 - 2.3 * near, 0.2);
   a.position.copy(pa); b.position.copy(pb);

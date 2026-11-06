@@ -46,7 +46,7 @@ Lượt xe miễn phí (tối đa 2, hồi 1 lượt/5 phút), giá vé, xác su
 
 ```bash
 cd server
-go test -count=1 -timeout 25m ./...                              # 134 test: luật + end-to-end qua WebSocket (~12 phút); -race cần cgo/gcc
+go test -count=1 -timeout 25m ./...                              # 136 test: luật + end-to-end qua WebSocket (~12 phút); -race cần cgo/gcc
 NODE=/duong/dan/node go test -run TestTugMatchesClient .         # so khớp giằng co Go ↔ client/js/tug.js (bỏ qua nếu không có Node)
 go run ./cmd/loadtest -url http://localhost:8080 -n 1000 -dur 3m # load test với bot
 ```
