@@ -296,3 +296,5 @@ Còn lại (thấp):
 - "Phát lại RID cũ để đi xe hoặc đóng lượt đào" không xảy ra được, vì `act` trả kết quả cũ trước mọi xử lý.
 
 Test mới: `server/rules_and_low_fixes_regression_test.go` (15 test). Tổng cộng 122 test.
+
+**Bổ sung 06/11/2026:** giới hạn người trong khu đã chặn cả xuống xe và đổi kênh vào khu đầy (đặt ra ngoài cổng), thêm hàng chờ ở cổng khu (`server/area_capacity_queue.go`, 5 test mới, tổng 127).

@@ -210,6 +210,12 @@ func (r *Room) dismount(q *Player, why string) {
 	}
 	q.rideOf = nil
 	q.pos = r.safeBeside(q.zone, q.pos)
+	if !q.leaving {
+		if t := r.keepOutOfFullArea(q); t != "" {
+			why = t + " đang đông, bạn xuống xe ở ngoài cổng."
+		}
+		r.enterArea(q)
+	}
 	if why != "" {
 		r.toast(q, "warn", why)
 	}

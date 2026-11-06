@@ -593,22 +593,6 @@ func (r *Room) broadcastLook(p *Player) {
 		"pet": petOf(p.acc), "guild": gname, "gcolor": gcolor})
 }
 
-// areaFull: bước sang khu khác mà khu đó đã đủ sức chứa (Zone.Capacity, M9). Khu ngoài trời không giới hạn riêng
-// vì phòng đã giới hạn RoomCapacity.
-func (r *Room) areaFull(p *Player, area string) bool {
-	z := r.zones[area]
-	if area == p.zone || z == nil || z.Outdoor || z.Capacity <= 0 {
-		return false
-	}
-	n := 0
-	for _, q := range r.players {
-		if q.zone == area && q.rideOf == nil && q.carrier == nil {
-			n++
-		}
-	}
-	return n >= z.Capacity
-}
-
 // enterArea cập nhật khu theo vị trí sau mỗi bước đi trên bản đồ liền.
 func (r *Room) enterArea(p *Player) {
 	if r.world == nil {
