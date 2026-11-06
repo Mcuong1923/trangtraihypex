@@ -2,7 +2,7 @@
 
 ## Rà soát logic và sửa lỗi (05/11/2026)
 
-Chi tiết: [plans/reports/code-reviewer-261105-1412-game-logic-review.md](plans/reports/code-reviewer-261105-1412-game-logic-review.md). Hiện có 136 test, chạy `go test -count=1 -timeout 25m ./...` (~12 phút); máy Windows hiện chưa có cgo nên chưa chạy `-race`.
+Chi tiết: [plans/reports/code-reviewer-261105-1412-game-logic-review.md](plans/reports/code-reviewer-261105-1412-game-logic-review.md). Hiện có 137 test (1 test chỉ chạy trên Windows), chạy `go test -count=1 -timeout 25m ./...` (~12 phút); máy Windows hiện chưa có cgo nên chưa chạy `-race`.
 
 - **Lỗi nghiêm trọng C1–C5, H1–H5:** chặn ID tài khoản đi vòng đường dẫn, bán giun lạ làm sập server, đổi kênh né hồi đất, recover panic trong phòng, hai phiên một tài khoản, gà "ma" khi chuyển phòng, giới hạn tốc độ message, trần câu cá 60/ngày, giới hạn báo cáo.
 - **Lỗi chặn tính năng R1, B1–B3, D1:** "Bán hết" một lệnh, giao dịch và xe ôm không còn tự huỷ, nút xuống xe/mời xuống, Úp ngửa có hạn chọn 10 giây.
@@ -13,6 +13,7 @@ Chi tiết: [plans/reports/code-reviewer-261105-1412-game-logic-review.md](plans
 - **Hàng chờ kênh (06/11/2026):** chuồng công cộng đầy thì xếp hàng, được báo thứ tự; có chỗ là tự chuyển sang; người vào game hay đổi chuồng sau không chen trước; tới lượt mà đang PK/trên xe vẫn đứng đầu hàng; mất mạng ngắn vẫn giữ chỗ; huỷ chờ trong bảng Đổi chuồng; mất chỗ khi hết giờ giữ phiên, rời vùng, vào nhà hoặc chờ quá 10 phút.
 - **Cổng khu đầy hiển thị đúng (06/11/2026):** bị chặn ở cổng khu đầy thì client không còn tự cho gà bước lấn vào trong khu (server gửi `area_full`), thanh tên khu không còn đổi sang khu đang chặn.
 - **Bảng điểm và KO ở Sân tỷ thí (06/11/2026):** bảng gỗ 3D trên tường sau sân hiện tên, tỉ số, đồng hồ/lượt của trận đang đấu cho cả khán giả (trận mới nhất lên bảng, tỉ số cập nhật tối đa 5 lần/giây, giữ kết quả 5 giây rồi về trống; người vào sau thấy ngay); không có trận thật thì hiện tỉ số trận biểu diễn của NPC. Gà thua ngã nghiêng có sao vàng xoay quanh đầu 2 giây, gà thắng dang cánh nhún nhảy, bảng hiện "KO!" (thắng vì đối thủ bỏ trận thì ghi "đối thủ bỏ trận").
+- **Lưu file ổn định trên Windows (06/11/2026):** ghi file tạm rồi đổi tên đè lên file dữ liệu đôi khi bị Windows từ chối ("Access is denied") khi trình diệt virus/đánh chỉ mục đang mở file vừa ghi; nay tự thử lại tối đa ~130 ms. Hết test `TestContractWorkSaveFailureDropsCredit` báo lỗi ngẫu nhiên (trước ~1–2% lượt chạy).
 - **Đã chốt (06/11/2026):** luống rau nhà theo lô 2/4/6/8; câu cá tối đa 30 con/ngày, riêng 120 lượt đào; thân thiết từ bạn bè tối đa 60/ngày, tặng hoa +5; PK xếp hạng chỉ Mổ nhanh giữa người thật, bỏ trận chỉ tính đã chơi, thắng cùng đối thủ quá 5 trận/tuần không tính; kho 200 gồm nông sản và cá, quà đầy kho vào hàng chờ; khách nghỉ ổ trong nhà người khác như chủ; cấp tối đa 20. Đã làm: tưới giúp, lô trưng bày Xóm, đèn pha xe ban đêm, câu cá, cấp 11–20.
 
 ## Logic game v2 (02/11/2026, theo [PLAN_LOGIC_GAME.md](PLAN_LOGIC_GAME.md))
