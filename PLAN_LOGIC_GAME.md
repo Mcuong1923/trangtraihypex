@@ -4,7 +4,7 @@ Ngày: 02/11/2026 · Phiên bản 1.1 · Trạng thái: **đã triển khai P0�
 
 Plan này biến các yêu cầu chơi thử của chủ dự án thành luật cụ thể có số liệu, thay đổi mã theo module, giao thức mạng, kiểm thử và lộ trình. Nó bổ sung cho [PLAN.md](PLAN.md) (luật gốc), [PLAN_THE_GIOI_3D.md](PLAN_THE_GIOI_3D.md) (bản đồ liền) và [PLAN_GIAO_DIEN_BO_2.md](PLAN_GIAO_DIEN_BO_2.md) (mỹ thuật). Chỗ nào plan này đổi số liệu của PLAN.md, khi triển khai phải sửa luôn PLAN.md để chỉ còn một nguồn đúng.
 
-## Trạng thái triển khai (02/11/2026)
+## Trạng thái triển khai (02/11/2026, cập nhật 06/11/2026)
 
 | # | Yêu cầu | Trạng thái | Mã chính |
 | --- | --- | --- | --- |
@@ -21,15 +21,15 @@ Plan này biến các yêu cầu chơi thử của chủ dự án thành luật 
 | 11 | Cây che tầm nhìn | ✅ cây chắn camera mờ dần | `scenery.js` |
 | 12 | Đào: mổ → popup → cận cảnh → giữ để giằng co | ✅ máy chủ chạy lại mô phỏng; `tug.js` khớp 1-1 (test Node) | `dig.go`, `dig.js`, `tug.js` |
 | 13 | Chủ đầu tư bán đất, chọn vật liệu xây nhà | ✅ 3 vị trí, 2 thiết kế × rơm/gỗ/gạch, nâng cấp | `estate.go`, `life.js` |
-| 14 | Lên cấp tặng thóc, vật liệu, thức ăn, hạt, trứng | ✅ bảng cấp 2–10, kho 200 món | `items.go`, `daily.go` |
+| 14 | Lên cấp tặng thóc, vật liệu, thức ăn, hạt, trứng | ✅ bảng cấp 2–20, kho 200 đơn vị | `items.go`, `daily.go` |
 | 15 | Trứng nở thú cưng có kỹ năng | ✅ 3 loại trứng, 7 loài/7 kỹ năng, giới hạn cộng dồn | `pets.go`, `v11.js` |
 | 16 | Logic bổ sung | ✅ điểm danh 7 ngày, nghỉ ổ (cả cạnh bạn bè), ngày/đêm, mưa, nhiệm vụ NPC, xếp hạng tuần | `clock.go`, `weekly.go`, `community.go` |
 
 **Khác đặc tả hoặc để sau:**
 - Luống cộng đồng làm theo kiểu "mỗi người một lớp": ai cũng trồng được ở 12 luống, mỗi người giữ tối đa 1, chỉ thấy cây của mình. Lý do giống nhà riêng: không có chuyện hết luống hay giành luống.
-- Chưa làm: tưới giúp luống bạn bè (mục 14), lô trưng bày nhà người chơi ở Xóm (P5b, mục 13.2), đèn pha xe NPC ban đêm (mục 9.1), câu cá và cấp 11–20 (mục 16, ưu tiên thấp).
+- Đã làm sau 02/11 (06/11/2026, trước đó ghi là chưa làm): tưới giúp luống bạn bè (mục 14), lô trưng bày nhà người chơi ở Xóm (P5b, mục 13.2), đèn pha xe NPC ban đêm (mục 9.1, bật khi trời tối), câu cá (mục 16), cấp 11–20 (mục 12).
 - Xe buýt luôn 3 xe thay vì 2/3 theo số người: mỗi bến có xe khoảng 1 phút một chuyến.
-- Bảng xếp hạng tuần chỉ tính PK với người thật (không tính Gà Máy) để không cày điểm.
+- Bảng xếp hạng tuần chỉ tính Mổ nhanh giữa hai người thật (không tính Úp ngửa, Gà Máy) để không cày điểm (chốt 06/11/2026).
 
 ## 0. Yêu cầu → mục trong plan
 
@@ -467,7 +467,7 @@ E2E người mới: vào sảnh nhận `say` từ Cụ Cục có tên mình tron
 Hiện chỉ có `Worms`, `Food`, `Eggs` (số nguyên). Thêm kho vật phẩm chung làm nền cho thưởng cấp, xây nhà, hạt giống, trứng, phiếu giảm giá.
 
 - `Account.Items map[string]int`; bảng `ItemDefs` gồm id, tên, emoji, nhóm, giá mua, giá bán lại, có giao dịch được không, giới hạn chồng.
-- Kho tối đa **200 đơn vị** vật liệu và hạt giống, tách khỏi túi giun 60.
+- Kho tối đa **200 đơn vị** gồm vật liệu, hạt giống, nông sản và cá; trứng không tính; tách khỏi túi giun 60 (chốt 06/11/2026). Kho đầy: chặn thu hoạch/câu kèm thông báo; quà cấp và quà điểm danh vào **hàng chờ quà** (tối đa 200 món, nhận ở Túi đồ → Kho) (chốt 06/11/2026).
 - Chuyển dữ liệu: `Eggs` → `Items["trung_thuong"]`; `Food` giữ map riêng ở bản đầu, giao diện gộp chung tab "Kho".
 
 | Nhóm | Vật phẩm | Mua ở đâu | Giá mua | Giao dịch |
@@ -475,6 +475,7 @@ Hiện chỉ có `Worms`, `Food`, `Eggs` (số nguyên). Thêm kho vật phẩm 
 | Vật liệu | Rơm, Gỗ, Đinh, Đá, Gạch, Ngói | Tiệm vật liệu của Bò Mộc (Xóm) | 3 / 8 / 2 / 6 / 12 / 10 thóc | được (từ cấp 3) |
 | Hạt giống | Cải, Cà rốt, Bí ngô, Hoa | Quầy thức ăn (chợ) | 3 / 5 / 12 / 6 thóc | được |
 | Nông sản | Cải, Cà rốt, Bí ngô, Bó hoa | thu hoạch | bán ở quầy thức ăn | được |
+| Cá | Cá rô, Cá chép, Cá trê, Cá vàng | câu ở ao | bán ở quầy thức ăn, hoặc ăn | được |
 | Trứng | Trứng thường, Trứng đốm, Trứng vàng | thưởng cấp, nhiệm vụ, sự kiện | không bán | không |
 | Phiếu | Giảm 10% xe đầu tiên | Dê Thợ Máy tặng | — | không |
 
@@ -482,7 +483,7 @@ Hiện chỉ có `Worms`, `Food`, `Eggs` (số nguyên). Thêm kho vật phẩm 
 
 ## 12. Lên cấp tặng thưởng
 
-- Đào cho XP (mục 4.4), ăn vẫn là nguồn XP chính. Cấp tối đa giữ 10 ở bản này; mở tới 20 là một giai đoạn sau (cần thêm đường cong XP và nội dung).
+- Đào cho XP (mục 4.4), ăn vẫn là nguồn XP chính. **Cấp tối đa 20** (chốt 06/11/2026, đã làm): từ cấp 10, XP để lên cấp L là 440 + 90×(L−10).
 - Thưởng nhận **tự động khi lên cấp** (idempotent theo `LevelRewards[cap]`), hiện bảng quà và Cụ Cục chúc mừng. Mốc trứng cũ (cấp 5/7/9) gộp vào bảng; ai đã nhận thì không nhận lại.
 
 | Cấp | Thóc | Vật phẩm | Mở khoá |
@@ -496,6 +497,16 @@ Hiện chỉ có `Worms`, `Food`, `Eggs` (số nguyên). Thêm kho vật phẩm 
 | 8 | 200 | 1 trứng đốm, 2 suất ăn | — |
 | 9 | 250 | 10 ngói, 10 gạch, 1 trứng thường | — |
 | 10 | 300 | 1 trứng vàng, danh hiệu "Gà Lão Làng" | lập Hội Gà |
+| 11 | 320 | 15 gỗ, 15 đinh | — |
+| 12 | 350 | 10 đá, 10 gạch | lô đồi (6.000 thóc) |
+| 13 | 380 | 1 trứng đốm, 3 hạt bí ngô | — |
+| 14 | 400 | 3 suất ăn, 10 ngói | — |
+| 15 | 450 | 20 gạch, 10 ngói | nhà gạch hai tầng |
+| 16 | 480 | 1 trứng vàng | — |
+| 17 | 520 | 20 gỗ, 10 gạch | — |
+| 18 | 560 | 1 trứng đốm, 3 hạt hoa | — |
+| 19 | 600 | 20 gạch, 15 ngói | — |
+| 20 | 700 | 1 trứng vàng, danh hiệu "Trưởng Làng" | — |
 
 ## 13. Mua đất và xây nhà
 
@@ -510,11 +521,14 @@ Mỗi người có nhà riêng là một phòng riêng ("Tổ nhỏ" miễn phí
   - Khi người chơi chưa đủ thóc: "Chưa đủ thóc à? Không sao, đào thêm vài con giun vàng là có ngay!"
 - Mua đất chuyển từ menu nhà sang hội thoại với Chủ đầu tư. Giao diện là bản đồ khu đất có các lô vẽ sẵn.
 
-| Lô | Kích thước khu nhà | Giá | Cấp |
-| --- | --- | --- | --- |
-| Tổ nhỏ (sẵn có) | 9 × 8 | 0 | 1 |
-| Lô tiêu chuẩn | 13 × 11 | 1.200 | 3 |
-| Lô rộng | 17 × 14 | 3.000 | 6 |
+| Lô | Kích thước khu nhà | Giá | Cấp | Luống rau nhà (chốt 06/11/2026) |
+| --- | --- | --- | --- | --- |
+| Tổ nhỏ (sẵn có) | 9 × 8 | 0 | 1 | 2 |
+| Lô tiêu chuẩn | 13 × 11 | 1.200 | 3 | 4 |
+| Lô rộng | 17 × 14 | 3.000 | 6 | 6 |
+| Lô đồi | 21 × 17 | 6.000 | 12 | 8 |
+
+Số luống rau giới hạn cả lúc đặt luống lẫn số luống đang trồng cùng lúc.
 
 | Vị trí (phụ phí, chỉ đổi cảnh quanh nhà) | Phụ phí |
 | --- | --- |
@@ -522,7 +536,7 @@ Mỗi người có nhà riêng là một phòng riêng ("Tổ nhỏ" miễn phí
 | Ven ao (có ao nhỏ, lau sậy) | +300 |
 | Đồi thông (cây thông, nhìn ra núi) | +600 |
 
-- **Nhà vẫn là phòng riêng**, nên không có chuyện hết lô và mua bán được không giới hạn người. Để làng có cảm giác "khu nhà thật", Xóm Rơm Vàng có **8 lô trưng bày**: mỗi kênh hiển thị nhà của người chơi đang online trong kênh đó, ưu tiên bạn bè. Lô có biển tên chủ và cổng vào thăm. Khi không đủ người thì lô hiện nhà mẫu của Chủ đầu tư ("NHÀ MẪU – LIÊN HỆ CHỦ ĐẦU TƯ"). Việc này ở giai đoạn sau của mục này (P5b).
+- **Nhà vẫn là phòng riêng**, nên không có chuyện hết lô và mua bán được không giới hạn người. Để làng có cảm giác "khu nhà thật", Xóm Rơm Vàng có **8 lô trưng bày**: mỗi kênh hiển thị nhà của người chơi đang online trong kênh đó, ưu tiên bạn bè. Lô có biển tên chủ và cổng vào thăm. Khi không đủ người thì lô hiện nhà mẫu của Chủ đầu tư ("NHÀ MẪU – LIÊN HỆ CHỦ ĐẦU TƯ"). Đã làm (P5b). Lô không hiện nhà riêng tư hoặc nhà của người đã chặn/bị chặn (chốt 06/11/2026).
 
 ### 13.3. Chọn thiết kế và vật liệu, Bò Mộc xây
 
@@ -531,7 +545,8 @@ Mỗi người có nhà riêng là một phòng riêng ("Tổ nhỏ" miễn phí
 | **Chuồng nhỏ** (lô tiêu chuẩn trở lên) | 200 thóc + 20 rơm + 5 gỗ · 10 phút | 400 thóc + 20 gỗ + 10 đinh · 20 phút | 800 thóc + 20 gạch + 10 gỗ + 6 ngói · 40 phút |
 | **Nhà hai gian** (lô rộng) | — | 900 thóc + 40 gỗ + 20 đinh + 10 rơm · 40 phút | 1.800 thóc + 40 gạch + 20 gỗ + 12 ngói · 60 phút |
 
-- Vật liệu ảnh hưởng ngoại hình (mái rơm, vách gỗ hay tường gạch) và **độ ấm cúng**. Ấm cúng càng cao thì ngủ ổ ở nhà hồi độ no càng nhanh: rơm +1/phút, gỗ +1,5/phút, gạch +2/phút. Sức chứa khách: rơm 8, gỗ 12, gạch 16.
+- Vật liệu ảnh hưởng ngoại hình (mái rơm, vách gỗ hay tường gạch) và **độ ấm cúng**. Ấm cúng càng cao thì ngủ ổ ở nhà hồi độ no càng nhanh: rơm +1/phút, gỗ +1,5/phút, gạch +2/phút. Sức chứa khách: rơm 8, gỗ 12, gạch 16; đang xây hoặc nâng cấp tính 8 (chốt 06/11/2026).
+- Khách nghỉ ổ trong nhà người khác hồi độ no như chủ nhà. Tổ nhỏ chưa xây nhà thì nghỉ cạnh ổ rơm tụt độ no chậm một nửa như ở sảnh (chốt 06/11/2026).
 - Bò Mộc xây theo giờ, chạy cả khi offline. Thuê thợ là người chơi (hợp đồng đang có) để rút ngắn thời gian: hợp đồng thêm điều kiện "chủ đã gom đủ vật liệu".
 - Nâng cấp: đổi rơm lên gỗ, gỗ lên gạch, chỉ trả phần chênh lệch vật liệu và một nửa thóc. Xây xong có tiệc tân gia (tính năng tiệc đang có).
 - Chuyển dữ liệu: chuồng đã xây trước đây coi như "Chuồng nhỏ – Gỗ".
@@ -548,12 +563,12 @@ Mỗi người có nhà riêng là một phòng riêng ("Tổ nhỏ" miễn phí
 | Cải | 10 phút | 3 cải | ăn +15 độ no, bán 4 thóc |
 | Cà rốt | 20 phút | 3 cà rốt | ăn +25, bán 7 |
 | Bí ngô | 45 phút | 1 bí ngô | ăn +80, bán 25 |
-| Hoa | 30 phút | 1 bó hoa | tặng bạn (+thân thiết với bạn đồng hành của họ), trang trí nhà |
+| Hoa | 30 phút | 1 bó hoa | tặng bạn: bạn đồng hành của người nhận +5 thân thiết (trong trần 60/ngày, chốt 06/11/2026); trang trí nhà |
 
 - **Trồng ở đâu:**
-  - luống rau ở nhà riêng: đồ trang trí "Luống rau" trở thành ô trồng được, mỗi luống 1 cây;
+  - luống rau ở nhà riêng: đồ trang trí "Luống rau" trở thành ô trồng được, mỗi luống 1 cây; số luống theo lô: Tổ nhỏ 2, Lô tiêu chuẩn 4, Lô rộng 6, Lô đồi 8 (chốt 06/11/2026);
   - **12 luống cộng đồng** ở Ao và vườn: mỗi người mượn tối đa 1 luống, giữ 2 giờ, cây thuộc về người trồng, người khác không hái được.
-- **Tưới:** mỗi lần trồng được tưới 1 lần, rút 25% thời gian còn lại. Có thể tưới giúp luống của bạn bè (+1 thân thiết, không được thu hoạch).
+- **Tưới:** mỗi lần trồng được tưới 1 lần, rút 25% thời gian còn lại. Có thể tưới giúp luống của bạn bè (+1 thân thiết, không được thu hoạch). Thân thiết từ bạn bè (tưới giúp, ngồi ổ cạnh bạn, được tặng hoa) tối đa 60 điểm/ngày mỗi tài khoản; vuốt ve/cho ăn tính riêng (chốt 06/11/2026).
 - **Héo:** để quá 3 lần thời gian lớn mà không thu thì cây héo, chỉ còn 1 "phân ủ" (bón cho lần trồng sau: +1 nông sản).
 - Thời gian lớn chạy theo giờ thực (cả khi offline), giống ấp trứng.
 - Nghiệm thu: test vòng trồng → tưới → chín → thu → héo; không hái được luống người khác; một người chỉ mượn 1 luống cộng đồng.
@@ -598,14 +613,14 @@ Chỉ **bạn đồng hành đang đi theo** mới có tác dụng. Mức kỹ n
 
 | Ưu tiên | Tính năng | Tóm tắt |
 | --- | --- | --- |
-| Cao | **Điểm danh 7 ngày** | Ngày 1–6: 20/30/40/50/60/80 thóc kèm cám hoặc hạt giống; ngày 7: 1 trứng đốm. Lỡ một ngày thì quay về ngày 1. Cụ Cục trao quà bằng bong bóng khi vào game |
-| Cao | **Nghỉ ổ** | Ngồi ổ ở sảnh: độ no tụt chậm một nửa (đã ở mục 2). Ngồi ổ cạnh nhau với bạn bè: +1 thân thiết/phút cho bạn đồng hành của cả hai |
+| Cao | **Điểm danh 7 ngày** | Ngày 1–6: 20 thóc + 1 cám · 30 + 2 hạt cải · 40 + 2 cám · 50 + 2 hạt cà rốt · 60 + 1 hạt bí ngô · 80 + 3 cám; ngày 7: 1 trứng đốm. Lỡ một ngày thì quay về ngày 1. Cụ Cục trao quà bằng bong bóng khi vào game |
+| Cao | **Nghỉ ổ** | Ngồi ổ ở sảnh: độ no tụt chậm một nửa (đã ở mục 2). Ngồi ổ cạnh nhau với bạn bè: +1 thân thiết/phút cho bạn đồng hành của cả hai, chung trần 60 điểm/ngày mỗi tài khoản với tưới giúp và tặng hoa; vuốt ve/cho ăn tính riêng (chốt 06/11/2026) |
 | Vừa | **Ngày/đêm** | Một ngày game = 48 phút thực (24 phút ngày, 24 phút đêm). Đêm: đèn lồng sáng, NPC giao thông về nhà, Giun phát sáng ×1,5 tỉ lệ (vẫn trong giới hạn tổng). NPC chào theo buổi |
 | Vừa | **Thời tiết** | Mưa nhẹ ngẫu nhiên khoảng 10% thời gian: giun ngoi lên nên hồi đất −30%; xe ôm "tăng giá mưa" +1 thóc (NPC giải thích hài: "Mưa to, chở gà ướt, phụ thu khăn lau!") |
 | Vừa | **Nhiệm vụ của NPC** | Lợn Ủn cần 5 giun béo, Bò Mộc cần 10 rơm, Vịt Bông cần 1 bó hoa…; thưởng vật liệu hoặc trứng. Mở rộng "bảng việc làng" đang có |
-| Vừa | **Bảng xếp hạng tuần** | Giun dài nhất, nhiều giun hiếm nhất, thắng PK nhiều nhất; thưởng danh hiệu, không thưởng thóc lớn |
-| Thấp | **Câu cá ở ao** | Đặc tả riêng sau: điểm câu ở cầu ao, mini-game phao, cá bán hoặc ăn; dùng chung khung giằng co của đào giun |
-| Thấp | **Mở cấp 11–20** | Đường cong XP mới, nội dung mở khoá (lô đồi, nhà gạch hai tầng, trứng hiếm) |
+| Vừa | **Bảng xếp hạng tuần** | Giun dài nhất, nhiều giun hiếm nhất, thắng PK nhiều nhất; thưởng danh hiệu, không thưởng thóc lớn. PK chỉ tính trận Mổ nhanh giữa hai người thật; Úp ngửa và Gà Máy không tính; thắng vì đối thủ bỏ trận chỉ tính "đã chơi"; thắng cùng một đối thủ quá 5 trận/tuần không tính thêm; số trận thắng cũ giữ nguyên (chốt 06/11/2026) |
+| Thấp | **Câu cá ở ao** (✅ đã làm) | Điểm câu ở cầu ao, mini-game phao, cá bán hoặc ăn; dùng chung khung giằng co của đào giun. Tối đa 30 con/ngày, riêng với 120 lượt đào (chốt 06/11/2026) |
+| Thấp | **Mở cấp 11–20** (✅ đã làm) | Đường cong XP từ cấp 10 và nội dung mở khoá: lô đồi (cấp 12), nhà gạch hai tầng (cấp 15), trứng hiếm, danh hiệu "Trưởng Làng" (cấp 20); xem mục 12 (chốt 06/11/2026) |
 
 ## 17. Bảng cân bằng tổng hợp (bộ `live`)
 
@@ -625,6 +640,8 @@ Chỉ **bạn đồng hành đang đi theo** mới có tác dụng. Mức kỹ n
 | Xe liên trại | mỗi 3 phút, 8 ghế |
 | Xe ôm | 2–6 xe + 1 đậu chờ; 8,5 m/s; 1 thóc (≤ 90 m) / 2 thóc |
 | Ấp trứng / Bò Mộc xây | 30 phút / theo bảng mục 13.3 |
+| Câu cá | tối đa 30 con/ngày, riêng với 120 lượt đào; ~12,8 thóc/con → ~385 thóc/ngày (chốt 06/11/2026) |
+| Thân thiết từ bạn bè | tối đa 60 điểm/ngày mỗi tài khoản (chốt 06/11/2026) |
 
 **Dòng thóc ước tính với người chơi trung bình 1 giờ** (để soi lạm phát):
 
@@ -735,4 +752,4 @@ Tổng khoảng **25–34 ngày công**. P0 và P1 giải quyết ngay cảm gi�
 4. **Tỉ lệ giun thoát** là cảm giác "khó mà vui" hay "ức chế": chốt bằng chơi thử trước khi khoá số.
 5. **Bot chơi giằng co hoàn hảo** được chấp nhận (mục 4.3); cần log để quản trị soi.
 6. **Lô trưng bày ở Xóm** (P5b) phụ thuộc số người online mỗi kênh; nếu kênh vắng thì hiện nhà mẫu.
-7. **Cấp tối đa:** giữ 10 ở bản này; mở tới 20 là một hạng mục riêng.
+7. **Cấp tối đa:** đã mở tới 20 (chốt 06/11/2026, mục 12).

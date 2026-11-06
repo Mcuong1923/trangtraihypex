@@ -38,23 +38,24 @@ type GuildLedger struct {
 }
 
 type Guild struct {
-	ID        string                  `json:"id"`
-	Name      string                  `json:"name"`
-	Emblem    string                  `json:"emblem"`
-	Color     string                  `json:"color"`
-	Owner     string                  `json:"owner"`
-	JoinMode  string                  `json:"joinMode"` // open | approval
-	Members   map[string]*GuildMember `json:"members"`
-	Requests  map[string]string       `json:"requests"` // id → tên
-	Invites   map[string]time.Time    `json:"invites"`
-	Fund      int                     `json:"fund"`
-	Ledger    []GuildLedger           `json:"ledger"`
-	Board     []GuildPost             `json:"board"`
-	Projects  map[string]bool         `json:"projects"`
-	Transfer  string                  `json:"transfer"` // người được đề nghị nhận chức chủ hội
-	Week      string                  `json:"week"`
-	WeekScore map[string]int          `json:"weekScore"`
-	CreatedAt time.Time               `json:"createdAt"`
+	ID         string                  `json:"id"`
+	Name       string                  `json:"name"`
+	Emblem     string                  `json:"emblem"`
+	Color      string                  `json:"color"`
+	Owner      string                  `json:"owner"`
+	JoinMode   string                  `json:"joinMode"` // open | approval
+	Members    map[string]*GuildMember `json:"members"`
+	Requests   map[string]string       `json:"requests"` // id → tên
+	Invites    map[string]time.Time    `json:"invites"`
+	Fund       int                     `json:"fund"`
+	Ledger     []GuildLedger           `json:"ledger"`
+	Board      []GuildPost             `json:"board"`
+	Projects   map[string]bool         `json:"projects"`
+	Transfer   string                  `json:"transfer"`             // người được đề nghị nhận chức chủ hội
+	TransferAt time.Time               `json:"transferAt,omitempty"` // lúc đề nghị; quá GuildOfferTTL thì hết hạn (M7)
+	Week       string                  `json:"week"`
+	WeekScore  map[string]int          `json:"weekScore"`
+	CreatedAt  time.Time               `json:"createdAt"`
 }
 
 type GuildProject struct {
@@ -244,7 +245,12 @@ func (g *GuildStore) Join(id, name, guildID string) (string, error) {
 	if g.of(id) != nil {
 		return "", errors.New("Bạn đang ở trong một hội.")
 	}
-	if _, invited := gd.Invites[id]; invited || gd.JoinMode == "open" {
+	at, invited := gd.Invites[id]
+	if invited && time.Since(at) > GuildOfferTTL {
+		delete(gd.Invites, id)
+		invited = false
+	}
+	if invited || gd.JoinMode == "open" {
 		if err := g.addMemberLocked(gd, id, name); err != nil {
 			return "", err
 		}
@@ -266,6 +272,9 @@ func (g *GuildStore) Leave(id string) error {
 	}
 	delete(gd.Members, id)
 	delete(g.member, id)
+	if gd.Transfer == id {
+		gd.Transfer = "" // người được đề nghị đã rời hội: đề nghị mất hiệu lực (M7)
+	}
 	if len(gd.Members) == 0 {
 		delete(g.Guilds, gd.ID) // hội không còn ai thì giải thể; quỹ không chia về ví cá nhân
 	}
@@ -298,11 +307,22 @@ func (g *GuildStore) UndoFund(id string, n int) {
 	}
 }
 
+// GuildOfferTTL: lời mời vào hội và đề nghị chuyển quyền chủ hội hết hạn sau 24 giờ (M7, lỗi thấp lời mời hội).
+const GuildOfferTTL = 24 * time.Hour
+
+// Touch ghi lần cuối thành viên có mặt (gọi khi đăng nhập và khi mở bảng hội), để chủ hội chơi hằng ngày
+// không bị phó hội nhận quyền vì "vắng lâu" (M8).
 func (g *GuildStore) Touch(id string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if gd := g.of(id); gd != nil {
+		old := gd.Members[id].LastSeen
 		gd.Members[id].LastSeen = time.Now()
+		if time.Since(old) > time.Hour {
+			if err := g.saveLocked(); err != nil {
+				log.Printf("guild touch %s: %v", id, err)
+			}
+		}
 	}
 }
 
@@ -433,6 +453,10 @@ func (h *Hub) guild(s *Session, m *inMsg) {
 			fail(err)
 			return
 		}
+		if h.store.Social.Blocked(me, id) {
+			fail(ErrBlocked)
+			return
+		}
 		gd, err := gs.Do(me, func(gd *Guild) error {
 			if err := can(gd, "owner", "vice"); err != nil {
 				return err
@@ -467,6 +491,9 @@ func (h *Hub) guild(s *Session, m *inMsg) {
 				if gd.role(me) == "owner" || (gd.role(me) == "vice" && t.Role == "member") {
 					delete(gd.Members, m.ID)
 					delete(gs.member, m.ID)
+					if gd.Transfer == m.ID {
+						gd.Transfer = "" // M7
+					}
 					gd.ledger(t.Name, 0, "Bị mời khỏi hội")
 					return nil
 				}
@@ -495,7 +522,7 @@ func (h *Hub) guild(s *Session, m *inMsg) {
 			if gd.Members[m.ID] == nil || m.ID == me {
 				return errors.New("Chọn một thành viên khác.")
 			}
-			gd.Transfer = m.ID
+			gd.Transfer, gd.TransferAt = m.ID, time.Now()
 			return nil
 		})
 		if err != nil {
@@ -509,8 +536,8 @@ func (h *Hub) guild(s *Session, m *inMsg) {
 	case "guild_transfer_accept", "guild_claim":
 		_, err := gs.Do(me, func(gd *Guild) error {
 			if m.T == "guild_transfer_accept" {
-				if gd.Transfer != me {
-					return errors.New("Không có đề nghị chuyển quyền cho bạn.")
+				if gd.Transfer != me || time.Since(gd.TransferAt) > GuildOfferTTL {
+					return errors.New("Không có đề nghị chuyển quyền cho bạn (hoặc đề nghị đã hết hạn).")
 				}
 			} else {
 				// Chủ hội vắng quá thời hạn công bố thì phó hội nhận quyền, không tự xoá hội.
@@ -745,7 +772,7 @@ func (r *Room) guildAct(p *Player, m *inMsg, reply func(ActResult), fail func(er
 			fail(err)
 			return
 		}
-		snap, _ := json.Marshal(p.acc)
+		snap, _ := snapshotOf(p.acc)
 		_ = p.acc.addThoc(-n, "guild_fund", gd.ID, now)
 		res := ActResult{OK: true, Msg: fmt.Sprintf("Đã góp %d thóc vào quỹ %s.", n, gd.Name)}
 		p.acc.Remember(m.RID, res)

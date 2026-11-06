@@ -243,3 +243,56 @@ Còn lại (thấp):
 - `Discard`/`Leave` mà lưu lỗi thì bản trên đĩa còn hợp đồng hoặc hội. Server khởi động lại thì chúng sống lại.
 - Nghiệm thu mà lưu nhà lỗi thì không thử lưu lại.
 - `land_buy` mà lưu nhà lỗi sau khi đã lưu tài khoản: người chơi bị báo lỗi dù đã trả tiền. Đất mới vẫn còn trong bộ nhớ.
+
+---
+
+## Cập nhật 06/11/2026: chốt luật và sửa phần còn lại
+
+**Luật đã chốt (đều theo đề xuất):**
+- Luống rau nhà theo lô: 2/4/6/8, giới hạn cả lúc đặt lẫn số luống đang trồng.
+- Câu cá 30 con/ngày.
+- Thân thiết từ bạn bè tối đa 60/ngày.
+- Thắng vì đối thủ bỏ trận không tính xếp hạng.
+- Kho 200 tính chung.
+- Khách nghỉ ổ hồi như chủ (code vốn đã vậy).
+- Giữ cấp 11–20, cập nhật plan.
+- Giữ nguyên số trận thắng cũ.
+
+**Server:**
+- **M7:** đề nghị chuyển quyền chủ hội có hạn 24 giờ và bị xoá khi người được đề nghị rời hội hoặc bị mời ra. Lời mời vào hội cũng hạn 24 giờ, kèm kiểm tra chặn.
+- **M8:** đăng nhập cập nhật lần có mặt (`Touch`), lưu nếu cũ hơn 1 giờ.
+- **M9:** khu đã đủ người thì gà dừng ở cổng. Mới chặn khi đi bộ; xuống xe vào khu đầy vẫn lọt.
+- **M10:** hết đếm ngược mà một bên vẫn mất kết nối thì huỷ trận (nối lại kịp thì vẫn đấu). Kết quả trận chốt trong lúc mất mạng được gửi lại khi nối lại (`pkEnd`).
+- **M11:** danh hiệu tuần chưa nhận được giữ trong `Owed` qua nhiều tuần.
+- **Lỗi thấp:**
+  - Kích thước giun tính theo bậc hiếm.
+  - `DoWait` trả về ngay khi phòng đã dừng.
+  - Giới hạn đọc message tăng lên 16 KB.
+  - Lô trưng bày lọc nhà riêng tư và nhà của người đã chặn.
+  - Khách xuống xe ở ô đi được.
+  - Mỗi người chỉ gọi một xe ôm.
+  - Cứu đói tính cả nông sản/cá, tối đa 3 lần/ngày (đếm khi làm xong).
+  - `restore` giữ sổ cái của thay đổi trước đó.
+  - Xe liên trại đã xuất phát thì khách không xuống được nữa.
+  - Lên xe buýt/xe ôm chỉ sau khi vé đã lưu.
+  - Mốc ngày điểm danh không phụ thuộc giờ mùa hè của máy chủ; lượt đào qua nửa đêm được tính cho ngày mới.
+  - Giao dịch tôn trọng giới hạn túi 60 giun, và huỷ khi hai bên đi xa nhau quá 8 m.
+  - Mời PK lại cùng một người phải cách 1 phút; đấu Gà Máy thì huỷ lời mời đang chờ.
+  - Thắng cùng một đối thủ tối đa 5 trận/tuần được tính.
+- **Lệch plan:**
+  - Cameo 8 phút, dọn ổ 60 giây.
+  - Quà điểm danh theo plan §16.
+  - Giằng co 15/18 giây (tỉ lệ bắt vẫn đạt bảng §4.2).
+  - Không cưỡi ngỗng khi đói lâu.
+  - Tổ nhỏ chưa có nhà: nghỉ ổ tụt độ no chậm một nửa.
+  - Tặng bó hoa cho bạn: +5 thân thiết, tính trong trần 60.
+- **Client (agent):** sửa B5, B7, B8, B10–B13, L14; thêm nút "Bỏ" lượt đào/câu, đổi tên thú cưng, chống treo "Đang tải…", ghi rõ "Mã bạn bè", xử lý `pk_end` đến muộn, nút tặng hoa, số luống trong bảng mua đất. Server gửi thêm `sellPrices` và `now`.
+
+**Không sửa (có lý do):**
+- Snapshot vẫn gửi vị trí mọi xe NPC, vì bản đồ và minimap cần biết xe buýt ở đâu.
+- Xe ôm không hoàn tiền: không có đường nào để máy chủ huỷ chuyến đang chở. Người chơi tự xuống hoặc mất mạng thì theo plan không hoàn.
+- Bỏ `fsync`: mỗi giao dịch đều ghi trên goroutine phòng, và trên Windows fsync làm giật tick.
+- `rid` rỗng: client luôn gửi `rid`. Nếu thiếu thì chỉ mất tính idempotent, không cộng tiền hai lần.
+- "Phát lại RID cũ để đi xe hoặc đóng lượt đào" không xảy ra được, vì `act` trả kết quả cũ trước mọi xử lý.
+
+Test mới: `server/rules_and_low_fixes_regression_test.go` (15 test). Tổng cộng 122 test.

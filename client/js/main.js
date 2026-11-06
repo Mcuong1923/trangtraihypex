@@ -2,7 +2,7 @@
 import { Net, api } from './net.js';
 import { World, fitLabel } from './world.js';
 import { buildChicken, dress, label, wormMesh, mat, FEATHER, SHIRT } from './models.js';
-import { G, $, esc, openSheet, closeSheet, toast, applyMe, onMe, bubble, updateBubbles, STAGE_NAME } from './ui.js';
+import { G, $, esc, openSheet, closeSheet, toast, applyMe, srvNow, homeLeft, onMe, bubble, updateBubbles, STAGE_NAME } from './ui.js';
 import * as P from './panels.js';
 import * as SO from './social.js';
 import { sfx, setAudio } from './audio.js';
@@ -262,6 +262,7 @@ N.on('welcome', (m) => {
   setClock(m.clock);
   SO.stopPlacing();
   G.home = m.home || null;
+  if (G.home) G.home._at = performance.now();
   if (m.home) G.world.setHome(m.zones.home, m.home, m.catalog.cosmetics);
   if (m.guildhall) G.world.setGuildHall(m.zones.guildhall, m.guildhall, m.catalog.cosmetics);
   if (G.self) G.world.scene.remove(G.self.mesh);
@@ -298,9 +299,11 @@ N.on('welcome', (m) => {
   if (first) {
     P.appendChat({ kind: 'system', text: `Chào mừng ${m.me.char.name} tới ${m.room.name}!` });
     if (!store.get('hypex_help_seen')) { store.set('hypex_help_seen', '1'); setTimeout(P.openHelp, 400); }
-  } else {
+  } else if (G.net.dropped) {
+    // Chỉ báo sau khi nối lại mạng thật, không báo mỗi lần đổi phòng (B13).
     toast('Đã kết nối lại — bạn ở sảnh ' + m.room.name, 'good');
   }
+  G.net.dropped = false;
 });
 
 N.on('nest',m=>{const mesh=meshOf(m.pid);if(mesh){mesh.userData.nest=m.nest||null;if(m.nest){mesh.userData.anim=null;if(m.pid===G.pid){G.walkPath=[];G.self.pos.set(m.x,0,m.z);G.self.srv.copy(G.self.pos);}}}});
@@ -393,6 +396,7 @@ N.on('room_invite', SO.onRoomInvite);
 N.on('home_invite', SO.onHomeInvite);
 N.on('home', (m) => {
   G.home = m.home;
+  if (G.home) G.home._at = performance.now();
   G.zones.home = m.zone;
   G.world.setHome(m.zone, m.home, G.catalog.cosmetics);
   if (G.modal === 'cow') SO.dialogCow();
@@ -630,7 +634,7 @@ function findNearest() {
 }
 function partyPrompt() {
   const h = G.home;
-  if (!h || G.zone !== 'home' || !(h.partyLeft > 0)) return false;
+  if (!h || G.zone !== 'home' || !(homeLeft(h, 'partyLeft') > 0)) return false;
   return h.objects.some((o) => o.kind === 'ban_tiec' && Math.hypot(G.self.pos.x - o.x, G.self.pos.z - o.z) < 2);
 }
 
@@ -651,7 +655,7 @@ function promptText(it) {
   if (it.kind === 'guild_board') return 'Bảng hội';
   if (it.kind === 'parking') return G.myRide ? 'Cất xe' : 'Điểm đỗ xe';
   if (it.kind === 'road') return 'Đường liên trại';
-  if (it.kind === 'bed') { const pl = G.me?.beds?.[it.id.startsWith('home:') ? it.id : 'park:' + it.id]; return pl ? (Date.now() >= Date.parse(pl.ready) ? '🧺 Thu hoạch' : '🌱 Chăm cây') : '🌱 Gieo hạt · ' + it.label; }
+  if (it.kind === 'bed') { const pl = G.me?.beds?.[it.id.startsWith('home:') ? it.id : 'park:' + it.id]; return pl ? (srvNow() >= Date.parse(pl.ready) ? '🧺 Thu hoạch' : '🌱 Chăm cây') : '🌱 Gieo hạt · ' + it.label; }
   if (it.kind === 'npc_cow' && G.zone !== 'home') return 'Tiệm vật liệu · Bò Mộc';
   if (it.kind === 'fish') { const left = (G.me?.fishReadyIn || 0) - (performance.now() - (G.me?._at || 0)) / 1000; return left > 0 ? `Cá còn lặn (${Math.ceil(left)}s)` : '🎣 Thả câu'; }
   if (it.kind === 'showcase_lot') { const lot = G.showLots?.[+it.id.split('_')[1] - 1]; return lot ? (lot.mine ? '🏠 Nhà của bạn' : `🚪 Thăm nhà ${lot.name}`) : '🏡 Nhà mẫu · Chủ Đầu Tư'; }
@@ -858,6 +862,7 @@ function animate(mesh, dt, moving, phase, stage) {
 // ============ Vòng lặp ============
 const clock = new T.Clock();
 let lastSent = { x: 0, z: 0, at: 0 };
+let stopResend = 0;
 function lerpAngle(a, b, t) { let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI; if (d < -Math.PI) d += Math.PI * 2; return a + d * t; }
 
 function loop() {
@@ -897,10 +902,22 @@ function loop() {
   // Chạy nhanh: giữ Shift hoặc nút 🏃; máy chủ quyết định có chạy được không (thể lực, đói, xe).
   const wantRun = !!(keys.shift || G.runHeld) && !G.busy && !G.myRideOf && !G.myCarrier;
   // Gửi input khi đổi hướng/đổi chạy hoặc 10 lần/giây khi đang đi; server tự dừng nếu 300ms không có input.
-  if (Math.hypot(wx - lastSent.x, wz - lastSent.z) > 0.05 || wantRun !== lastSent.run || (moving && now - lastSent.at > 100)) {
+  // Giới hạn ≤20 gói/giây (server bỏ quá ~30/s); dừng và đổi hướng mạnh luôn gửi ngay (B8).
+  const dIn = Math.hypot(wx - lastSent.x, wz - lastSent.z);
+  const wasMoving = Math.hypot(lastSent.x, lastSent.z) > 0.12;
+  const stopNow = !moving && wasMoving;
+  const sendIn = stopNow || wantRun !== lastSent.run || dIn > 0.4
+    || (dIn > 0.05 && now - lastSent.at >= 50) || (moving && now - lastSent.at > 100);
+  if (sendIn) {
     G.net.raw({ t: 'in', x: +wx.toFixed(3), z: +wz.toFixed(3), run: wantRun });
     lastSent = { x: wx, z: wz, at: now, run: wantRun };
+    clearTimeout(stopResend);
+    if (!moving) { // gửi lại lệnh dừng một lần nữa phòng khi gói đầu bị mất
+      const run = wantRun;
+      stopResend = setTimeout(() => { if (!G.net) return; if (Math.hypot(lastSent.x, lastSent.z) <= 0.12) G.net.raw({ t: 'in', x: 0, z: 0, run }); }, 150);
+    }
   }
+  if (moving && stopResend) { clearTimeout(stopResend); stopResend = 0; }
   const veh = G.myRide && G.catalog.vehicles.find((v) => v.id === G.myRide);
   const running = moving && wantRun && !veh && me.stage < 3 && !(G.stam && (G.stam.lock > 0 || G.stam.s <= 0.01)) && !S.mesh.userData.nest;
   S.mesh.userData.running = running;

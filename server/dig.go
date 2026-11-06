@@ -31,8 +31,8 @@ var TugTiers = []TugParams{
 	{Tier: 0, MaxSec: 6, Pull: .55, Retreat: .04, BaseStrain: .12, BurstStrain: .5, Relax: 1.6, Gap: 1.8, BurstMin: .3, BurstMax: .5},
 	{Tier: 1, MaxSec: 8, Pull: .42, Retreat: .05, BaseStrain: .16, BurstStrain: .8, Relax: 1.6, Gap: 1.5, BurstMin: .5, BurstMax: .8},
 	{Tier: 2, MaxSec: 12, Pull: .3, Retreat: .06, BaseStrain: .2, BurstStrain: 1.25, Relax: 1.5, Gap: 1.3, BurstMin: .7, BurstMax: 1, CanEscape: true, MaxSlips: 3},
-	{Tier: 3, MaxSec: 16, Pull: .3, Retreat: .06, BaseStrain: .21, BurstStrain: 1.3, Relax: 1.6, Gap: 1.35, BurstMin: .75, BurstMax: 1.1, Double: .25, CanEscape: true, MaxSlips: 3},
-	{Tier: 4, MaxSec: 20, Pull: .25, Retreat: .07, BaseStrain: .2, BurstStrain: 1.25, Relax: 1.65, Gap: 1.4, BurstMin: .85, BurstMax: 1.15, Double: .28, CanEscape: true, MaxSlips: 3},
+	{Tier: 3, MaxSec: 15, Pull: .3, Retreat: .06, BaseStrain: .21, BurstStrain: 1.3, Relax: 1.6, Gap: 1.35, BurstMin: .75, BurstMax: 1.1, Double: .25, CanEscape: true, MaxSlips: 3},
+	{Tier: 4, MaxSec: 18, Pull: .25, Retreat: .07, BaseStrain: .2, BurstStrain: 1.25, Relax: 1.65, Gap: 1.4, BurstMin: .85, BurstMax: 1.15, Double: .28, CanEscape: true, MaxSlips: 3},
 }
 
 var rarityTiers = map[string]int{"Thường": 0, "Khá hiếm": 1, "Hiếm": 2, "Sử thi": 3, "Huyền thoại": 4}

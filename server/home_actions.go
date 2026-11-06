@@ -54,7 +54,7 @@ func (r *Room) homeAct(p *Player, m *inMsg, reply func(ActResult), fail func(err
 	}
 
 	commit := func(apply func() (ActResult, error)) {
-		accSnap, _ := json.Marshal(p.acc)
+		accSnap, _ := snapshotOf(p.acc)
 		homeSnap, _ := json.Marshal(h)
 		tier := h.Tier
 		res, err := apply()

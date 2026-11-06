@@ -292,7 +292,7 @@ func (r *Room) applyCredits(p *Player, now time.Time) {
 	if len(cs) == 0 {
 		return
 	}
-	snap, _ := json.Marshal(p.acc)
+	snap, _ := snapshotOf(p.acc)
 	for _, c := range cs {
 		_ = p.acc.addThoc(c.Amount, c.Reason, c.Ref, now)
 		for id, n := range c.Items {

@@ -1,5 +1,5 @@
 // Bạn bè, tin riêng, mời chuồng/nhà (mục 11) và nhà riêng (mục 9.1). Server quyết định mọi quyền.
-import { G, $, esc, openSheet, setSheetBody, closeSheet, toast, showResult } from './ui.js';
+import { G, $, esc, openSheet, setSheetBody, closeSheet, toast, showResult, homeLeft, slowGuard } from './ui.js';
 import { ghostDecor } from './world.js';
 import * as V from './v11.js';
 import * as L from './life.js';
@@ -15,7 +15,8 @@ let friendsTab = 'friends';
 export function openFriends(tab) {
   if (tab) friendsTab = tab;
   raw({ t: 'social' });
-  openSheet('friends', 'Bạn bè', '<p class="mut">Đang tải…</p>');
+  openSheet('friends', 'Bạn bè', '<p class="mut" data-loading>Đang tải…</p>');
+  slowGuard('friends', () => raw({ t: 'social' }));
 }
 
 export function onSocial(view) {
@@ -34,13 +35,13 @@ function renderFriends() {
     const list = v.friends.slice().sort((a, b) => b.online - a.online || a.name.localeCompare(b.name));
     body = `<form class="chatin" id="addForm" style="margin:0 0 12px"><input type="text" id="addCode" maxlength="7" placeholder="Nhập mã bạn bè, vd: K7QM2D" autocomplete="off" style="text-transform:uppercase"><button class="mini hot" type="submit">Kết bạn</button></form>` +
       (list.map((f) => `<div class="row"><div class="ico" style="background:${f.online ? '#dff0d4' : '#eee3cf'}">${f.online ? '🐥' : '💤'}</div>
-        <div class="meta"><div class="nm">${esc(f.name)} <span class="mut">#${esc(f.code)}</span>${f.unread ? ` <span class="rtag" style="background:var(--bad)">${f.unread} tin</span>` : ''}</div>
+        <div class="meta"><div class="nm">${esc(f.name)} <span class="mut" title="Mã bạn bè">Mã bạn bè: #${esc(f.code)}</span>${f.unread ? ` <span class="rtag" style="background:var(--bad)">${f.unread} tin</span>` : ''}</div>
           <div class="sub">${f.online ? (f.where ? 'Đang ở ' + esc(f.where) : 'Đang online') : 'Offline'}</div></div>
         <div class="act"><button class="mini hot" data-dm="${f.id}" data-name="${esc(f.name)}">Nhắn</button>
           <button class="mini sec" data-more="${f.id}" data-name="${esc(f.name)}" data-online="${f.online ? 1 : 0}">⋯</button></div></div>`).join('') ||
         '<div class="empty">Chưa có bạn nào. Gửi mã của bạn cho người quen, hoặc kết bạn với người chơi quanh đây.</div>');
   } else if (friendsTab === 'requests') {
-    body = (v.reqIn.map((f) => `<div class="row"><div class="ico" style="background:#fff0cf">👋</div><div class="meta"><div class="nm">${esc(f.name)} <span class="mut">#${esc(f.code)}</span></div><div class="sub">Muốn kết bạn với bạn</div></div>
+    body = (v.reqIn.map((f) => `<div class="row"><div class="ico" style="background:#fff0cf">👋</div><div class="meta"><div class="nm">${esc(f.name)} <span class="mut" title="Mã bạn bè">Mã bạn bè: #${esc(f.code)}</span></div><div class="sub">Muốn kết bạn với bạn</div></div>
       <div class="act"><button class="mini good" data-resp="${f.id}" data-on="1">Đồng ý</button><button class="mini sec" data-resp="${f.id}" data-on="0">Từ chối</button></div></div>`).join('') || '<div class="empty">Không có lời mời mới.</div>') +
       (v.reqOut.length ? `<h2>Đã gửi</h2>` + v.reqOut.map((f) => `<div class="row"><div class="ico" style="background:#eee3cf">⏳</div><div class="meta"><div class="nm">${esc(f.name)}</div><div class="sub">Đang chờ đồng ý</div></div></div>`).join('') : '');
   } else if (friendsTab === 'near') {
@@ -50,6 +51,7 @@ function renderFriends() {
       return `<div class="row"><div class="ico" style="background:#f1e3c6">🐔</div><div class="meta"><div class="nm">${esc(p.name)}</div><div class="sub">Cấp ${p.level}</div></div>
         <div class="act">${isFriend ? '' : `<button class="mini good" data-addpid="${pid}">Kết bạn</button>`}
           <button class="mini sec" data-tradepid="${pid}">Giao dịch</button>
+          ${isFriend && (G.me.items?.bo_hoa || 0) > 0 ? `<button class="mini good" data-flowerpid="${pid}">💐 Tặng hoa</button>` : ''}
           ${G.myRide ? (p.mesh?.userData.seated === G.pid ? `<button class="mini sec" data-kickpid="${pid}">Mời xuống xe</button>` : `<button class="mini sec" data-seatpid="${pid}">Mời lên xe</button>`) : ''}
           ${G.myGuild ? `<button class="mini sec" data-guildpid="${pid}">Mời vào hội</button>` : ''}
           <button class="mini sec" data-report="${pid}" data-name="${esc(p.name)}">Báo cáo</button>
@@ -76,6 +78,7 @@ function bindFriends() {
   document.querySelectorAll('[data-more]').forEach((b) => (b.onclick = () => friendMenu(b.dataset.more, b.dataset.name, b.dataset.online === '1')));
   document.querySelectorAll('[data-resp]').forEach((b) => (b.onclick = () => raw({ t: 'friend_respond', id: b.dataset.resp, on: b.dataset.on === '1' })));
   document.querySelectorAll('[data-addpid]').forEach((b) => (b.onclick = () => { b.disabled = true; raw({ t: 'friend_add', target: b.dataset.addpid }); }));
+  document.querySelectorAll('[data-flowerpid]').forEach((b) => (b.onclick = async () => { b.disabled = true; if (showResult(await act('gift_flower', { target: b.dataset.flowerpid })) && G.modal === 'friends') renderFriends(); }));
   document.querySelectorAll('[data-tradepid]').forEach((b) => (b.onclick = async () => { closeSheet(); showResult(await act('trade_invite', { target: b.dataset.tradepid })); }));
   document.querySelectorAll('[data-seatpid]').forEach((b) => (b.onclick = async () => { showResult(await act('seat_invite', { target: b.dataset.seatpid })); }));
   document.querySelectorAll('[data-kickpid]').forEach((b) => (b.onclick = async () => { if (showResult(await act('seat_kick', { target: b.dataset.kickpid }), { quiet: true }) && G.modal === 'friends') renderFriends(); }));
@@ -118,8 +121,9 @@ function reportMenu(pid, name) {
 // ---------- Thư Chim Chíp ----------
 
 export function openMail() {
-  openSheet('mail', '📮 Thư Chim Chíp', '<p class="mut">Đang tải…</p>');
+  openSheet('mail', '📮 Thư Chim Chíp', '<p class="mut" data-loading>Đang tải…</p>');
   raw({ t: 'mail' });
+  slowGuard('mail', () => raw({ t: 'mail' }));
 }
 const MAIL_ICON = { visit: '🚪', build: '🔨', friend: '👥', hatch: '🐣', system: '📢' };
 export function onMail(m) {
@@ -134,10 +138,11 @@ export function onMail(m) {
 
 export function openDM(id, name) {
   G.dmWith = { id, name };
-  openSheet('dm', `💬 ${esc(name)}`, `<div id="chatlog"><p class="mut">Đang tải…</p></div>
+  openSheet('dm', `💬 ${esc(name)}`, `<div id="chatlog"><p class="mut" data-loading>Đang tải…</p></div>
     <form class="chatin" id="dmForm"><input type="text" id="dmMsg" maxlength="200" placeholder="Nhắn riêng…" autocomplete="off"><button class="mini hot" type="submit">Gửi</button></form>`,
     { close: () => { G.dmWith = null; } });
   raw({ t: 'dm_history', id });
+  slowGuard('dm', () => raw({ t: 'dm_history', id }));
   $('dmForm').onsubmit = (e) => { e.preventDefault(); const t = $('dmMsg').value.trim(); if (t) raw({ t: 'dm', id, text: t }); $('dmMsg').value = ''; };
   setTimeout(() => $('dmMsg')?.focus(), 50);
 }
@@ -168,15 +173,16 @@ export function onDM(m) {
 let barTimer = null;
 function inviteBar(text, ttl, yesLabel, onYes) {
   const bar = $('inviteBar');
+  const end = performance.now() + ttl * 1000; // hạn tuyệt đối: tab nền bị giãn timer vẫn hết hạn đúng lúc
   let left = Math.round(ttl);
   bar.hidden = false;
   bar.dataset.id = '';
   bar.innerHTML = `<span class="t">${esc(text)}${ttl ? ` (<span id="ibLeft">${left}</span>s)` : ''}</span><button class="mini good" id="ibYes">${yesLabel}</button><button class="mini sec" id="ibNo">Bỏ qua</button>`;
   const hide = () => { clearInterval(barTimer); bar.hidden = true; };
-  $('ibYes').onclick = () => { hide(); onYes(); };
+  $('ibYes').onclick = () => { const ok = !ttl || performance.now() < end; hide(); if (ok) onYes(); else toast('Lời mời đã hết hạn', 'warn'); };
   $('ibNo').onclick = hide;
   clearInterval(barTimer);
-  barTimer = setInterval(() => { left--; if (left <= 0) hide(); else if ($('ibLeft')) $('ibLeft').textContent = left; }, 1000);
+  barTimer = setInterval(() => { left = Math.ceil((end - performance.now()) / 1000); if (left <= 0) hide(); else if ($('ibLeft')) $('ibLeft').textContent = left; }, 1000);
 }
 export function onRoomInvite(m) { inviteBar(`🏠 ${m.from} mời bạn vào ${m.roomName}`, 60, 'Đến', () => raw({ t: 'switch_room', room: m.room })); }
 export function onHomeInvite(m) { inviteBar(`🏡 ${m.from} mời bạn về chuồng riêng`, m.ttl, 'Đến chơi', () => goVisit({ t: 'visit', owner: m.owner, token: m.token }, `Chuồng của ${m.from}`)); }
@@ -200,9 +206,10 @@ G.goVisit = goVisit;
 
 export function dialogHomeSign() {
   openSheet('homes', 'Chuồng riêng', `<div class="choices"><button class="btn" id="goMine">🏡 Về chuồng của tôi</button></div>
-    <h2>Thăm chuồng khác</h2><div id="homeList"><p class="mut">Đang tải…</p></div>`);
+    <h2>Thăm chuồng khác</h2><div id="homeList"><p class="mut" data-loading>Đang tải…</p></div>`);
   $('goMine').onclick = () => { closeSheet(); goVisit({ t: 'visit', owner: 'me' }, 'Chuồng của bạn'); };
   raw({ t: 'homes' });
+  slowGuard('homes', () => raw({ t: 'homes' }));
 }
 const ACCESS_NAME = { private: 'Riêng tư', friends: 'Bạn bè', public: 'Công khai' };
 export function onHomes(m) {
@@ -240,7 +247,7 @@ export function dialogCow() {
   $('matShop').onclick = L.dialogMaterials;
   document.querySelectorAll('[data-buyd]').forEach((b) => (b.onclick = async () => { b.disabled = true; if (showResult(await act('home_buy', { id: b.dataset.buyd }))) dialogCow(); }));
   if (building) {
-    const end = performance.now() + h.buildLeft * 1000;
+    const end = performance.now() + homeLeft(h, 'buildLeft') * 1000;
     (function tick() { const el = $('buildLeft'); if (!el) return; el.textContent = Math.max(0, Math.ceil((end - performance.now()) / 1000)); requestAnimationFrame(tick); })();
   }
 }
@@ -258,7 +265,7 @@ export function openHomeBoard() {
     <div class="tabs">${['private', 'friends', 'public'].map((a) => `<button class="tab" data-acc="${a}" aria-selected="${h.access === a}">${ACCESS_NAME[a]}</button>`).join('')}</div>
     <p class="mut">Riêng tư: chỉ khách có lời mời. Bạn bè: bạn bè vào tự do. Công khai: hiện trong danh sách “chuồng mở cửa”. Tối đa ${h.cap || G.catalog.homeCap} người (rơm 8 · gỗ 12 · gạch 16).</p>
     <h2>Bữa tiệc sân nhà</h2>
-    ${h.partyLeft > 0 ? `<p>🎉 Tiệc đang mở — còn khoảng ${Math.ceil(h.partyLeft / 60)} phút. Ai cũng ghé được (trừ người bị chặn), tối đa ${h.cap || G.catalog.homeCap} người.</p>`
+    ${homeLeft(h, 'partyLeft') > 0 ? `<p>🎉 Tiệc đang mở — còn khoảng ${Math.ceil(homeLeft(h, 'partyLeft') / 60)} phút. Ai cũng ghé được (trừ người bị chặn), tối đa ${h.cap || G.catalog.homeCap} người.</p>`
       : `<p class="mut">Mở tiệc để chuồng hiện trong danh sách “đang mở tiệc”; khách ăn mừng ở Bàn tiệc và chụp ảnh. Cần đặt ít nhất một Bàn tiệc.</p>
       <div class="coinbtns"><button class="mini hot" data-party="30">Mở tiệc 30 phút</button><button class="mini hot" data-party="60">Mở tiệc 60 phút</button></div>`}
     <h2>Trang trí</h2>

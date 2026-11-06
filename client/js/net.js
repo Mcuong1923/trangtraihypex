@@ -9,6 +9,7 @@ export class Net {
     this.retry = 0;
     this.stopped = false;
     this.rtt = 0;
+    this.dropped = false; // true khi vừa mất mạng thật; main.js dùng để chỉ báo "đã kết nối lại" đúng lúc
   }
 
   on(type, fn) { this.handlers[type] = fn; }
@@ -42,6 +43,7 @@ export class Net {
     ws.onclose = () => {
       this.handlers.close?.();
       if (this.stopped) return;
+      this.dropped = true;
       const wait = Math.min(8000, 500 * 2 ** this.retry++);
       setTimeout(() => !this.stopped && this.connect(this.token, true), wait);
     };

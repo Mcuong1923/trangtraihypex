@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -26,6 +25,9 @@ type Trade struct {
 	Open      bool          `json:"open"` // bên B đã nhận lời mời
 	Exp       time.Time     `json:"-"`
 }
+
+// TradeMaxDist: hai bên đi xa nhau quá khoảng này (khi đổi khu) thì giao dịch huỷ.
+const TradeMaxDist = 8.0
 
 func (t *Trade) side(p *Player) int {
 	if p == t.A {
@@ -183,8 +185,8 @@ func (r *Room) executeTrade(t *Trade, now time.Time) error {
 	if err := validOffer(b, t.Offer[1]); err != nil {
 		return errors.New(t.B.acc.Char.Name + ": " + err.Error())
 	}
-	snapA, _ := json.Marshal(a)
-	snapB, _ := json.Marshal(b)
+	snapA, _ := snapshotOf(a)
+	snapB, _ := snapshotOf(b)
 	move := func(from, to *Account, o TradeOffer) {
 		if o.Thoc > 0 {
 			_ = from.addThoc(-o.Thoc, "trade_out", t.ID, now)
@@ -210,6 +212,15 @@ func (r *Room) executeTrade(t *Trade, now time.Time) error {
 		restore(a, snapA)
 		restore(b, snapB)
 		return errors.New(b.Char.Name + ": " + err.Error())
+	}
+	// Túi giun 60 con áp cả cho giun nhận qua giao dịch (lỗi thấp: trước đây giao dịch vượt được giới hạn túi).
+	for _, x := range []*Account{a, b} {
+		if x.BagCount() > BagCapacity {
+			name := x.Char.Name
+			restore(a, snapA)
+			restore(b, snapB)
+			return fmt.Errorf("%s: túi giun sẽ vượt %d con.", name, BagCapacity)
+		}
 	}
 	if err := r.hub.store.Save(a); err != nil {
 		restore(a, snapA)

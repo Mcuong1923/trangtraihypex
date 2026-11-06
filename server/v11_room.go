@@ -17,8 +17,9 @@ type Bus struct {
 
 // Ride là xe đang ra khỏi điểm đỗ; Seats[0] là người lái (chỉ chủ xe lái, mục 8.4).
 type Ride struct {
-	Kind  string
-	Seats []*Player
+	Kind      string
+	Seats     []*Player
+	Departing bool // đã bấm đi liên trại: khách không xuống giữa chừng (danh sách chở đã chốt)
 }
 
 type rideSpec struct {
@@ -179,6 +180,22 @@ func (r *Room) rideOf(p *Player) *Player {
 	return nil
 }
 
+// safeBeside: ô đi được cạnh xe để khách xuống (thử bốn phía), không đặt khách vào trong tường (lỗi thấp L8).
+func (r *Room) safeBeside(zone string, at Vec) Vec {
+	z := r.zones[zone]
+	for _, d := range []Vec{{1.2, 0}, {-1.2, 0}, {0, 1.2}, {0, -1.2}} {
+		c := Vec{at.X + d.X, at.Z + d.Z}
+		if r.world != nil {
+			if r.world.World.Walkable(c) {
+				return c
+			}
+		} else if z != nil && z.Walkable(c) {
+			return c
+		}
+	}
+	return at // chật quá: đứng tại chỗ xe
+}
+
 // dismount cho khách xuống ở vị trí an toàn cạnh xe, không mất đồ (mục 8.4).
 func (r *Room) dismount(q *Player, why string) {
 	d := q.rideOf
@@ -192,7 +209,7 @@ func (r *Room) dismount(q *Player, why string) {
 		}
 	}
 	q.rideOf = nil
-	q.pos = r.zones[q.zone].Clamp(Vec{q.pos.X + 1.2, q.pos.Z})
+	q.pos = r.safeBeside(q.zone, q.pos)
 	if why != "" {
 		r.toast(q, "warn", why)
 	}
@@ -466,12 +483,20 @@ func (r *Room) v11Act(p *Player, m *inMsg, reply func(ActResult), fail func(erro
 			fail(errors.New("Bạn không ngồi trên xe nào."))
 			return
 		}
+		if p.rideOf.ride != nil && p.rideOf.ride.Departing {
+			fail(errors.New("Xe đang chạy sang trại khác, xuống ở bến bên kia nhé."))
+			return
+		}
 		r.dismount(p, "")
 		reply(ActResult{OK: true})
 	case "seat_kick":
 		t := r.byPID(m.Target)
 		if p.ride == nil || t == nil || t.rideOf != p {
 			fail(errors.New("Người này không ngồi trên xe của bạn."))
+			return
+		}
+		if p.ride.Departing {
+			fail(errors.New("Xe đang chạy sang trại khác."))
 			return
 		}
 		r.dismount(t, "Chủ xe đã mời bạn xuống.")
@@ -507,6 +532,7 @@ func (r *Room) v11Act(p *Player, m *inMsg, reply func(ActResult), fail func(erro
 			fail(fmt.Errorf("Cần cấp %d để tới %s.", Regions[to].Level, Regions[to].Title))
 			return
 		}
+		v.Departing = true // chốt danh sách chở: từ giờ không ai xuống/mời xuống được (lỗi thấp: khách vừa xuống vẫn bị chở đi)
 		reply(ActResult{OK: true, Msg: "Lên đường tới " + Regions[to].Title + "!"})
 		for _, s := range group {
 			s.Send(map[string]any{"t": "trip", "to": to, "title": Regions[to].Title, "vehicle": v.Kind})

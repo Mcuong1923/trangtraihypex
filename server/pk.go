@@ -46,6 +46,16 @@ func (m *Match) side(p *Player) int {
 
 func (m *Match) chooser() int { return m.Round % 2 } // luân phiên bên chọn trước
 
+// goneSide: người chơi thật trong trận đang mất kết nối (nil nếu cả hai đều có mặt).
+func (m *Match) goneSide() *Player {
+	for _, p := range []*Player{m.A, m.B} {
+		if p != nil && p.sess != nil && !p.goneAt.IsZero() {
+			return p
+		}
+	}
+	return nil
+}
+
 // ranked: chỉ Mổ nhanh giữa hai người thật được tính thắng (bảng tuần, điểm hội, danh hiệu).
 // Úp ngửa là may rủi, không dùng cho xếp hạng kỹ năng (PLAN.md 10.1); thắng Gà Máy không phải đấu với người.
 func (m *Match) ranked() bool { return !m.Bot && m.Mode == "peck" }
@@ -94,6 +104,7 @@ func (r *Room) pkAct(p *Player, m *inMsg, reply func(ActResult), fail func(error
 			fail(err)
 			return
 		}
+		r.cancelInvitesFor(p) // lời mời PK đang chờ không còn giữ người kia "bận" khi mình đã đấu Gà Máy
 		r.startMatch(p, nil, m.Mode, now)
 		reply(ActResult{OK: true})
 
@@ -119,8 +130,9 @@ func (r *Room) pkAct(p *Player, m *inMsg, reply func(ActResult), fail func(error
 			fail(errors.New(t.acc.Char.Name + " đang bận hoặc không ở Sân tỷ thí."))
 			return
 		}
-		if at, ok := p.lastInvited[t.PID]; ok && now.Sub(at) < 10*time.Second {
-			fail(errors.New("Chờ chút rồi mời lại người này."))
+		// Mời lại cùng một người phải cách PKReinviteGap: mời dồn mỗi 10 giây từng giữ người kia "bận" mãi.
+		if at, ok := p.lastInvited[t.PID]; ok && now.Sub(at) < PKReinviteGap {
+			fail(fmt.Errorf("Chờ %s rồi mời lại người này.", humanDur(PKReinviteGap-now.Sub(at))))
 			return
 		}
 		r.cancelInvitesFor(p)
@@ -255,6 +267,12 @@ func (r *Room) stepPK(now time.Time) {
 	}
 	for _, mt := range r.matches {
 		if mt.State == "countdown" && now.After(mt.CountEnd) {
+			// M10 (PLAN.md 10.2): hết đếm ngược mà một bên vẫn mất kết nối thì huỷ trận, không phạt ai.
+			// Nối lại kịp trong lúc đếm ngược thì vẫn đấu bình thường.
+			if gone := mt.goneSide(); gone != nil {
+				r.finishMatch(mt, gone.PID)
+				continue
+			}
 			mt.State = "play"
 			mt.send(r, map[string]any{"t": "pk_go", "id": mt.ID})
 			if mt.Mode == "coin" {
@@ -337,6 +355,9 @@ func (r *Room) finishMatch(mt *Match, leaver string) {
 	}
 	for i, p := range players {
 		p.match = nil
+		if !p.goneAt.IsZero() {
+			p.pkEnd = map[string]any{"t": "pk_end", "id": mt.ID, "you": i, "late": true, "mode": mt.Mode, "winner": winner, "a": mt.ScoreA, "b": mt.ScoreB, "reason": reason, "cancelled": cancelled}
+		}
 		if cancelled {
 			continue
 		}
@@ -344,7 +365,8 @@ func (r *Room) finishMatch(mt *Match, leaver string) {
 		p.acc.step("first_social")
 		fx := "ko" // người thua ngã KO rồi đứng dậy; không mất đồ hay cấp
 		if winner == i {
-			if mt.ranked() {
+			// Thắng vì đối thủ bỏ trận chỉ tính đã chơi (chốt 06/11/2026); thắng cùng một người quá PKPairPerWeek/tuần cũng vậy.
+			if mt.ranked() && leaver == "" && p.acc.countPKWin(players[1-i].acc.ID, time.Now()) {
 				p.acc.Stats.PKWins++ // danh hiệu "Cao thủ PK" đếm theo số này
 				r.hub.weeklyPKWin(p.acc, time.Now())
 				go r.hub.store.Guilds.AddWin(p.acc.ID)

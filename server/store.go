@@ -88,6 +88,8 @@ func writeAtomic(path string, v any) error {
 		return err
 	}
 	tmp := path + ".tmp"
+	// Không fsync: mỗi giao dịch đều ghi trên goroutine phòng, fsync (5–30 ms trên Windows) làm giật tick 20 Hz.
+	// Ghi file tạm rồi rename vẫn nguyên tử khi tiến trình chết; mất điện cả máy là rủi ro chấp nhận cho tới khi lên PostgreSQL.
 	if err := os.WriteFile(tmp, b, 0o644); err != nil {
 		return err
 	}

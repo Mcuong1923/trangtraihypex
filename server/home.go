@@ -50,14 +50,15 @@ type LandTier struct {
 	Level int     `json:"level"`
 	HalfX float64 `json:"halfX"`
 	HalfZ float64 `json:"halfZ"`
+	Beds  int     `json:"beds"` // số luống rau tối đa (chốt 06/11/2026: 2/4/6 theo lô, lô đồi 8)
 }
 
 // Bảng giá mục 8.2 / PLAN_LOGIC_GAME 13.2: tổ miễn phí, lô tiêu chuẩn 1.200 (cấp 3), lô rộng 3.000 (cấp 6).
 var LandTiers = []LandTier{
-	{"Tổ nhỏ", 0, 1, 4.5, 4},
-	{"Lô tiêu chuẩn", 1200, 3, 6.5, 5.5},
-	{"Lô rộng", 3000, 6, 8.5, 7},
-	{"Lô đồi", 6000, 12, 10.5, 8.5}, // cấp 11–20: lô trên đồi, đủ chỗ cho nhà gạch hai tầng
+	{"Tổ nhỏ", 0, 1, 4.5, 4, 2},
+	{"Lô tiêu chuẩn", 1200, 3, 6.5, 5.5, 4},
+	{"Lô rộng", 3000, 6, 8.5, 7, 6},
+	{"Lô đồi", 6000, 12, 10.5, 8.5, 8}, // cấp 11–20: lô trên đồi, đủ chỗ cho nhà gạch hai tầng
 }
 
 const (
@@ -215,12 +216,26 @@ func (h *Home) BuyDecor(a *Account, id string, now time.Time) error {
 	return nil
 }
 
+// bedCount: số luống rau đang đặt trong nhà.
+func (h *Home) bedCount() int {
+	n := 0
+	for _, o := range h.Objects {
+		if isHomeBedKind(o.Kind) {
+			n++
+		}
+	}
+	return n
+}
+
 func (h *Home) Place(kind string, x, z, rot int) (PlacedObj, error) {
 	if h.Storage[kind] <= 0 {
 		return PlacedObj{}, errors.New("Kho không còn món này.")
 	}
 	if len(h.Objects) >= HomeObjLimit {
 		return PlacedObj{}, fmt.Errorf("Tối đa %d đồ trang trí.", HomeObjLimit)
+	}
+	if isHomeBedKind(kind) && h.bedCount() >= h.tier().Beds {
+		return PlacedObj{}, fmt.Errorf("%s đặt được tối đa %d luống rau. Mua lô lớn hơn để thêm luống.", h.tier().Name, h.tier().Beds)
 	}
 	if err := h.cellOK(x, z, ""); err != nil {
 		return PlacedObj{}, err

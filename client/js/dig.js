@@ -48,6 +48,7 @@ export function overlay(w, p, exhausted, hint) {
     <div class="tug-bar"><span>Kéo</span><div class="track"><div class="fill prog" id="tugProg"></div></div></div>
     <div class="tug-bar"><span>Độ căng</span><div class="track tension"><div class="fill ten" id="tugTen"></div></div></div>
     <button class="tug-btn" id="tugBtn">GIỮ ĐỂ KÉO <kbd>Space</kbd></button>
+    <button class="mini sec" id="tugCancel" style="display:block;margin:8px auto 0" title="Bỏ lượt này: giun/cá thoát, vẫn tính hồi">Bỏ</button>
     <div class="tug-hint">${hint || `${exhausted ? '<b>Kiệt sức</b>: chỉ đào được giun thường. ' : ''}Giữ để kéo · thấy đỏ thì <b>thả</b> · giun quẫy là lúc nguy hiểm`}</div>`;
   el.hidden = false;
   return el;
@@ -87,7 +88,10 @@ export async function startDig(item) {
   const holdOn = (v) => {
     if (!live || v === s.wantHold) return;
     s.wantHold = v;
-    const t = r3(Math.max(0, (performance.now() - tugAt) / 1000));
+    // Làm tròn mili giây có thể rơi vào bước 50 ms đã mô phỏng xong → máy chủ áp sự kiện sớm hơn một bước (L14): đẩy qua bước đó.
+    let t = r3(Math.max(0, (performance.now() - tugAt) / 1000));
+    const lastSim = (step - 1) * TUG_STEP;
+    if (step > 0 && t <= lastSim + 1e-9) t = r3(lastSim + 0.001);
     const last = events[events.length - 1];
     if (last && last[0] === t) last[1] = v ? 1 : 0; else events.push([t, v ? 1 : 0]);
     ui?.querySelector('#tugBtn')?.classList.toggle('on', v);
@@ -111,6 +115,7 @@ export async function startDig(item) {
     if (tube) { tube.parent?.remove(tube); tube.geometry.dispose(); }
     if (ui) ui.hidden = true;
     if (r.me) applyMe(r.me);
+    if (r.cancelled) { toast('Đã bỏ lượt đào — giun thoát mất.', 'warn'); return; }
     if (!r.ok) { showResult(r); return; }
     if (r.data.caught) {
       G.fx?.('dug', me, { color: w.color, rare: w.rare });
@@ -120,7 +125,13 @@ export async function startDig(item) {
       toast(`🪱 ${w.name} chuồn mất! ${ESCAPE_LINES[(Math.random() * ESCAPE_LINES.length) | 0]} (+${r.data.xp} XP an ủi)`, 'warn');
     }
   };
-  const cancel = () => { if (!live) return; live = false; G.net.raw({ t: 'act', a: 'dig_cancel' }); end({ ok: true, data: { caught: false, xp: 0 } }); };
+  const cancel = () => {
+    if (!live) return;
+    live = false;
+    window.removeEventListener('keydown', key, true); window.removeEventListener('keyup', key, true);
+    G.net.act('dig_cancel').then((r) => { if (r.me) applyMe(r.me); });
+    end({ ok: true, cancelled: true });
+  };
   G.cancelDig = cancel;
   // Máy chủ đã huỷ lượt (đổi phòng, chuyển vùng, nối lại): chỉ dọn màn giằng co, không gửi gì (PLAN_LOGIC_GAME 4.3).
   G.abortTug = () => { if (!live) return; live = false; window.removeEventListener('keydown', key, true); window.removeEventListener('keyup', key, true); end({ ok: false, err: 'Lượt bị huỷ vì đổi phòng hoặc mất kết nối giữa chừng.' }); };
@@ -135,6 +146,7 @@ export async function startDig(item) {
       const btn = ui.querySelector('#tugBtn');
       btn.onpointerdown = (e) => { e.preventDefault(); btn.setPointerCapture?.(e.pointerId); holdOn(true); };
       btn.onpointerup = btn.onpointercancel = () => holdOn(false);
+      ui.querySelector('#tugCancel').onclick = cancel;
       window.addEventListener('keydown', key, true); window.addEventListener('keyup', key, true);
       tube = wormTube(w.color, w.rare); G.world.scene.add(tube);
       me.userData.tug = s;

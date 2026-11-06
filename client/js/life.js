@@ -1,6 +1,6 @@
 // Đất, nhà, vật liệu, trồng cây và cài đặt NPC (PLAN_LOGIC_GAME 11, 13, 14, 5.2). Máy chủ quyết định giá,
 // thời gian và tài sản; ở đây chỉ hiện bảng và gửi ý định.
-import { G, $, esc, openSheet, closeSheet, toast, showResult } from './ui.js';
+import { G, $, esc, openSheet, closeSheet, toast, showResult, srvNow, homeLeft } from './ui.js';
 import { mat, label } from './models.js';
 
 const T = window.THREE;
@@ -21,7 +21,7 @@ export async function dialogInvestor() {
   const lots = d.tiers.map((t, i) => {
     const owned = i <= d.tier;
     return `<div class="row"><div class="ico" style="background:#e8f0dc">📐</div><div class="meta"><div class="nm">${esc(t.name)} ${i === d.tier ? '<span class="rtag" style="background:var(--good)">Đang có</span>' : ''}</div>
-      <div class="sub">${t.halfX * 2} × ${t.halfZ * 2} m · ${t.cost ? '🌾 ' + fmt(t.cost) : 'miễn phí'} · cần cấp ${t.level}</div></div>
+      <div class="sub">${t.halfX * 2} × ${t.halfZ * 2} m · ${t.beds ? `${t.beds} luống rau · ` : ""}${t.cost ? '🌾 ' + fmt(t.cost) : 'miễn phí'} · cần cấp ${t.level}</div></div>
       <div class="act">${owned ? '' : `<button class="mini hot" data-lot="${i}" ${me.level < t.level ? 'disabled' : ''}>Mua lô này</button>`}</div></div>`;
   }).join('');
   const places = d.places.map((p) => `<button class="tab" data-place="${p.id}" aria-selected="${p.id === d.place}">${esc(p.name)}${p.cost ? ` +${p.cost}` : ''}</button>`).join('');
@@ -62,7 +62,7 @@ export function dialogMaterials() {
 
 export function houseSection(h) {
   const me = G.me, c = h.coop;
-  if (c && c.state === 'building') return `<p>🔨 Bò Mộc đang xây <b>${esc(designName(c.design))}</b> bằng ${MAT[c.material]?.toLowerCase()} — còn <b id="buildLeft">${Math.ceil(h.buildLeft)}</b> giây. Bạn đi chơi, tôi vẫn làm.</p>`;
+  if (c && c.state === 'building') return `<p>🔨 Bò Mộc đang xây <b>${esc(designName(c.design))}</b> bằng ${MAT[c.material]?.toLowerCase()} — còn <b id="buildLeft">${Math.ceil(homeLeft(h, 'buildLeft'))}</b> giây. Bạn đi chơi, tôi vẫn làm.</p>`;
   let html = '';
   if (c && c.state === 'done') {
     html += `<p>✅ <b>${esc(designName(c.design))}</b> bằng ${MAT[c.material]?.toLowerCase()} · ngủ ổ trong nhà hồi <b>+${h.regen} độ no/phút</b> · tối đa <b>${h.cap}</b> khách.</p>`;
@@ -120,7 +120,7 @@ export function bindSeeds(refresh) {
 
 // ---------- Luống rau ----------
 
-const ago = (t) => (Date.parse(t) - Date.now()) / 1000;
+const ago = (t) => (Date.parse(t) - srvNow()) / 1000;
 export function dialogBed(it) {
   const key = it.id.startsWith('home:') ? it.id : 'park:' + it.id;
   const pl = G.me.beds?.[key];
@@ -168,8 +168,8 @@ export function updatePlants() {
     const pos = bedPos(key);
     if (!pos) continue;
     seen.add(id);
-    const total = (Date.parse(pl.ready) - Date.parse(pl.at)) / 1000, grown = (Date.now() - Date.parse(pl.at)) / 1000;
-    const stage = Date.now() > Date.parse(pl.wilt) ? 'wilt' : grown >= total ? 'ripe' : grown > total * 0.35 ? 'bush' : 'sprout';
+    const total = (Date.parse(pl.ready) - Date.parse(pl.at)) / 1000, grown = (srvNow() - Date.parse(pl.at)) / 1000;
+    const stage = srvNow() > Date.parse(pl.wilt) ? 'wilt' : grown >= total ? 'ripe' : grown > total * 0.35 ? 'bush' : 'sprout';
     const cur = plants.get(id);
     if (cur && cur.stage === stage) continue;
     if (cur) G.world.scene.remove(cur.mesh);
