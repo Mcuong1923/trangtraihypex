@@ -1,6 +1,8 @@
 package main
 
 import (
+	"math"
+	"sync"
 	"testing"
 	"time"
 )
@@ -157,4 +159,56 @@ func TestSwitchRoomIntoFullAreaToasts(t *testing.T) {
 		t.Fatal("đổi về kênh có vườn đầy phải đứng ngoài cổng")
 	}
 	a.toastHas("đang đông nên bạn đứng ngoài cổng")
+}
+
+// Đi vào khu đầy: server giữ ở cổng và gửi area_full để client ngừng tự đoán bước vào trong.
+func TestWalkIntoFullAreaSendsAreaFull(t *testing.T) {
+	e := newEnv(t, t.TempDir())
+	a, _ := e.seeded(t, "trongvuon3", "Gà Trong Vườn", func(*Account) {})
+	b, bid := e.seeded(t, "dicong", "Gà Đi Cổng", func(*Account) {})
+	old := Zones["garden"].Capacity
+	Zones["garden"].Capacity = 1
+	t.Cleanup(func() { Zones["garden"].Capacity = old })
+	e.warp(a, "garden")
+	r := e.roomOf(t)
+	z := r.zones["garden"]
+	gate := *z.Entry
+	r.DoWait(func() {
+		for _, q := range r.players {
+			if q.acc.ID == bid {
+				q.pos = gate
+			}
+		}
+	})
+	dx, dz := z.CX-gate.X, z.CZ-gate.Z
+	l := math.Hypot(dx, dz)
+	stop, done := make(chan struct{}), make(chan struct{})
+	go func() { // giữ phím đi tới: server tự dừng nếu 300ms không có input
+		defer close(done)
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(100 * time.Millisecond):
+				if b.conn.WriteJSON(msg{"t": "in", "x": dx / l, "z": dz / l}) != nil {
+					return
+				}
+			}
+		}
+	}()
+	stopWriter := sync.OnceFunc(func() { close(stop); <-done }) // chỉ một goroutine ghi websocket
+	defer stopWriter()
+	m := b.expect("area_full", 4*time.Second)
+	stopWriter()
+	b.send(msg{"t": "in", "x": 0, "z": 0})
+	if m["area"] != "garden" {
+		t.Fatalf("area_full phải chỉ đúng khu: %v", m)
+	}
+	r.DoWait(func() {
+		for _, q := range r.players {
+			if q.acc.ID == bid && r.areaAtOrEmpty(q.pos) == "garden" {
+				t.Fatal("khu đầy thì không được bước vào")
+			}
+		}
+	})
 }

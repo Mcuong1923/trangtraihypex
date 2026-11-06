@@ -47,6 +47,7 @@ type Player struct {
 	dirty        bool
 	lastInvited  map[string]time.Time
 	crowdToastAt time.Time            // lần cuối báo "khu đang đông" (M9)
+	crowdSentAt  time.Time            // lần cuối gửi area_full cho client (chặn dự đoán bước vào khu đầy)
 	leaving      bool                 // đang rời phòng (Room.remove)
 	pkEnd        map[string]any       // kết quả trận chốt lúc đang mất mạng, gửi lại khi nối lại (M10)
 	goneAt       time.Time            // mất kết nối, đang giữ chỗ chờ nối lại
@@ -611,9 +612,16 @@ func (r *Room) step(now time.Time, dt float64) {
 			}
 			if target := r.areaAtOrEmpty(next); target != "" && r.areaFull(p, target) {
 				next = p.pos // M9: khu đã đủ người (sảnh 50, khu khác 25) thì dừng ở cổng, vào hàng chờ
+				r.sendAreaFull(p, target, now)
 				if now.Sub(p.crowdToastAt) > 5*time.Second {
 					p.crowdToastAt = now
 					r.toast(p, "warn", fmt.Sprintf("Khu này đang đông, bạn đứng thứ %d trong hàng chờ.", r.areaQueuePos(p, target)))
+				}
+			}
+			if r.world != nil && next != p.pos { // nhìn trước 1,5 ô: báo client trước khi nó kịp đoán bước vào khu đầy
+				ahead := z.Move(next, Vec{next.X + p.in.X*areaLookahead, next.Z + p.in.Z*areaLookahead})
+				if target := r.areaAtOrEmpty(ahead); target != "" && r.areaWouldBlock(p, target) {
+					r.sendAreaFull(p, target, now)
 				}
 			}
 			p.pos = next

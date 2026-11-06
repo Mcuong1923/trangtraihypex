@@ -375,6 +375,8 @@ N.on('vit', (m) => {
   if (m.stage !== prev) hungerToast(prev, m.stage);
 });
 N.on('toast', (m) => toast(m.text, m.kind));
+// Server đang giữ gà ở cổng khu đầy: trong lúc còn hiệu lực, dự đoán cục bộ không bước vào khu đó.
+N.on('area_full', (m) => { G.areaBlock = { area: m.area, until: performance.now() + 700 }; });
 // Thể lực chạy nhanh (PLAN_LOGIC_GAME 3): máy chủ tính, client hiện vòng quanh nút 🏃.
 N.on('stam', (m) => { G.stam = m; updateSprint(); });
 // Làng sống (PLAN_LOGIC_GAME 5–9).
@@ -925,7 +927,10 @@ function loop() {
   if (moving) {
     const stageF = me.stage >= 4 ? 0.75 : me.stage >= 3 ? 0.85 : 1;
     const spd = (G.catalog.walkSpeed || 4.6) * stageF * (veh ? (me.stage >= 4 ? 0 : veh.speed) : 1) * (running ? G.catalog.sprintMult || 1.65 : 1) * (1 + (G.walkBonus || 0)) * dt;
-    const pos=moveSafe(walkZone(),S.pos,S.pos.x+wx*spd,S.pos.z+wz*spd);S.pos.x=pos.x;S.pos.z=pos.z;
+    const pos=moveSafe(walkZone(),S.pos,S.pos.x+wx*spd,S.pos.z+wz*spd);
+    const blk=G.areaBlock&&G.areaBlock.until>now&&G.worldMap?G.areaBlock:null;
+    if(blk&&areaAt(G.zones,G.worldMap,pos.x,pos.z)===blk.area)S.pos.lerp(S.srv,Math.min(1,dt*10)); // khu đầy: đứng ở cổng như server
+    else{S.pos.x=pos.x;S.pos.z=pos.z;}
     S.mesh.rotation.y = lerpAngle(S.mesh.rotation.y, Math.atan2(wx, wz), 0.25);
     S.phase += dt * (running ? 18 : 12);
     if (running && Math.random() < dt * 8) dust(S.mesh);
@@ -935,7 +940,7 @@ function loop() {
   else if (err > 2.5) S.pos.copy(S.srv);
   else if (!moving || err > 1.2) S.pos.lerp(S.srv, Math.min(1, dt * (moving ? 5 : 10)));
   S.mesh.position.copy(S.pos);
-  if (G.worldMap) { const area = areaAt(G.zones, G.worldMap, S.pos.x, S.pos.z); if (area && area !== G.zone) announceArea(area); }
+  if (G.worldMap) { const area = areaAt(G.zones, G.worldMap, S.pos.x, S.pos.z); if (area && area !== G.zone && !(G.areaBlock?.area === area && G.areaBlock.until > now)) announceArea(area); }
   if (G.spinSelf) S.mesh.rotation.y += dt * 1.2;
   animate(S.mesh, dt, moving, S.phase, me.stage);
 
