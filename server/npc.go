@@ -528,10 +528,14 @@ func (r *Room) unboard(p *Player, why string) {
 		spot = a.Pos
 	}
 	p.pos = spot
+	kind := "good"
+	if t := r.keepOutOfFullArea(p); t != "" {
+		kind, why = "warn", t+" đang đông, bạn xuống xe ở ngoài cổng."
+	}
 	r.enterArea(p)
 	r.broadcastRoom(nil, map[string]any{"t": "pcar", "pid": p.PID, "carrier": ""})
 	if why != "" {
-		r.toast(p, "good", why)
+		r.toast(p, kind, why)
 	}
 }
 

@@ -47,6 +47,7 @@ type Player struct {
 	dirty        bool
 	lastInvited  map[string]time.Time
 	crowdToastAt time.Time            // lần cuối báo "khu đang đông" (M9)
+	leaving      bool                 // đang rời phòng (Room.remove)
 	pkEnd        map[string]any       // kết quả trận chốt lúc đang mất mạng, gửi lại khi nối lại (M10)
 	goneAt       time.Time            // mất kết nối, đang giữ chỗ chờ nối lại
 	ride         *Ride                // xe mình đang lái
@@ -105,7 +106,8 @@ type Room struct {
 	Owner    string // chủ nhà với phòng "home"
 	home     *Home
 	zones    map[string]*Zone
-	world    *Region // bản đồ liền của chuồng công cộng; nil với nhà riêng / Nhà Hội
+	areaQ    map[string][]*areaWait // hàng chờ ở cổng các khu đã đủ người (area_capacity_queue.go)
+	world    *Region                // bản đồ liền của chuồng công cộng; nil với nhà riêng / Nhà Hội
 	entry    string
 	cap      int
 	quit     bool
@@ -244,6 +246,9 @@ func (r *Room) add(s *Session) {
 	p.ry = math.Pi
 	p.lastStage = p.acc.HungerStage(r.hub.bal)
 	r.players[s] = p
+	if r.keepOutOfFullArea(p) != "" { // đổi kênh/tới vùng ngay trong khu đã đầy: đứng ngoài cổng
+		p.zone = r.world.AreaAt(p.pos)
+	}
 	now := time.Now()
 	if s.closed.Load() {
 		// Socket đóng ngay trước khi vào phòng: Leave không thấy phòng này nên không đánh dấu. Tự đánh dấu để
@@ -362,6 +367,7 @@ func (r *Room) remove(s *Session) {
 		return
 	}
 	r.fbedsDirty = true
+	p.leaving = true // xuống xe lúc rời phòng: không dời ra cổng khu, không báo khám phá khu
 	// Rời phòng (đổi kênh, sang vùng, vào/ra nhà, bị thay phiên) = bỏ dở lượt đào/câu: tính hồi đất/hồi câu
 	// trước khi lưu. Thiếu dòng này thì đổi kênh rồi đào lại ngay tại chỗ để gieo lại loài giun/cá đã lộ.
 	r.abandonDig(p)
@@ -599,11 +605,11 @@ func (r *Room) step(now time.Time, dt float64) {
 			if r.world != nil && p.ride != nil && !DriveZones[r.world.AreaAt(next)] {
 				next = p.pos // xe dừng ở mép khu cấm lái (sảnh, vườn, sân PK, trạm ấp)
 			}
-			if r.world != nil && r.areaFull(p, r.world.AreaAt(next)) {
-				next = p.pos // M9: khu đã đủ người (sảnh 50, khu khác 25) thì dừng ở cổng
+			if target := r.areaAtOrEmpty(next); target != "" && r.areaFull(p, target) {
+				next = p.pos // M9: khu đã đủ người (sảnh 50, khu khác 25) thì dừng ở cổng, vào hàng chờ
 				if now.Sub(p.crowdToastAt) > 5*time.Second {
 					p.crowdToastAt = now
-					r.toast(p, "warn", "Khu này đang đông, chờ một chút rồi vào nhé.")
+					r.toast(p, "warn", fmt.Sprintf("Khu này đang đông, bạn đứng thứ %d trong hàng chờ.", r.areaQueuePos(p, target)))
 				}
 			}
 			p.pos = next
@@ -619,6 +625,7 @@ func (r *Room) step(now time.Time, dt float64) {
 	r.stepActors(now, dt)
 	if r.tick%TickRate == 0 {
 		r.clockTick(now) // mọi phòng, kể cả nhà riêng, cùng một trời
+		r.stepAreaQueues(now)
 		if r.tick%(TickRate*10) == 0 {
 			r.fbedsDirty = true // kết bạn/huỷ bạn đổi danh sách cây nhìn thấy
 		}
