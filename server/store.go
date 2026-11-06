@@ -93,7 +93,27 @@ func writeAtomic(path string, v any) error {
 	if err := os.WriteFile(tmp, b, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	return renameWithRetry(tmp, path)
+}
+
+// renameWithRetry đổi tên, thử lại khi Windows từ chối tạm thời (file đích đang bị trình diệt virus/đánh chỉ mục mở).
+// Chờ 1, 2, 4… 64 ms: tối đa ~130 ms, chỉ khi gặp lỗi; lỗi khác trả ngay. Nhiều kho lưu lúc đang giữ khoá chung
+// (hợp đồng, hội, Store) nên lúc thử lại phòng khác có thể chờ theo; log để đo xem thực tế tốn bao lâu.
+func renameWithRetry(from, to string) error {
+	err := os.Rename(from, to)
+	waited := time.Duration(0)
+	for wait := time.Millisecond; err != nil && renameRetryable(err) && wait <= 64*time.Millisecond; wait *= 2 {
+		time.Sleep(wait)
+		waited += wait
+		err = os.Rename(from, to)
+	}
+	switch {
+	case waited > 0 && err == nil:
+		log.Printf("lưu %s: đổi tên được sau khi thử lại %v (file đang bị tiến trình khác mở)", to, waited)
+	case waited > 0:
+		log.Printf("lưu %s: thử lại %v vẫn không đổi tên được: %v", to, waited, err)
+	}
+	return err
 }
 
 func randHex(n int) string {

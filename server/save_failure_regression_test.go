@@ -16,7 +16,11 @@ func blockWrite(t *testing.T, path string) func() {
 	if err := os.MkdirAll(path+".tmp", 0o755); err != nil {
 		t.Fatal(err)
 	}
-	return func() { os.RemoveAll(path + ".tmp") }
+	return func() {
+		if err := os.RemoveAll(path + ".tmp"); err != nil { // dọn không được thì báo ngay, không để lần lưu sau hỏng khó hiểu
+			t.Fatal(err)
+		}
+	}
 }
 
 // playerOf trả Player của tài khoản id trong phòng công khai đầu tiên.
