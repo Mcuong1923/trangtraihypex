@@ -298,7 +298,7 @@ func (r *Room) nestBuddy(p *Player, now time.Time) {
 	buddy := false
 	if p.seat != "" {
 		for _, q := range r.players {
-			if q != p && q.seat != "" && q.pos.Dist(p.pos) <= NestBuddyRadius && r.hub.store.Social.AreFriends(p.acc.ID, q.acc.ID) {
+			if q != p && q.seat != "" && q.goneAt.IsZero() && p.goneAt.IsZero() && q.pos.Dist(p.pos) <= NestBuddyRadius && r.hub.store.Social.AreFriends(p.acc.ID, q.acc.ID) {
 				buddy = true
 				break
 			}
@@ -311,8 +311,7 @@ func (r *Room) nestBuddy(p *Player, now time.Time) {
 		p.memo.buddySince = now
 	case now.Sub(p.memo.buddySince) >= time.Minute:
 		p.memo.buddySince = now
-		if c := p.acc.companion(p.acc.Following); c != nil {
-			c.Affinity++
+		if c := p.acc.companion(p.acc.Following); c != nil && p.acc.socialAffinity(c, now) {
 			p.dirty = true
 			r.broadcastZone(p.zone, nil, map[string]any{"t": "fx", "pid": p.PID, "fx": "buddy"})
 		}
@@ -368,7 +367,7 @@ func (r *Room) npcEvent(p *Player, kind string, w *Worm) {
 		if it := r.nearestNPC(p, 15); it != nil {
 			r.sayFrom(it.ID, "react.rare", kv, p)
 		}
-		if r.world != nil && r.Kind == "public" && now.Sub(p.memo.cameoAt) > 2*time.Minute && r.cameoCount() < 3 && r.rnd() < 0.6 {
+		if r.world != nil && r.Kind == "public" && now.Sub(p.memo.cameoAt) > 8*time.Minute && r.cameoCount() < 3 && r.rnd() < 0.6 {
 			r.reporter(p, w, now)
 		}
 	case "escaped":
@@ -628,13 +627,12 @@ func (r *Room) npcAct(p *Player, m *inMsg, reply func(ActResult), fail func(erro
 				return
 			}
 		}
-		txn(func() (ActResult, error) {
+		// Chỉ lên xe khi vé đã lưu: lưu lỗi thì tài khoản hoàn nguyên mà người vẫn ngồi xe là đi chùa (lỗi thấp).
+		if txn(func() (ActResult, error) {
 			token, paid, err := p.acc.payRide(VillageFare, "village_bus", bus.ID, now, b)
 			if err != nil {
 				return ActResult{}, fmt.Errorf("Hết lượt miễn phí (lượt mới sau %s) và không đủ %d thóc.", humanDur(time.Duration(p.acc.NextTokenIn(now, b))*time.Second), fareAfter(p.acc, VillageFare))
 			}
-			r.board(p, bus, seat)
-			p.busDest = dest
 			how := "dùng 1 lượt miễn phí"
 			if !token {
 				how = fmt.Sprintf("trả %d thóc", paid)
@@ -644,7 +642,10 @@ func (r *Room) npcAct(p *Player, m *inMsg, reply func(ActResult), fail func(erro
 				where = "tới bến " + zoneTitle(dest)
 			}
 			return ActResult{Msg: fmt.Sprintf("Đã lên xe %s (%s).", where, how), Data: map[string]any{"bus": bus.ID, "token": token, "paid": paid}}, nil
-		})
+		}) {
+			r.board(p, bus, seat)
+			p.busDest = dest
+		}
 
 	case "bus_alight":
 		if p.carrier == nil || p.carrier.Kind != KindBus {
@@ -679,16 +680,17 @@ func (r *Room) npcAct(p *Player, m *inMsg, reply func(ActResult), fail func(erro
 			return
 		}
 		fare := xeomFare(p.acc, length, now)
-		txn(func() (ActResult, error) {
+		if txn(func() (ActResult, error) {
 			if err := p.acc.addThoc(-fare, "xeom_fare", a.ID+":"+m.To, now); err != nil {
 				return ActResult{}, fmt.Errorf("Cần %d thóc cho chuyến này.", fare)
 			}
+			return ActResult{Msg: fmt.Sprintf("Lên xe ôm tới %s: −%d thóc (%.0f m).", z.Title, fare, length), Data: map[string]any{"fare": fare, "meters": math.Round(length)}}, nil
+		}) { // lên xe sau khi tiền xe đã lưu
 			p.sess.Send(map[string]any{"t": "offer_end", "id": a.OfferID})
 			r.board(p, a, 0)
 			a.State, a.Dest, a.Fare, a.OfferID = "carry", m.To, fare, ""
 			a.Path, a.PI = append([]Vec{a.Pos}, route...), 0
-			return ActResult{Msg: fmt.Sprintf("Lên xe ôm tới %s: −%d thóc (%.0f m).", z.Title, fare, length), Data: map[string]any{"fare": fare, "meters": math.Round(length)}}, nil
-		})
+		}
 
 	case "xeom_decline":
 		if a := r.actors[m.ID]; a != nil && a.Kind == KindXeOm && a.Target == p && a.State == "offer" {
@@ -700,6 +702,12 @@ func (r *Room) npcAct(p *Player, m *inMsg, reply func(ActResult), fail func(erro
 		if err := r.busy(p); err != nil {
 			fail(err)
 			return
+		}
+		for _, a := range r.actors {
+			if a.Kind == KindXeOm && a.Target == p && (a.State == "approach" || a.State == "offer" || a.State == "carry") {
+				fail(errors.New("Đã có xe ôm đang chạy tới đón bạn rồi.")) // một người không giữ hết xe ôm (L10)
+				return
+			}
 		}
 		var best *Actor
 		bd := 40.0

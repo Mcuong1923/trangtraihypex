@@ -274,7 +274,7 @@ export async function openBusStop() {
   if (!here) { toast('Đứng gần biển 🚌 ở cổng mỗi khu để đón xe.', 'warn'); return; }
   const tok = d.tokens > 0 ? `🎫 Còn <b>${d.tokens}/${G.catalog.maxBusTokens}</b> lượt miễn phí` : `🎫 Hết lượt miễn phí · lượt mới sau <b>${mmss(d.nextToken)}</b> · vé <b>${d.fare} thóc</b>`;
   const ready = here.eta === 0;
-  openSheet('bus', `🚌 Bến ${esc(here.title)}`, `
+  openSheet('busstop', `🚌 Bến ${esc(here.title)}`, `
     <p class="mut" style="margin-top:0">${ready ? '<b style="color:var(--good)">Xe đang dừng ở bến — lên ngay!</b>' : `Xe tới sau <b>${Math.ceil(here.eta)} giây</b>. Xe chạy vòng làng liên tục, dừng ở cổng mọi khu.`}</p>
     <p>${tok}</p>
     ${d.stops.filter((s, i) => i !== d.here).map((s) => `<div class="row"><div class="ico" style="background:#e3eef5">🅑</div><div class="meta"><div class="nm">${esc(s.title)}</div></div>
@@ -285,7 +285,7 @@ export async function openBusStop() {
     const res = await G.net.act('bus_board', { to: b.dataset.board });
     if (showResult(res)) { G.myBusDest = b.dataset.board; closeSheet(); sfx('bus'); }
   }));
-  if (!ready) setTimeout(() => { if (G.modal === 'bus') openBusStop(); }, Math.min(5000, Math.max(800, here.eta * 1000)));
+  if (!ready) setTimeout(() => { if (G.modal === 'busstop') openBusStop(); }, Math.min(5000, Math.max(800, here.eta * 1000)));
 }
 
 // Khách lên / xuống xe NPC.

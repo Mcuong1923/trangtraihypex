@@ -134,7 +134,7 @@ type Balance struct {
 	DigCooldownSec   float64       `json:"digCooldownSec"`
 	DigDailyLimit    int           `json:"digDailyLimit"`
 	FishDailyLimit   int           `json:"fishDailyLimit"` // số cá câu được mỗi ngày; 0 → FishDailyDefault
-	DigMinDuration   time.Duration `json:"-"` // thao tác nhanh hơn mức này coi là bất thường
+	DigMinDuration   time.Duration `json:"-"`              // thao tác nhanh hơn mức này coi là bất thường
 	ManaDrainPerSec  float64       `json:"manaDrainPerSec"`
 	ManaPerDig       float64       `json:"manaPerDig"` // trừ thêm mỗi lượt đào có thưởng (mục 7.4)
 	HungerSlowSec    float64       `json:"hungerSlowSec"`
@@ -187,7 +187,7 @@ func LiveBalance() Balance {
 	return finalize(Balance{
 		Name: "live", DigCooldown: 8 * time.Second, DigDailyLimit: 120, DigMinDuration: 400 * time.Millisecond,
 		ManaDrainPerSec: 4.5 / 60, ManaPerDig: 0.4, HungerSlowSec: 180, HungerExhaustSec: 360,
-		RescueDuration: 30 * time.Second, RescueReward: 5, TutorialReward: 50, ShowcaseEvery: 60 * time.Second,
+		RescueDuration: 60 * time.Second, RescueReward: 5, TutorialReward: 50, ShowcaseEvery: 60 * time.Second, // dọn ổ 60 giây như plan
 		BuildDuration: 10 * time.Minute, HatchDuration: 30 * time.Minute, BusWait: 20 * time.Second, BusEvery: 3 * time.Minute,
 		ContractWork: 6, ContractTTL: 24 * time.Hour, OwnerAbsent: 7 * 24 * time.Hour,
 	})
@@ -205,9 +205,9 @@ func DemoBalance() Balance {
 	})
 }
 
-// FishDailyDefault: trần cá mỗi ngày. Kỳ vọng ~12 thóc/con → ~720 thóc/ngày, dưới ngân sách ~1.150 thóc
+// FishDailyDefault: trần cá mỗi ngày (chốt 06/11/2026). Kỳ vọng ~12,8 thóc/con → ~385 thóc/ngày, khoảng 1/3 ngân sách ~1.150 thóc
 // của 120 lượt đào (PLAN_LOGIC_GAME 17). Không có trần thì câu cá thành nguồn thóc/XP vô hạn (~2.800 thóc/giờ).
-const FishDailyDefault = 60
+const FishDailyDefault = 30
 
 func finalize(b Balance) Balance {
 	b.DigCooldownSec = b.DigCooldown.Seconds()
@@ -284,6 +284,7 @@ const (
 	InteractSlack = 1.2 // dung sai khoảng cách tương tác cho độ trễ mạng
 	BagCapacity   = 60  // tổng số giun trong túi
 	PKInviteTTL   = 20 * time.Second
+	PKReinviteGap = time.Minute // mời PK lại cùng một người
 	PeckDuration  = 8 * time.Second
 	PKCountdown   = 3 * time.Second
 	PeckMinGap    = 60 * time.Millisecond // giới hạn ~16 lần mổ hợp lệ/giây

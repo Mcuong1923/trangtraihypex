@@ -45,7 +45,12 @@ func (r *Room) showcaseFor(v *Player, houses map[string]HomeIndexEntry, order []
 	}
 	var list []cand
 	for i, q := range order {
-		if _, ok := houses[q.acc.ID]; !ok {
+		e, ok := houses[q.acc.ID]
+		if !ok {
+			continue
+		}
+		// Không trưng nhà riêng tư hoặc nhà của người đã chặn/bị người xem chặn (lỗi thấp L4).
+		if q != v && (e.Access == "private" || r.hub.store.Social.Blocked(v.acc.ID, q.acc.ID)) {
 			continue
 		}
 		rank := 2

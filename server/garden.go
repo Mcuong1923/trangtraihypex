@@ -126,6 +126,37 @@ func (a *Account) Harvest(bed string, now time.Time) (string, int, error) {
 	return crop, n, nil
 }
 
+// SocialAffinityPerDay: thân thiết từ nguồn bạn bè (tưới giúp, ngồi ổ cạnh bạn) tối đa mỗi ngày (chốt 06/11/2026),
+// để hai tài khoản phụ không đưa thú cưng lên Lv3 trong vài giờ. Vuốt ve, cho ăn tính riêng.
+const SocialAffinityPerDay = 60
+
+// FlowerAffinity: thân thiết bạn đồng hành của người nhận khi được tặng một bó hoa.
+const FlowerAffinity = 5
+
+// socialAffinity cộng 1 thân thiết từ nguồn bạn bè nếu hôm nay chưa đủ trần; trả false khi đã đủ.
+func (a *Account) socialAffinity(c *Companion, now time.Time) bool {
+	if day := DayKey(now); a.SocialAffDay != day {
+		a.SocialAffDay, a.SocialAff = day, 0
+	}
+	if a.SocialAff >= SocialAffinityPerDay {
+		return false
+	}
+	a.SocialAff++
+	c.Affinity++
+	return true
+}
+
+// homePlantings: số luống nhà đang có cây của người này.
+func (a *Account) homePlantings() int {
+	n := 0
+	for key := range a.Beds {
+		if strings.HasPrefix(key, "home:") {
+			n++
+		}
+	}
+	return n
+}
+
 // isHomeBedKind: đồ trang trí trồng được cây trong nhà riêng.
 func isHomeBedKind(kind string) bool { return kind == "luong_rau" || kind == "luong_ca_rot" }
 

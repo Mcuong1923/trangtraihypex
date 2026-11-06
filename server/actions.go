@@ -43,7 +43,7 @@ func (r *Room) act(p *Player, m *inMsg) {
 			reply(prev) // retry sau timeout: trả đúng kết quả cũ, không cộng lần hai
 			return true
 		}
-		snap, _ := json.Marshal(p.acc)
+		snap, _ := snapshotOf(p.acc)
 		// Panic giữa apply: hoàn nguyên tài khoản rồi báo lỗi, để bản dở dang không bị lưu ở lần Save sau.
 		defer func() {
 			if e := recover(); e != nil {
@@ -460,7 +460,7 @@ func (r *Room) act(p *Player, m *inMsg) {
 			fail(err)
 			return
 		}
-		snap, _ := json.Marshal(p.acc)
+		snap, _ := snapshotOf(p.acc)
 		_ = p.acc.addThoc(-n, "festival", st.Name, now)
 		p.acc.Festival += n
 		notes := p.acc.CheckTitles()
@@ -506,7 +506,7 @@ func (r *Room) act(p *Player, m *inMsg) {
 	case "pk_bot", "pk_invite", "pk_accept", "pk_decline", "pk_tap", "pk_pick":
 		r.pkAct(p, m, reply, fail)
 
-	case "eat_item", "pending_claim", "item_buy", "item_sell", "plant", "water", "harvest", "prefs", "land_buy", "land_info", "pet_ride", "weekly", "water_friend":
+	case "eat_item", "pending_claim", "item_buy", "item_sell", "plant", "water", "harvest", "prefs", "land_buy", "land_info", "pet_ride", "weekly", "water_friend", "gift_flower":
 		r.logicAct(p, m, reply, fail, txn)
 
 	case "bus_stops", "bus_board", "bus_alight", "xeom_accept", "xeom_decline", "xeom_call", "xeom_leave", "npc_choice":
@@ -534,13 +534,32 @@ func containsInt(l []int, v int) bool {
 	return false
 }
 
-func restore(a *Account, snap []byte) {
-	var fresh Account
-	if json.Unmarshal(snap, &fresh) == nil {
-		fresh.normalize()
-		fresh.seq = a.seq
-		*a = fresh
+// accSnapshot: bản chụp tài khoản trước một giao dịch, kèm số dòng sổ cái chưa ghi đĩa lúc chụp.
+type accSnapshot struct {
+	Acc     json.RawMessage `json:"acc"`
+	LedgerN int             `json:"ledgerN"`
+}
+
+func snapshotOf(a *Account) ([]byte, error) {
+	raw, err := json.Marshal(a)
+	if err != nil {
+		return nil, err
 	}
+	return json.Marshal(accSnapshot{Acc: raw, LedgerN: len(a.ledger)})
+}
+
+// restore đưa tài khoản về bản chụp. Giữ các dòng sổ cái đã có trước khi chụp (của thay đổi đã áp nhưng chưa lưu),
+// chỉ bỏ dòng của giao dịch bị huỷ (lỗi thấp L12: trước đây xoá sạch sổ cái chưa ghi).
+func restore(a *Account, snap []byte) {
+	var s accSnapshot
+	var fresh Account
+	if json.Unmarshal(snap, &s) != nil || json.Unmarshal(s.Acc, &fresh) != nil {
+		return
+	}
+	fresh.normalize()
+	fresh.seq = a.seq
+	fresh.ledger = append([]LedgerEntry(nil), a.ledger[:min(s.LedgerN, len(a.ledger))]...)
+	*a = fresh
 }
 
 func (r *Room) moveZone(p *Player, to string) {
@@ -574,6 +593,22 @@ func (r *Room) broadcastLook(p *Player) {
 		"pet": petOf(p.acc), "guild": gname, "gcolor": gcolor})
 }
 
+// areaFull: bước sang khu khác mà khu đó đã đủ sức chứa (Zone.Capacity, M9). Khu ngoài trời không giới hạn riêng
+// vì phòng đã giới hạn RoomCapacity.
+func (r *Room) areaFull(p *Player, area string) bool {
+	z := r.zones[area]
+	if area == p.zone || z == nil || z.Outdoor || z.Capacity <= 0 {
+		return false
+	}
+	n := 0
+	for _, q := range r.players {
+		if q.zone == area && q.rideOf == nil && q.carrier == nil {
+			n++
+		}
+	}
+	return n >= z.Capacity
+}
+
 // enterArea cập nhật khu theo vị trí sau mỗi bước đi trên bản đồ liền.
 func (r *Room) enterArea(p *Player) {
 	if r.world == nil {
@@ -588,6 +623,15 @@ func (r *Room) enterArea(p *Player) {
 	}
 	if p.match != nil && p.zone == "arena" {
 		r.endMatchFor(p, "left") // chạy khỏi sân tỷ thí giữa trận coi như bỏ cuộc
+	}
+	if t := p.trade; t != nil {
+		other := t.A
+		if other == p {
+			other = t.B
+		}
+		if other.pos.Dist(p.pos) > TradeMaxDist {
+			r.closeTrade(t, "Một bên đã đi xa, giao dịch huỷ.") // bước qua ranh khu con lúc đứng cạnh nhau thì không huỷ
+		}
 	}
 	p.zone = area
 	r.discover(p, "zone:"+area)

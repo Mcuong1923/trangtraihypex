@@ -58,7 +58,10 @@ export async function startFish(item) {
   const holdOn = (v) => {
     if (!live || v === s.wantHold) return;
     s.wantHold = v;
-    const t = r3(Math.max(0, (performance.now() - tugAt) / 1000));
+    // Làm tròn mili giây có thể rơi vào bước 50 ms đã mô phỏng xong → máy chủ áp sự kiện sớm hơn một bước (L14): đẩy qua bước đó.
+    let t = r3(Math.max(0, (performance.now() - tugAt) / 1000));
+    const lastSim = (step - 1) * TUG_STEP;
+    if (step > 0 && t <= lastSim + 1e-9) t = r3(lastSim + 0.001);
     const last = events[events.length - 1];
     if (last && last[0] === t) last[1] = v ? 1 : 0; else events.push([t, v ? 1 : 0]);
     ui?.querySelector('#tugBtn')?.classList.toggle('on', v);
@@ -87,6 +90,15 @@ export async function startFish(item) {
   };
   // Máy chủ đã huỷ lượt câu (đổi phòng, chuyển vùng, nối lại): chỉ dọn màn giằng co, không gửi gì.
   G.abortTug = () => { if (!live) return; live = false; end({ ok: false, err: 'Lượt bị huỷ vì đổi phòng hoặc mất kết nối giữa chừng.' }); };
+  // Bỏ cần giữa chừng: máy chủ tính như cá sổng (vẫn hồi câu, tốn sức).
+  const cancel = () => {
+    if (!live) return;
+    live = false;
+    G.net.act('fish_cancel').then((r) => { if (r.me) applyMe(r.me); });
+    cleanup();
+    toast('Đã bỏ cần — cá lặn mất.', 'warn');
+  };
+  G.cancelDig = cancel;
   const finish = async () => {
     live = false;
     let r = await G.net.act('fish_finish', { id: d.id, ev: events });
@@ -112,6 +124,7 @@ export async function startFish(item) {
       const btn = ui.querySelector('#tugBtn');
       btn.onpointerdown = (e) => { e.preventDefault(); btn.setPointerCapture?.(e.pointerId); holdOn(true); };
       btn.onpointerup = btn.onpointercancel = () => holdOn(false);
+      ui.querySelector('#tugCancel').onclick = cancel;
       window.addEventListener('keydown', key, true); window.addEventListener('keyup', key, true);
       bobber.visible = false; fish.visible = true;
       me.userData.tug = s;

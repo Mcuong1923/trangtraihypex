@@ -196,7 +196,7 @@ type inMsg struct {
 
 func (s *Session) readPump() {
 	defer s.hub.Leave(s)
-	s.conn.SetReadLimit(4096)
+	s.conn.SetReadLimit(16384) // đủ cho 400 sự kiện giằng co hợp lệ (lỗi thấp L3)
 	s.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	s.conn.SetPongHandler(func(string) error { s.conn.SetReadDeadline(time.Now().Add(60 * time.Second)); return nil })
 	for {
@@ -341,6 +341,7 @@ func (h *Hub) Hello(s *Session, token string, resume bool) {
 		return
 	}
 	s.acc = acc
+	h.store.Guilds.Touch(id) // M8: chủ hội đăng nhập hằng ngày không bị coi là vắng mặt
 	if old != nil && old != s && old.closed.Load() && !old.kicked.Load() {
 		if r := old.room.Load(); r != nil {
 			resumed := false

@@ -396,7 +396,7 @@ PK là lời mời có thể từ chối, không đánh người ngoài trận. 
 | Trí nhớ hạt thóc | Nhớ thứ tự và chọn lại | Mở rộng |
 | Đua vượt rào | Đua ngắn theo nhóm | Mở rộng |
 
-Ở úp ngửa, một bên chọn trước, bên kia nhận mặt còn lại và xác nhận; luân phiên bên chọn trước. Máy chủ tạo kết quả sau khi cả hai khóa lựa chọn; lưu kết quả phục vụ đối soát. Chế độ may rủi không dùng cho xếp hạng kỹ năng.
+Ở úp ngửa, một bên chọn trước, bên kia nhận mặt còn lại và xác nhận; luân phiên bên chọn trước. Người được chọn có 10 giây; quá hạn thì máy chủ chọn ngẫu nhiên (chốt 06/11/2026). Máy chủ tạo kết quả sau khi cả hai khóa lựa chọn; lưu kết quả phục vụ đối soát. Chế độ may rủi không dùng cho xếp hạng kỹ năng.
 
 Mổ nhanh dễ bị auto-click. Giới hạn đầu vào hợp lệ, kiểm tra thứ tự và thời gian từ máy chủ, theo dõi dấu hiệu bất thường; vẫn coi là chế độ vui không có thưởng tài sản theo số trận thắng. Chế độ canh nhịp có tiềm năng công bằng hơn nhưng cũng phải thử độ trễ và khả năng tự động hóa.
 
@@ -407,9 +407,10 @@ Lời mời → chấp nhận điểm hẹn ở sân PK → hai người đi t�
 - Lời mời hết hạn sau 20 giây; tránh gửi liên tục cùng người.
 - Client gửi thao tác, không gửi kết luận “tôi thắng” hoặc điểm tổng để máy chủ tin trực tiếp.
 - Mốc bắt đầu/kết thúc do máy chủ đặt; chấp nhận độ trễ trong cửa sổ giới hạn. Kiểm thử riêng Wi-Fi/4G; không cam kết cân bằng giữa mọi đường truyền.
-- Mất kết nối trước khi bắt đầu: hủy. Sau khi bắt đầu: cho nối lại trong 15 giây; kết quả chỉ hiện khi trạng thái đã chốt. Hết thời gian thì xử lý bỏ trận; nếu lỗi máy chủ làm gián đoạn cả trận thì hủy, không phạt.
+- Mất kết nối trước khi bắt đầu: hủy trận; mất kết nối trong lúc đếm ngược mà hết đếm ngược vẫn chưa nối lại thì hủy, nối lại kịp thì đấu bình thường. Sau khi bắt đầu: cho nối lại trong 15 giây; kết quả chỉ hiện khi trạng thái đã chốt, nên nối lại sau khi trận đã chốt vẫn thấy kết quả (chốt 06/11/2026). Hết thời gian thì xử lý bỏ trận; nếu lỗi máy chủ làm gián đoạn cả trận thì hủy, không phạt.
 - V1 chỉ có huy hiệu/kỷ lục vui, không thóc từ thắng trận. Nhiệm vụ chơi cùng người khác, nếu có, giới hạn theo tài khoản/ngày và không yêu cầu thắng.
 - Khóa kết quả theo match ID; một trận chỉ cấp thưởng nhiệm vụ một lần.
+- Xếp hạng (bảng tuần, điểm hội, danh hiệu "Cao thủ PK") chỉ tính trận **Mổ nhanh giữa hai người thật** (chốt 06/11/2026). Úp ngửa và Gà Máy không tính. Thắng vì đối thủ bỏ trận chỉ tính "đã chơi". Thắng cùng một đối thủ quá 5 trận/tuần không tính thêm. Số trận thắng đã ghi trước đó giữ nguyên.
 
 ## 11. Chat, bạn bè và cộng đồng
 

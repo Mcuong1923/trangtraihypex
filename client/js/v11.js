@@ -1,6 +1,6 @@
 // Giao diện V1.1/V1.2: trạm ấp trứng, bến xe & Ven Suối, xe riêng, giao dịch, hợp đồng thợ, Hội Gà.
 // Mọi quyết định do máy chủ; các bảng chỉ gửi ý định và hiển thị kết quả.
-import { G, $, esc, openSheet, setSheetBody, closeSheet, toast, showResult, wormById } from './ui.js';
+import { G, $, esc, openSheet, setSheetBody, closeSheet, toast, showResult, wormById, slowGuard } from './ui.js';
 import { buildVehicle, buildChick, buildDuck, mat } from './models.js';
 import { sfx } from './audio.js';
 
@@ -88,7 +88,7 @@ export function dialogDuck() {
       <div class="meta"><div class="nm">${esc(c.name)} ${on ? '<span class="rtag" style="background:var(--good)">Đang đi theo</span>' : ''}</div>
         <div class="sub">${esc(ab.line)} · thân thiết ${c.affinity} (${lvName})</div><div class="sub mut">${esc(ab.sp.desc)} Mức: ${ab.levels}</div></div>
       <div class="act"><button class="mini ${on ? 'sec' : 'hot'}" data-follow="${on ? '' : c.id}">${on ? 'Để ở nhà' : 'Đi theo'}</button>
-        <button class="mini sec" data-care="${c.id}" data-mode="pet">Vuốt ve</button><button class="mini sec" data-care="${c.id}" data-mode="feed">Cho ăn</button>
+        <button class="mini sec" data-care="${c.id}" data-mode="pet">Vuốt ve</button><button class="mini sec" data-care="${c.id}" data-mode="feed">Cho ăn</button><button class="mini sec" data-rename="${c.id}">Đổi tên</button>
         ${on && ab.sp.ability === 'carry' && ab.lv >= 2 ? '<button class="mini hot" id="gooseRide">🪿 Cưỡi ngỗng</button>' : ''}</div></div>`;
   }).join('');
   const odds = (id) => (G.catalog.eggSpecies[id] || []).map((e) => `${G.catalog.species.find((s) => s.id === e.Species)?.name || e.Species} ${Math.round(e.P * 100)}%`).join(', ');
@@ -109,6 +109,20 @@ export function dialogDuck() {
   };
   if ($('gooseRide')) $('gooseRide').onclick = async () => { if (showResult(await act('pet_ride'))) closeSheet(); };
   document.querySelectorAll('[data-follow]').forEach((b) => (b.onclick = async () => { if (showResult(await act('follow', { id: b.dataset.follow }), { quiet: true })) dialogDuck(); }));
+  // Đổi tên bạn đồng hành: ô nhập ngay tại dòng tên, 2–14 ký tự (máy chủ kiểm lại).
+  document.querySelectorAll('[data-rename]').forEach((b) => (b.onclick = () => {
+    const nm = b.closest('.row').querySelector('.nm'), cur = (G.me.companions || []).find((c) => c.id === b.dataset.rename);
+    nm.innerHTML = '<input type="text" maxlength="14" id="petRen" aria-label="Tên mới" style="width:9em"> <button class="mini good" id="petRenOk">Lưu</button>';
+    const inp = $('petRen'); inp.value = cur?.name || ''; inp.focus();
+    const save = async () => {
+      const text = inp.value.trim(), n = [...text].length;
+      if (n < 2 || n > 14) { toast('Tên phải từ 2 đến 14 ký tự.', 'warn'); return; }
+      $('petRenOk').disabled = true;
+      if (showResult(await act('rename_pet', { id: b.dataset.rename, text }))) dialogDuck(); else $('petRenOk').disabled = false;
+    };
+    $('petRenOk').onclick = save;
+    inp.onkeydown = (e) => { if (e.key === 'Enter') save(); };
+  }));
   document.querySelectorAll('[data-care]').forEach((b) => (b.onclick = async () => { if (showResult(await act('care', { id: b.dataset.care, mode: b.dataset.mode }))) dialogDuck(); }));
   if (inc && hatchLeft > 0) {
     const end = performance.now() + hatchLeft * 1000;
@@ -305,7 +319,8 @@ export function bindContractSection(refresh) {
 
 export function openContracts() {
   raw({ t: 'contracts' });
-  openSheet('contracts', '🔨 Hợp đồng xây dựng', '<p class="mut">Đang tải…</p>');
+  openSheet('contracts', '🔨 Hợp đồng xây dựng', '<p class="mut" data-loading>Đang tải…</p>');
+  slowGuard('contracts', () => raw({ t: 'contracts' }));
 }
 export function onContracts(m) {
   G.contracts = m.contracts;
@@ -346,7 +361,8 @@ export async function doWork(k) {
 
 export function openGuild() {
   raw({ t: 'guild' });
-  openSheet('guild', '🏰 Hội Gà', '<p class="mut">Đang tải…</p>');
+  openSheet('guild', '🏰 Hội Gà', '<p class="mut" data-loading>Đang tải…</p>');
+  slowGuard('guild', () => raw({ t: 'guild' }));
 }
 let guildTab = 'info';
 const guildChat = [];
@@ -445,14 +461,15 @@ function renderGuild() {
 let barTimer = null;
 function inviteBar(text, ttl, yesLabel, onYes) {
   const bar = $('inviteBar');
+  const end = performance.now() + ttl * 1000;
   let left = Math.round(ttl);
   bar.hidden = false;
   bar.dataset.id = '';
   bar.innerHTML = `<span class="t">${esc(text)} (<span id="ib2">${left}</span>s)</span><button class="mini good" id="ib2Yes">${yesLabel}</button><button class="mini sec" id="ib2No">Bỏ qua</button>`;
   const hide = () => { clearInterval(barTimer); bar.hidden = true; };
-  $('ib2Yes').onclick = () => { hide(); onYes(); };
+  $('ib2Yes').onclick = () => { const ok = performance.now() < end; hide(); if (ok) onYes(); else toast('Lời mời đã hết hạn', 'warn'); };
   $('ib2No').onclick = hide;
   clearInterval(barTimer);
-  barTimer = setInterval(() => { left--; if (left <= 0) hide(); else if ($('ib2')) $('ib2').textContent = left; }, 1000);
+  barTimer = setInterval(() => { left = Math.ceil((end - performance.now()) / 1000); if (left <= 0) hide(); else if ($('ib2')) $('ib2').textContent = left; }, 1000);
   sfx('notify');
 }

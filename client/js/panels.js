@@ -1,5 +1,5 @@
 // Các bảng tác vụ. Mọi nút gọi server qua G.net.act; client không tự cộng/trừ tài sản.
-import { G, $, esc, openSheet, setSheetBody, closeSheet, toast, showResult, applyMe, wormById, foodById, cosById, rtag, RARITY_COLOR, SLOT_LABEL, STAGE_NAME } from './ui.js';
+import { G, $, esc, openSheet, setSheetBody, closeSheet, toast, showResult, applyMe, wormById, foodById, cosById, rtag, RARITY_COLOR, SLOT_LABEL, STAGE_NAME, slowGuard } from './ui.js';
 import { dress } from './models.js';
 import { sfx } from './audio.js';
 import * as V from './v11.js';
@@ -89,7 +89,7 @@ function showLoot(loot, perfect, notes) {
       ${rtag(w)}
       <div class="kvs" style="margin:12px auto 0;max-width:280px;text-align:left">
         <b>Chiều dài</b><span>${loot.size} cm${G.me.records[w.id] === loot.size ? ' 🏅' : ''}</span>
-        <b>Bán NPC</b><span>🌾 ${w.sell}</span>
+        <b>Bán NPC</b><span>🌾 ${G.me.sellPrices?.[w.id] ?? w.sell}</span>
         <b>Chế biến & ăn</b><span>+${w.xp} XP · +${w.mana} mana · phí ${w.fee}</span>
         <b>Giằng co</b><span>${perfect ? 'Không tuột lần nào ✔' : 'Có tuột nhưng vẫn kéo được'}</span>
         <b>Mã lần đào</b><span style="font-size:.7rem;overflow-wrap:anywhere">${esc(loot.id)}</span>
@@ -176,12 +176,13 @@ function manaLine() {
 function wormRow(w, atShop) {
   const me = G.me, n = me.worms[w.id] || 0;
   const canEat = me.thoc >= w.fee && me.mana < 100;
+  const price = me.sellPrices?.[w.id] ?? w.sell; // giá máy chủ thực trả (giun hot, Tay Buôn)
   return `<div class="row">
     <div class="ico" style="background:${w.color}33">🪱</div>
     <div class="meta"><div class="nm">${esc(w.name)} ×${n} ${rtag(w)}</div>
-      <div class="sub">Bán ${w.sell} · ăn +${w.xp} XP/+${w.mana} mana · phí chế biến ${w.fee}</div></div>
+      <div class="sub">Bán ${price} · ăn +${w.xp} XP/+${w.mana} mana · phí chế biến ${w.fee}</div></div>
     <div class="act">
-      ${atShop ? `<button class="mini good" data-sell="${w.id}">Bán +${w.sell}</button>${n > 1 ? `<button class="mini sec" data-sellall="${w.id}">Bán hết (${n})</button>` : ''}` : ''}
+      ${atShop ? `<button class="mini good" data-sell="${w.id}">Bán +${price}</button>${n > 1 ? `<button class="mini sec" data-sellall="${w.id}">Bán hết (${n}) +${fmt(price * n)}</button>` : ''}` : ''}
       <button class="mini hot" data-eat="${w.id}" ${canEat ? '' : 'disabled'} title="${me.mana >= 100 ? 'Độ no đã đầy' : me.thoc < w.fee ? 'Thiếu thóc trả phí' : ''}">Chế biến &amp; ăn −${w.fee}</button>
       ${atShop ? '' : `<button class="mini sec" data-raw="${w.id}" ${me.mana >= 100 ? 'disabled' : ''} title="Không tốn thóc, không cộng XP">Ăn sống +${Math.round(w.mana * (G.catalog.balance.rawEatRatio || 0.6))}</button>`}
     </div></div>`;
@@ -449,7 +450,7 @@ function openQuestList(tabs) {
 }
 
 export function openRooms(list) {
-  if (!list) { G.net.raw({ t: 'rooms' }); openSheet('rooms', 'Các chuồng công cộng', '<p class="mut">Đang tải…</p>'); return; }
+  if (!list) { G.net.raw({ t: 'rooms' }); openSheet('rooms', 'Các chuồng công cộng', '<p class="mut" data-loading>Đang tải…</p>'); slowGuard('rooms', () => G.net.raw({ t: 'rooms' })); return; }
   if (G.modal !== 'rooms') return;
   setSheetBody(`<p class="mut" style="margin:0 0 10px">Mọi chuồng có cùng bố cục và tiện ích. Đổi chuồng không reset nhiệm vụ, hồi đào hay phần thưởng; mỗi chuồng tối đa ${G.catalog.roomCap} người.</p>
     ${list.map((r) => `<div class="row"><div class="ico" style="background:#f1e3c6">🏠</div>
@@ -595,6 +596,9 @@ export function hideInvite(id) {
   clearInterval(inviteTimer); bar.hidden = true;
 }
 
+// Chỉ một listener phím PK tồn tại: gỡ khi kết thúc / nối lại / trận mới (B5).
+let pkKeyHandler = null;
+function pkDropKey() { if (pkKeyHandler) { window.removeEventListener('keydown', pkKeyHandler); pkKeyHandler = null; } }
 export const PK = {
   // Nối lại giữa trận: dựng lại bảng đúng giai đoạn với tỷ số và thời gian còn lại từ máy chủ (mục 10.2).
   resume(m) {
@@ -612,6 +616,7 @@ export const PK = {
   },
   start(m) {
     hideInvite();
+    pkDropKey();
     G.match = { ...m, a: 0, b: 0, phase: 'countdown', t0: performance.now() };
     const [na, nb] = m.names;
     const me = m.you, opp = 1 - me;
@@ -636,8 +641,14 @@ export const PK = {
       $('pkBody').innerHTML = `<p class="mut">Còn <b id="pkTime">${mt.duration.toFixed(1)}</b> giây — mổ đi!</p><button class="pktap" id="pkTap">MỔ!</button>`;
       const tap = () => { if (mt.phase === 'play') { G.net.raw({ t: 'act', a: 'pk_tap', id: mt.id }); sfx('tap'); } };
       $('pkTap').onpointerdown = (e) => { e.preventDefault(); tap(); };
-      mt.keyTap = (e) => { if (e.code === 'Space' || e.key === 'e') { e.preventDefault(); if (!e.repeat) tap(); } };
-      window.addEventListener('keydown', mt.keyTap);
+      pkDropKey();
+      pkKeyHandler = mt.keyTap = (e) => {
+        if (G.match !== mt) { pkDropKey(); return; }
+        const tg = e.target, tn = tg && tg.tagName;
+        if (tn === 'INPUT' || tn === 'TEXTAREA' || (tg && tg.isContentEditable)) return;
+        if (e.code === 'Space' || e.key === 'e') { e.preventDefault(); if (!e.repeat) tap(); }
+      };
+      window.addEventListener('keydown', pkKeyHandler);
       const timer = () => {
         if (G.match !== mt || mt.phase !== 'play') return;
         const left = mt.duration - (performance.now() - mt.goAt) / 1000;
@@ -698,16 +709,30 @@ export const PK = {
     }, 600);
   },
   end(m) {
-    const mt = G.match; if (!mt || mt.id !== m.id) return;
-    if (mt.keyTap) window.removeEventListener('keydown', mt.keyTap);
+    let mt = G.match;
+    if (!mt || mt.id !== m.id) {
+      // Trận kết thúc khi đang offline: máy chủ gửi lại pk_end có late=true; dựng kết quả từ chính thông điệp.
+      if (!m.late || G.match) return;
+      mt = { id: m.id, you: m.you, mode: m.mode };
+      if (!m.cancelled) sfx(m.winner === m.you ? 'win' : m.winner === -1 ? 'pop' : 'lose');
+      PK.showResult(mt, m);
+      return;
+    }
+    pkDropKey();
     mt.phase = 'end';
     PK.score(m);
-    const s = [m.a, m.b];
     const win = m.winner === mt.you, tie = m.winner === -1;
     if (!m.cancelled) sfx(win ? 'win' : tie ? 'pop' : 'lose');
     setTimeout(() => {
       if (G.match !== mt) return;
       G.match = null;
+      PK.showResult(mt, m);
+    }, mt.mode === 'coin' ? 900 : 300);
+  },
+  showResult(mt, m) {
+    const s = [m.a, m.b];
+    const win = m.winner === mt.you, tie = m.winner === -1;
+    {
       openSheet('pkend', 'Kết quả PK', `<div class="pkstage">
         <div class="pkbig">${m.cancelled ? '🚫' : tie ? '🤝' : win ? '🏆' : '💫'}</div>
         <h2 style="margin:4px 0">${m.cancelled ? 'Trận bị huỷ' : tie ? 'Hoà!' : win ? 'Bạn thắng!' : 'Bạn thua — ngã lăn quay 😵'}</h2>
@@ -715,6 +740,6 @@ export const PK = {
         <p class="mut">${mt.mode === 'coin' ? 'Úp ngửa là chế độ may rủi, không tính xếp hạng kỹ năng. ' : ''}Không mất đồ, không mất cấp, không thưởng thóc theo thắng trận.</p>
         <button class="btn block" id="pkOk">Đóng</button></div>`);
       $('pkOk').onclick = closeSheet;
-    }, mt.mode === 'coin' ? 900 : 300);
+    }
   },
 };

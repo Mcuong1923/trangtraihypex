@@ -61,7 +61,13 @@ export function showResult(res, { quiet = false } = {}) {
 
 let meListeners = [];
 export function onMe(fn) { meListeners.push(fn); }
+// Giờ máy chủ hiện tại (ms) — dùng cho hẹn giờ vườn so với mốc ready/wilt của máy chủ.
+export const srvNow = () => Date.now() + (G.srvOff || 0);
+// Thời gian còn lại (giây) của bộ đếm trong snapshot nhà (buildLeft/partyLeft), trừ thời gian đã trôi từ lúc nhận (B11).
+export const homeLeft = (h, k) => Math.max(0, (h[k] || 0) - (performance.now() - (h._at || performance.now())) / 1000);
 export function applyMe(me) {
+  // Lệch đồng hồ máy chủ so với máy khách (cần me.now = giờ máy chủ, RFC3339); chưa có thì coi như 0.
+  if (me.now) { const t = Date.parse(me.now); if (t) G.srvOff = t - Date.now(); }
   me._at = performance.now(); // mốc nhận dữ liệu: các bộ đếm (trứng nở…) tự trừ thời gian đã trôi
   G.me = me;
   meListeners.forEach((f) => f(me));
@@ -105,3 +111,14 @@ export const RARITY_COLOR = { 'Thường': '#8a8a8a', 'Khá hiếm': '#3f86c9', 
 export const rtag = (w) => `<span class="rtag" style="background:${RARITY_COLOR[w.rarity]}">${esc(w.rarity)}</span>`;
 export const SLOT_LABEL = { head: 'Đầu', eye: 'Mắt', neck: 'Cổ', body: 'Thân', back: 'Lưng' };
 export const STAGE_NAME = ['Bình thường', 'Sắp đói', 'Đói', 'Đói kéo dài', 'Kiệt sức'];
+
+// Tin nhắn gửi bằng raw() có thể bị máy chủ bỏ im lặng (giới hạn tốc độ): sau 6 giây vẫn "Đang tải…" thì cho nút thử lại.
+// modal: tên modal đang chờ; retry: hàm gửi lại yêu cầu. Phần tử chờ phải có thuộc tính data-loading.
+export function slowGuard(modal, retry) {
+  setTimeout(() => {
+    const el = document.querySelector('[data-loading]');
+    if (G.modal !== modal || !el) return;
+    el.innerHTML = 'Mạng chậm, chưa nhận được phản hồi. <button class="mini hot" data-retry>Thử lại</button>';
+    el.querySelector('[data-retry]').onclick = () => { el.innerHTML = 'Đang tải…'; retry(); slowGuard(modal, retry); };
+  }, 6000);
+}

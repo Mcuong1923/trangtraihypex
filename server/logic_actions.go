@@ -77,6 +77,12 @@ func (r *Room) logicAct(p *Player, m *inMsg, reply func(ActResult), fail func(er
 			fail(err)
 			return
 		}
+		if m.A == "plant" && strings.HasPrefix(bed, "home:") && r.home != nil && p.acc.Beds[bed] == nil {
+			if t := r.home.tier(); p.acc.homePlantings() >= t.Beds {
+				fail(fmt.Errorf("%s trồng được tối đa %d luống cùng lúc. Thu hoạch bớt hoặc mua lô lớn hơn.", t.Name, t.Beds))
+				return
+			}
+		}
 		r.fbedsDirty = true
 		txn(func() (ActResult, error) {
 			switch m.A {
@@ -103,6 +109,46 @@ func (r *Room) logicAct(p *Player, m *inMsg, reply func(ActResult), fail func(er
 			r.broadcastZone(p.zone, nil, map[string]any{"t": "fx", "pid": p.PID, "fx": "eat"})
 			return ActResult{Msg: fmt.Sprintf("Thu hoạch %d %s!", n, itemByID(crop).Name)}, nil
 		})
+
+	case "gift_flower":
+		// Tặng bó hoa cho bạn đứng gần: bạn đồng hành của người nhận +FlowerAffinity thân thiết (PLAN_LOGIC_GAME 14),
+		// tính vào trần thân thiết từ bạn bè mỗi ngày của người nhận.
+		q := r.byPID(m.Target)
+		switch {
+		case q == nil || q == p || q.zone != p.zone || q.pos.Dist(p.pos) > 4:
+			fail(errors.New("Lại gần bạn ấy để tặng hoa."))
+			return
+		case !r.hub.store.Social.AreFriends(p.acc.ID, q.acc.ID):
+			fail(errors.New("Chỉ tặng hoa được cho bạn bè."))
+			return
+		case q.acc.companion(q.acc.Following) == nil:
+			fail(errors.New(q.acc.Char.Name + " chưa dắt bạn đồng hành nào theo."))
+			return
+		case q.acc.SocialAffDay == DayKey(now) && q.acc.SocialAff >= SocialAffinityPerDay:
+			fail(errors.New("Hôm nay bạn đồng hành của " + q.acc.Char.Name + " đã nhận đủ thân thiết từ bạn bè, mai tặng nhé."))
+			return
+		}
+		// Người nhận chỉ được cộng sau khi người tặng đã lưu (mất bó hoa); lưu lỗi thì hoàn người nhận.
+		snapQ, _ := snapshotOf(q.acc)
+		c, got := q.acc.companion(q.acc.Following), 0
+		if txn(func() (ActResult, error) {
+			if err := p.acc.takeItems(map[string]int{"bo_hoa": 1}); err != nil {
+				return ActResult{}, errors.New("Bạn chưa có bó hoa nào. Trồng hạt hoa ở luống rồi thu hoạch nhé.")
+			}
+			for range FlowerAffinity {
+				if q.acc.socialAffinity(c, now) {
+					got++
+				}
+			}
+			return ActResult{Msg: fmt.Sprintf("Đã tặng hoa cho %s (%s +%d thân thiết).", q.acc.Char.Name, c.Name, got)}, nil
+		}) {
+			q.dirty = true // lần lưu định kỳ ghi thân thiết của người nhận
+			q.sess.Send(map[string]any{"t": "me", "me": q.acc.View(now, r.hub.bal)})
+			r.toast(q, "good", fmt.Sprintf("💐 %s tặng bạn một bó hoa! %s +%d thân thiết.", p.acc.Char.Name, c.Name, got))
+			r.broadcastZone(p.zone, nil, map[string]any{"t": "fx", "pid": q.PID, "fx": "buddy"})
+		} else {
+			restore(q.acc, snapQ)
+		}
 
 	case "water_friend":
 		q := r.byPID(m.Target)
@@ -134,8 +180,7 @@ func (r *Room) logicAct(p *Player, m *inMsg, reply func(ActResult), fail func(er
 			}
 			r.fbedsDirty = true
 			msg := fmt.Sprintf("Đã tưới giúp %s của %s.", itemByID(pl.Seed).Name, q.acc.Char.Name)
-			if c := p.acc.companion(p.acc.Following); c != nil {
-				c.Affinity++
+			if c := p.acc.companion(p.acc.Following); c != nil && p.acc.socialAffinity(c, now) {
 				msg += " " + c.Name + " +1 thân thiết."
 			}
 			q.sess.Send(map[string]any{"t": "me", "me": q.acc.View(now, r.hub.bal)})
@@ -163,7 +208,7 @@ func (r *Room) logicAct(p *Player, m *inMsg, reply func(ActResult), fail func(er
 		var res ActResult
 		err := r.hub.withHome(p.acc.ID, p.acc.Char.Name, func(h *Home) error {
 			snapH, _ := json.Marshal(h)
-			snapA, _ := json.Marshal(p.acc)
+			snapA, _ := snapshotOf(p.acc)
 			moved, cost, e := h.BuyLot(p.acc, m.I, m.Mode, now)
 			if e != nil {
 				restore(p.acc, snapA)
@@ -196,6 +241,8 @@ func (r *Room) logicAct(p *Player, m *inMsg, reply func(ActResult), fail func(er
 		switch {
 		case !canRideGoose(p.acc):
 			fail(errors.New("Cần dắt theo Ngỗng con ở mức Thân thiết (thân thiết 150+)."))
+		case p.acc.HungerStage(r.hub.bal) >= 3:
+			fail(errors.New("Đói quá, ngỗng không cõng nổi. Ăn chút gì trước đã.")) // đói lâu/kiệt sức không chạy, kể cả cưỡi ngỗng
 		case now.Before(p.gooseReady):
 			fail(fmt.Errorf("Ngỗng đang nghỉ, cưỡi lại sau %s.", humanDur(p.gooseReady.Sub(now))))
 		case p.ride != nil || p.rideOf != nil || p.carrier != nil:

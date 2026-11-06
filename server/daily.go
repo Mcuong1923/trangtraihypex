@@ -20,17 +20,19 @@ type CheckInView struct {
 }
 
 var CheckInRewards = []Reward{
+	// PLAN_LOGIC_GAME 16: ngày 1–6 là 20/30/40/50/60/80 thóc kèm cám hoặc hạt giống; ngày 7 một trứng đốm.
 	{Thoc: 20, Food: map[string]int{"cam": 1}},
 	{Thoc: 30, Items: map[string]int{"hat_cai": 2}},
-	{Thoc: 40, Food: map[string]int{"rau": 1}},
-	{Thoc: 50, Items: map[string]int{"rom": 5}},
+	{Thoc: 40, Food: map[string]int{"cam": 2}},
+	{Thoc: 50, Items: map[string]int{"hat_ca_rot": 2}},
 	{Thoc: 60, Items: map[string]int{"hat_bi_ngo": 1}},
-	{Thoc: 80, Food: map[string]int{"suat": 1}},
+	{Thoc: 80, Food: map[string]int{"cam": 3}},
 	{Thoc: 0, Items: map[string]int{"trung_dom": 1}},
 }
 
 func (a *Account) nextStreak(now time.Time) int {
-	if a.CheckIn.Day == DayKey(now.AddDate(0, 0, -1)) && a.CheckIn.Streak < len(CheckInRewards) {
+	// Lùi một ngày theo lịch Việt Nam, không phụ thuộc giờ mùa hè (DST) của máy chủ.
+	if a.CheckIn.Day == DayKey(now.In(vnZone).AddDate(0, 0, -1)) && a.CheckIn.Streak < len(CheckInRewards) {
 		return a.CheckIn.Streak + 1
 	}
 	return 1

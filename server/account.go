@@ -101,9 +101,9 @@ type Account struct {
 	DailyFish  int       `json:"dailyFish,omitempty"` // cá câu được hôm nay (trần Balance.FishDailyLimit)
 	// Quà chỉ đường cho shipper (+1 thóc, tối đa ShipperTipsPerDay/ngày). Lưu theo tài khoản, không theo phiên:
 	// trước đây đổi kênh là đếm lại từ 0 nên farm được thóc vô hạn.
-	ShipTipDay string `json:"shipTipDay,omitempty"`
-	ShipTips   int    `json:"shipTips,omitempty"`
-	Daily      []Quest   `json:"daily"`
+	ShipTipDay string  `json:"shipTipDay,omitempty"`
+	ShipTips   int     `json:"shipTips,omitempty"`
+	Daily      []Quest `json:"daily"`
 
 	Tutorial        map[string]bool `json:"tutorial"`
 	TutorialClaimed bool            `json:"tutorialClaimed"`
@@ -136,12 +136,16 @@ type Account struct {
 	// PLAN_LOGIC_GAME: quà khởi nghiệp một lần, bữa cứu trợ mỗi ngày của Cụ Cục.
 	StarterGranted bool                 `json:"starterGranted,omitempty"`
 	RationDay      string               `json:"rationDay,omitempty"`
-	Items          map[string]int       `json:"items"`         // kho: vật liệu, hạt giống, nông sản, trứng
-	LevelRewarded  map[int]bool         `json:"levelRewarded"` // cấp đã nhận quà
+	Items          map[string]int       `json:"items"`                  // kho: vật liệu, hạt giống, nông sản, trứng
+	LevelRewarded  map[int]bool         `json:"levelRewarded"`          // cấp đã nhận quà
 	PendingItems   map[string]int       `json:"pendingItems,omitempty"` // quà chưa vào được kho vì kho đầy (hàng chờ có giới hạn)
-	Coupons        map[string]time.Time `json:"coupons"`       // mã phiếu → hạn dùng
-	BusTokens      int                  `json:"busTokens"`     // lượt xe miễn phí đang có (tối đa 2)
-	BusTokenAt     time.Time            `json:"busTokenAt"`    // mốc bắt đầu tính lượt hồi kế tiếp
+	RescueDay      string               `json:"rescueDay,omitempty"`    // ngày đang đếm việc cứu đói
+	RescueCount    int                  `json:"rescueCount,omitempty"`  // số việc cứu đói đã nhận hôm nay
+	SocialAffDay   string               `json:"socialAffDay,omitempty"` // ngày đang đếm thân thiết từ bạn bè
+	SocialAff      int                  `json:"socialAff,omitempty"`    // điểm thân thiết từ bạn bè đã nhận hôm nay
+	Coupons        map[string]time.Time `json:"coupons"`                // mã phiếu → hạn dùng
+	BusTokens      int                  `json:"busTokens"`              // lượt xe miễn phí đang có (tối đa 2)
+	BusTokenAt     time.Time            `json:"busTokenAt"`             // mốc bắt đầu tính lượt hồi kế tiếp
 	TokensInit     bool                 `json:"tokensInit,omitempty"`
 	Prefs          Prefs                `json:"prefs"`
 	NPCSeen        map[string]string    `json:"npcSeen"` // khoá lời chào NPC → ngày đã chào đầy đủ
@@ -499,7 +503,8 @@ func (a *Account) FinishDigIn(set, zone, spot string, perfect bool, rollR, sizeR
 // khi đào lúc kiệt sức. Trả thêm số cấp vừa lên vì đào cũng cho XP.
 func (a *Account) FinishDigWorm(w *Worm, zone, spot string, perfect bool, sizeR float64, now time.Time, b Balance, cdMult float64) (Loot, []string, int) {
 	var notes []string
-	size := math.Round((8+sizeR*22)*(1+0.15*float64(rarityIndex(w.ID)))*10) / 10
+	// Hệ số kích thước theo bậc hiếm (thường ×1 … huyền thoại ×1,6), không theo vị trí trong bảng (lỗi thấp L2).
+	size := math.Round((8+sizeR*22)*(1+0.15*float64(wormTier(w)))*10) / 10
 	loot := Loot{ID: a.nextID("loot"), Worm: w.ID, SizeCM: size, Zone: zone, Spot: spot, At: now, Perfect: perfect}
 	a.Worms[w.ID]++
 	if !a.Collection[w.ID] {
@@ -516,6 +521,7 @@ func (a *Account) FinishDigWorm(w *Worm, zone, spot string, perfect bool, sizeR 
 	if perfect {
 		a.Stats.Perfect++
 	}
+	a.EnsureDaily(now) // lượt đào kéo qua nửa đêm tính cho ngày mới, không bị xoá khi đổi ngày (lỗi thấp)
 	a.DailyDigs++
 	a.DigReadyAt = now.Add(time.Duration(float64(b.DigCooldown) * cdMult))
 	a.Mana = math.Max(0, a.Mana-b.ManaPerDig)
@@ -535,17 +541,6 @@ func (a *Account) EscapeDig(now time.Time, b Balance, cdMult float64) int {
 	a.Mana = math.Max(0, a.Mana-b.ManaPerDig)
 	a.Stats.Escaped++
 	return a.addXP(EscapeXP)
-}
-
-func rarityIndex(id string) int {
-	for _, tab := range WormSets {
-		for i, w := range tab {
-			if w.ID == id {
-				return i
-			}
-		}
-	}
-	return 0
 }
 
 // ---------- Bán / chế biến & ăn ----------
@@ -709,8 +704,16 @@ func (a *Account) hasEdibleOrSellable() bool {
 			return true
 		}
 	}
+	for id, n := range a.Items { // nông sản, cá trong kho ăn hoặc bán được (lỗi thấp L11)
+		if it := itemByID(id); n > 0 && it != nil && (it.Mana > 0 || it.Sell > 0) {
+			return true
+		}
+	}
 	return false
 }
+
+// RescuePerDay: việc "dọn ổ rơm" cứu đói tối đa mỗi ngày, để không thành nguồn farm thóc (lỗi thấp L11).
+const RescuePerDay = 3
 
 // ---------- Cứu đói (mục 7.4) ----------
 
@@ -724,6 +727,12 @@ func (a *Account) StartRescue(now time.Time) (*RescueJob, error) {
 	}
 	if !a.RescueEligible() {
 		return nil, errors.New("Việc cứu đói chỉ mở khi mana ≤ 20, ví dưới 5 thóc và không còn gì để ăn hoặc bán.")
+	}
+	if day := DayKey(now); a.RescueDay != day {
+		a.RescueDay, a.RescueCount = day, 0
+	}
+	if a.RescueCount >= RescuePerDay {
+		return nil, fmt.Errorf("Hôm nay đã dọn ổ rơm %d lần. Đào giun tay không rồi ăn sống để hồi sức nhé.", RescuePerDay)
 	}
 	a.Rescue = &RescueJob{ID: a.nextID("rescue"), StartAt: now}
 	return a.Rescue, nil
@@ -741,6 +750,10 @@ func (a *Account) FinishRescue(jobID string, now time.Time, b Balance) error {
 	}
 	a.RescueDone[jobID] = true
 	a.Rescue = nil
+	if day := DayKey(now); a.RescueDay != day {
+		a.RescueDay, a.RescueCount = day, 0
+	}
+	a.RescueCount++ // tính lượt khi làm xong
 	return a.addThoc(b.RescueReward, "rescue_job", jobID, now)
 }
 
@@ -925,7 +938,9 @@ type AccountView struct {
 	StorageCap      int                 `json:"storageCap"`
 	LevelRewarded   map[int]bool        `json:"levelRewarded"`
 	PendingItems    map[string]int      `json:"pendingItems"`
-	Coupons         map[string]float64  `json:"coupons"` // mã → giây còn hiệu lực
+	SellPrices      map[string]int      `json:"sellPrices"` // giá Lợn Ủn trả thật (giun hot +10%, Tay Buôn) cho giun đang có
+	Now             time.Time           `json:"now"`        // giờ máy chủ, để client so hẹn giờ vườn/nhà với đồng hồ máy chủ (B12)
+	Coupons         map[string]float64  `json:"coupons"`    // mã → giây còn hiệu lực
 	BusTokens       int                 `json:"busTokens"`
 	NextTokenIn     float64             `json:"nextTokenIn"`
 	Prefs           Prefs               `json:"prefs"`
@@ -937,6 +952,17 @@ type AccountView struct {
 	HouseBuilt      bool                `json:"houseBuilt"`
 	FishReadyIn     float64             `json:"fishReadyIn"`
 	FishCaught      int                 `json:"fishCaught"`
+}
+
+// sellPrices: giá bán thật của từng loài giun đang có, để client hiện đúng số máy chủ sẽ trả (B7).
+func (a *Account) sellPrices(now time.Time) map[string]int {
+	out := map[string]int{}
+	for id, n := range a.Worms {
+		if w := wormByID(id); w != nil && n > 0 {
+			out[id] = SellPrice(a, w, now)
+		}
+	}
+	return out
 }
 
 func (a *Account) View(now time.Time, b Balance) AccountView {
@@ -956,7 +982,7 @@ func (a *Account) View(now time.Time, b Balance) AccountView {
 		Orders: a.OrderViews(now), Festival: a.Festival,
 		Eggs: a.eggCount(), EggsClaimed: a.EggsClaimed, Incubation: a.Incubation, HatchIn: a.hatchIn(now), Companions: a.Companions,
 		Following: a.Following, Booking: a.Booking, TripsLeft: a.TripsLeft(now, b), OwnedVehicles: a.OwnedVehicles, Reputation: a.Reputation,
-		Items: a.Items, StorageCount: a.StorageCount(), StorageCap: StorageCap, LevelRewarded: a.LevelRewarded, PendingItems: a.PendingItems,
+		Items: a.Items, StorageCount: a.StorageCount(), StorageCap: StorageCap, LevelRewarded: a.LevelRewarded, PendingItems: a.PendingItems, SellPrices: a.sellPrices(now), Now: now,
 		Coupons: a.couponView(now), BusTokens: a.Tokens(now, b), NextTokenIn: a.NextTokenIn(now, b), Prefs: a.Prefs,
 		CheckIn: a.CheckInView(now), Beds: a.Beds, StarterGranted: a.StarterGranted, CompanionCap: a.CompanionCap(), HouseBuilt: a.HouseBuilt,
 		FishReadyIn: math.Max(0, a.FishReadyAt.Sub(now).Seconds()), FishCaught: a.FishCaught,

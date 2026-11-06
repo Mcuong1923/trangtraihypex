@@ -46,7 +46,7 @@ Lượt xe miễn phí (tối đa 2, hồi 1 lượt/5 phút), giá vé, xác su
 
 ```bash
 cd server
-go test -race -timeout 25m ./...                                 # 69 test: luật + end-to-end qua WebSocket (~12 phút)
+go test -count=1 -timeout 25m ./...                              # 122 test: luật + end-to-end qua WebSocket (~12 phút); -race cần cgo/gcc
 NODE=/duong/dan/node go test -run TestTugMatchesClient .         # so khớp giằng co Go ↔ client/js/tug.js (bỏ qua nếu không có Node)
 go run ./cmd/loadtest -url http://localhost:8080 -n 1000 -dur 3m # load test với bot
 ```
@@ -69,7 +69,7 @@ Trình duyệt (Three.js)  ──WebSocket: input, ý định──▶  Máy ch�
 | `home.go`, `home_actions.go` | Nhà riêng: đất, Bò Mộc, đặt đồ, quyền vào |
 | `social.go`, `social_hub.go` | Bạn bè, tin riêng, chặn, báo cáo, thư Chim Chíp, thăm nhà |
 | `hub.go`, `store.go`, `admin.go` | Phiên WebSocket và nối lại, xếp phòng theo vùng, đăng nhập/khôi phục, lưu trữ, quản trị và số đo |
-| `dig.go`, `garden.go`, `items.go`, `daily.go`, `pets.go`, `estate.go`, `logic_actions.go` | PLAN_LOGIC_GAME: giằng co giun, trồng cây, kho đồ, quà cấp và điểm danh, kỹ năng thú cưng, mua đất và xây nhà |
+| `dig.go`, `fishing.go`, `garden.go`, `items.go`, `daily.go`, `pets.go`, `estate.go`, `showcase.go`, `logic_actions.go` | PLAN_LOGIC_GAME: giằng co giun, câu cá, trồng cây, kho đồ, quà cấp và điểm danh, kỹ năng thú cưng, mua đất và xây nhà, lô trưng bày ở Xóm |
 | `npc.go`, `npc_director.go`, `npc_lines.go`, `roads.go`, `transit.go` | Làng sống: xe buýt vòng làng, xe ôm, giao thông NPC, cameo, trận biểu diễn, lời thoại, hướng dẫn qua NPC |
 | `clock.go`, `weekly.go` | Ngày/đêm, mưa; bảng xếp hạng tuần |
 | `cmd/loadtest/` | Công cụ load test |
@@ -77,7 +77,7 @@ Trình duyệt (Three.js)  ──WebSocket: input, ý định──▶  Máy ch�
 Client (`client/js/`):
 - **Cảnh 3D:** `world.js` dựng cảnh, `models.js` chứa mô hình gà/NPC/xe/đồ trang trí.
 - **Giao diện:** `panels.js`, `social.js`, `v11.js`, `life.js` (đất, nhà, vật liệu, trồng cây, cài đặt NPC) chứa các bảng; `admin.js` là trang quản trị.
-- **Làng sống:** `npc.js` (xe, NPC, bong bóng, xe ôm, bến xe, trận biểu diễn), `dig.js` + `tug.js` (đào giun giằng co; `tug.js` là bản sao 1-1 mô phỏng của máy chủ).
+- **Làng sống:** `npc.js` (xe, NPC, bong bóng, xe ôm, bến xe, trận biểu diễn), `dig.js` + `tug.js` (đào giun giằng co; `tug.js` là bản sao 1-1 mô phỏng của máy chủ), `fish.js` (câu cá ở ao).
 - **Điều phối:** `main.js`.
 
 Nguyên tắc từ mục 16 của plan được giữ:

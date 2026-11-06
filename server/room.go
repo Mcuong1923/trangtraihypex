@@ -39,18 +39,20 @@ type Player struct {
 	match     *Match
 	invite    *Invite
 
-	chatTokens  float64
-	chatAt      time.Time
-	emoteAt     time.Time
-	lastStage   int
-	vitAt       time.Time
-	dirty       bool
-	lastInvited map[string]time.Time
-	goneAt      time.Time            // mất kết nối, đang giữ chỗ chờ nối lại
-	ride        *Ride                // xe mình đang lái
-	rideOf      *Player              // người lái của xe mình đang ngồi
-	seatInvites map[string]time.Time // pid người lái → hạn lời mời lên xe
-	trade       *Trade
+	chatTokens   float64
+	chatAt       time.Time
+	emoteAt      time.Time
+	lastStage    int
+	vitAt        time.Time
+	dirty        bool
+	lastInvited  map[string]time.Time
+	crowdToastAt time.Time            // lần cuối báo "khu đang đông" (M9)
+	pkEnd        map[string]any       // kết quả trận chốt lúc đang mất mạng, gửi lại khi nối lại (M10)
+	goneAt       time.Time            // mất kết nối, đang giữ chỗ chờ nối lại
+	ride         *Ride                // xe mình đang lái
+	rideOf       *Player              // người lái của xe mình đang ngồi
+	seatInvites  map[string]time.Time // pid người lái → hạn lời mời lên xe
+	trade        *Trade
 
 	// Chạy nhanh (PLAN_LOGIC_GAME mục 3): thể lực tính bằng giây chạy, chỉ sống trong phiên.
 	run        bool      // input đang giữ nút chạy
@@ -107,6 +109,7 @@ type Room struct {
 	entry    string
 	cap      int
 	quit     bool
+	stopped  chan struct{} // đóng khi Run thoát, để DoWait không chờ phòng đã dừng
 	chatLog  []ChatLog
 	hub      *Hub
 	inbox    chan func()
@@ -142,7 +145,7 @@ func NewRoom(h *Hub, id, name string) *Room {
 	var seed [32]byte
 	_, _ = crand.Read(seed[:])
 	return &Room{ID: id, Name: name, Kind: "public", Region: RegionHypex, zones: Zones, world: Regions[RegionHypex], entry: ZoneLobby, cap: RoomCapacity, buses: map[string]*Bus{},
-		hub: h, inbox: make(chan func(), 1024), players: map[*Session]*Player{},
+		hub: h, inbox: make(chan func(), 1024), stopped: make(chan struct{}), players: map[*Session]*Player{},
 		rng: rand.New(rand.NewChaCha8(seed)), matches: map[string]*Match{}, invites: map[string]*Invite{}}
 }
 
@@ -169,10 +172,19 @@ func (r *Room) reserve()    { r.count.Add(1) }
 func (r *Room) unreserve()  { r.count.Add(-1) }
 func (r *Room) Do(f func()) { r.inbox <- f }
 
+// DoWait chạy f trên goroutine phòng và chờ xong. Phòng đã dừng (nhà/Nhà Hội đóng khi hết người) thì trả về
+// ngay thay vì chờ mãi (lỗi thấp L9); khi đó f có thể không chạy.
 func (r *Room) DoWait(f func()) {
 	done := make(chan struct{})
-	r.inbox <- func() { defer close(done); f() } // defer: f panic (đã được safely bắt) vẫn nhả người chờ
-	<-done
+	select {
+	case r.inbox <- func() { defer close(done); f() }: // defer: f panic (đã được safely bắt) vẫn nhả người chờ
+	case <-r.stopped:
+		return
+	}
+	select {
+	case <-done:
+	case <-r.stopped:
+	}
 }
 
 // logPanic ghi panic kèm stack để điều tra; không có nó một lỗi nil trong handler sẽ giết cả tiến trình.
@@ -193,6 +205,7 @@ func (r *Room) safely(what string, f func()) {
 func (r *Room) Run() {
 	t := time.NewTicker(time.Second / TickRate)
 	defer t.Stop()
+	defer close(r.stopped)
 	last := time.Now()
 	for !r.quit {
 		select {
@@ -324,7 +337,10 @@ func (r *Room) rebind(old, s *Session, resume bool) bool {
 	r.broadcastZone(p.zone, p, map[string]any{"t": "pgone", "pid": p.PID, "gone": false})
 	if mt := p.match; mt != nil {
 		s.Send(r.pkResume(mt, p, now))
+	} else if p.pkEnd != nil {
+		s.Send(p.pkEnd) // M10: trận đã chốt trong lúc mất mạng: nối lại vẫn thấy kết quả
 	}
+	p.pkEnd = nil
 	return true
 }
 
@@ -531,6 +547,8 @@ func (r *Room) step(now time.Time, dt float64) {
 		}
 		if regen := r.homeRest(p); regen > 0 {
 			p.acc.restoreMana(regen * dt / 60) // ngủ ổ trong nhà đã xây: hồi độ no theo vật liệu
+		} else if r.nearHomeNest(p) {
+			p.acc.TickVitalsAt(dt, b, r.drainFactor(p)*b.ManaRestFactor) // Tổ nhỏ chưa có nhà: nghỉ ổ như ở sảnh
 		} else {
 			p.acc.TickVitalsAt(dt, b, r.drainFactor(p))
 		}
@@ -580,6 +598,13 @@ func (r *Room) step(now time.Time, dt float64) {
 			next := z.Move(p.pos, Vec{p.pos.X + p.in.X*spd, p.pos.Z + p.in.Z*spd})
 			if r.world != nil && p.ride != nil && !DriveZones[r.world.AreaAt(next)] {
 				next = p.pos // xe dừng ở mép khu cấm lái (sảnh, vườn, sân PK, trạm ấp)
+			}
+			if r.world != nil && r.areaFull(p, r.world.AreaAt(next)) {
+				next = p.pos // M9: khu đã đủ người (sảnh 50, khu khác 25) thì dừng ở cổng
+				if now.Sub(p.crowdToastAt) > 5*time.Second {
+					p.crowdToastAt = now
+					r.toast(p, "warn", "Khu này đang đông, chờ một chút rồi vào nhé.")
+				}
 			}
 			p.pos = next
 			p.ry = math.Atan2(p.in.X, p.in.Z)
@@ -680,6 +705,19 @@ func (r *Room) abandonDig(p *Player) {
 	p.acc.DigReadyAt = time.Now().Add(time.Duration(float64(r.hub.bal.DigCooldown) * cd))
 	p.dirty = true
 	r.broadcastZone(p.zone, p, map[string]any{"t": "fx", "pid": p.PID, "fx": "escape"})
+}
+
+// nearHomeNest: đứng yên cạnh ổ rơm trong nhà riêng (kể cả Tổ nhỏ chưa xây nhà).
+func (r *Room) nearHomeNest(p *Player) bool {
+	if r.home == nil || p.moving || p.seat != "" {
+		return false
+	}
+	for _, o := range r.home.Objects {
+		if o.Kind == "o_rom" && p.pos.Dist(Vec{float64(o.X), float64(o.Z)}) < 1.3 {
+			return true
+		}
+	}
+	return false
 }
 
 // homeRest: đứng yên cạnh ổ rơm trong nhà đã xây xong → độ no hồi theo vật liệu nhà (điểm/phút).
