@@ -182,6 +182,7 @@ func (r *Room) pkAct(p *Player, m *inMsg, reply func(ActResult), fail func(error
 			mt.ScoreB++
 		}
 		mt.send(r, map[string]any{"t": "pk_score", "id": mt.ID, "a": mt.ScoreA, "b": mt.ScoreB})
+		r.pkBoardTouch(mt)
 
 	case "pk_pick":
 		mt := p.match
@@ -229,6 +230,7 @@ func (r *Room) startMatch(a, b *Player, mode string, now time.Time) {
 			"names": []string{na, nb}, "countdown": PKCountdown.Seconds(), "duration": PeckDuration.Seconds(), "rounds": CoinRounds})
 	}
 	r.broadcastZone(a.zone, nil, map[string]any{"t": "chat", "kind": "system", "text": fmt.Sprintf("⚔️ %s đấu %s với %s!", PKModes[mode], na, nb)})
+	r.pkBoardStart(mt, now)
 }
 
 func (r *Room) flip(mt *Match, side string, now time.Time) {
@@ -255,6 +257,7 @@ func (r *Room) flip(mt *Match, side string, now time.Time) {
 	mt.send(r, map[string]any{"t": "pk_flip", "id": mt.ID, "round": mt.Round, "picks": picks, "result": result, "winner": winner, "a": mt.ScoreA, "b": mt.ScoreB})
 	mt.Round++
 	mt.NextAt = now.Add(1600 * time.Millisecond)
+	r.pkBoardTouch(mt)
 }
 
 func (r *Room) stepPK(now time.Time) {
@@ -275,6 +278,7 @@ func (r *Room) stepPK(now time.Time) {
 			}
 			mt.State = "play"
 			mt.send(r, map[string]any{"t": "pk_go", "id": mt.ID})
+			r.pkBoardTouch(mt)
 			if mt.Mode == "coin" {
 				mt.NextAt = now
 			}
@@ -289,6 +293,7 @@ func (r *Room) stepPK(now time.Time) {
 				if s := int(mt.BotRate * el); s > mt.ScoreB && now.Before(mt.PlayEnd) {
 					mt.ScoreB = s
 					mt.send(r, map[string]any{"t": "pk_score", "id": mt.ID, "a": mt.ScoreA, "b": mt.ScoreB})
+					r.pkBoardTouch(mt)
 				}
 			}
 			if now.After(mt.PlayEnd.Add(200 * time.Millisecond)) {
@@ -320,6 +325,7 @@ func (r *Room) stepPK(now time.Time) {
 				mt.PickBy = now.Add(CoinBotPickDelay)
 			}
 			mt.send(r, map[string]any{"t": "pk_round", "id": mt.ID, "round": mt.Round, "chooser": mt.chooser(), "pickLeft": mt.PickBy.Sub(now).Seconds()})
+			r.pkBoardTouch(mt)
 		}
 	}
 }
@@ -349,6 +355,7 @@ func (r *Room) finishMatch(mt *Match, leaver string) {
 	}
 	cancelled := leaver != "" && mt.State == "countdown"
 	mt.send(r, map[string]any{"t": "pk_end", "id": mt.ID, "winner": winner, "a": mt.ScoreA, "b": mt.ScoreB, "reason": reason, "cancelled": cancelled})
+	r.pkBoardEnd(mt, winner, cancelled, leaver != "" && !cancelled, time.Now())
 	players := []*Player{mt.A}
 	if !mt.Bot {
 		players = append(players, mt.B)

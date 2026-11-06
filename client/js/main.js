@@ -12,6 +12,7 @@ import {findPath,moveSafe,walkable,areaAt} from './navigation.js';
 import * as MAP from './map.js';
 import * as D from './dig.js';
 import * as NPC from './npc.js';
+import * as SB from './arena-scoreboard.js';
 import * as L from './life.js';
 import * as F from './fish.js';
 
@@ -252,6 +253,7 @@ N.on('kicked', (m) => {
 
 N.on('welcome', (m) => {
   G.abortTug?.(); // lượt đào/câu dở bị máy chủ huỷ khi đổi phòng hoặc nối lại
+  SB.onBoard({ state: 'idle' }); // bảng điểm của phòng cũ không còn đúng; phòng mới gửi lại ngay sau welcome nếu có trận
   const first = !G.catalog;
   G.catalog = m.catalog;
   G.zones = m.zones;
@@ -434,6 +436,7 @@ N.on('pk_score', P.PK.score);
 N.on('pk_round', P.PK.round);
 N.on('pk_flip', P.PK.flip);
 N.on('pk_end', P.PK.end);
+N.on('pk_board', SB.onBoard); // bảng điểm 3D ở Sân tỷ thí, cả phòng cùng thấy
 
 function hungerToast(prev, st) {
   if (st === 1 && prev === 0) toast('Sắp đói! Mở túi hoặc ghé Quầy thức ăn.', 'warn');
@@ -734,10 +737,10 @@ function fx(kind, mesh, opt = {}) {
       break;
     }
     case 'levelup': stars(mesh, 0xffe066); a('hop', 0.8); bubble(mesh, '⭐', { emo: true }); if (mesh === G.self?.mesh) sfx('level'); break;
-    case 'win': a('hop', 1.4); bubble(mesh, '🏆', { emo: true }); break;
+    case 'win': a('cheer', 1.8); bubble(mesh, '🏆', { emo: true }); break; // đấu sĩ thắng dang cánh (PLAN_LOGIC_GAME 9.3)
     case 'tie': bubble(mesh, '🤝', { emo: true }); break;
     case 'party': confetti(mesh); a('party', 1.6); if (mesh === G.self?.mesh) sfx('win'); break;
-    case 'ko': a('ko', 2.2); bubble(mesh, '💫', { emo: true, ttl: 2.2 }); break;
+    case 'ko': a('ko', 2.2); bubble(mesh, '💫', { emo: true, ttl: 2.2 }); koStars(mesh); break;
     case 'eat': a('eat', 1.0); if (mesh === G.self?.mesh) sfx('eat'); break;
   }
 }
@@ -785,6 +788,21 @@ function updateSprint() {
   btn.classList.toggle('locked', st.lock > 0);
   btn.classList.toggle('none', (st.max ?? 6) <= 0);
   $('sprintTxt').textContent = st.lock > 0 ? `Hụt hơi ${st.lock.toFixed(0)}s` : (st.max ?? 6) <= 0 ? 'Đói quá' : 'Chạy';
+}
+// KO: 5 ngôi sao vàng xoay quanh đầu gà đang nằm nghiêng ~2 giây (bám theo vị trí đầu thật của rig).
+function koStars(mesh) {
+  const head = mesh.userData.parts?.head, at = new T.Vector3();
+  for (let i = 0; i < 5; i++) {
+    const s = new T.Mesh(new T.OctahedronGeometry(0.12), mat(0xffd84a));
+    const a0 = (i / 5) * Math.PI * 2;
+    G.world.scene.add(s);
+    effects.push({ obj: s, parent: G.world.scene, t: 0, dur: 2, update: (e) => {
+      if (head) head.getWorldPosition(at); else at.set(mesh.position.x, 1.2, mesh.position.z);
+      const a = a0 + e.t * 5;
+      s.position.set(at.x + Math.cos(a) * 0.45, at.y + 0.35 + Math.sin(e.t * 9 + i) * 0.05, at.z + Math.sin(a) * 0.45);
+      s.rotation.y += 0.2;
+    } });
+  }
 }
 function stars(mesh, color) {
   for (let i = 0; i < 10; i++) {
@@ -839,6 +857,7 @@ function animate(mesh, dt, moving, phase, stage) {
     case 'wave': p.wings[1].rotation.z = 0.9 + Math.sin(t * 16) * 0.5; break;
     case 'droop': p.head.rotation.x = 0.55; rig.rotation.x = 0.12; break;
     case 'spin': rig.rotation.y = u * Math.PI * 4; p.wings[0].rotation.z = -0.8; p.wings[1].rotation.z = 0.8; break;
+    case 'cheer': rig.position.y = Math.abs(Math.sin(t * Math.PI * 2.5)) * 0.35; p.head.rotation.x = -0.35; p.wings[0].rotation.z = -1.15; p.wings[1].rotation.z = 1.15; break;
     case 'party': rig.rotation.y = u * Math.PI * 2; rig.position.y = Math.abs(Math.sin(t * Math.PI * 3)) * 0.4; p.wings[0].rotation.z = -1; p.wings[1].rotation.z = 1; break;
     case 'crow': p.head.rotation.x = -0.55; p.wings[0].rotation.z = -0.6 - Math.abs(Math.sin(t * 14)) * 0.5; p.wings[1].rotation.z = -p.wings[0].rotation.z; break;
     case 'dig': p.head.rotation.x = 0.45 + Math.sin(t * 22) * 0.35; rig.rotation.x = 0.18; break;
@@ -965,6 +984,7 @@ function loop() {
   SO.updatePlacing();
   V.updatePets(dt);
   NPC.update(dt, S.pos);
+  SB.update();
   L.updatePlants();
   nearest = G.nearest = findNearest();
   const btn = $('interact');

@@ -122,6 +122,7 @@ type Room struct {
 	tick     uint64
 	matches  map[string]*Match
 	invites  map[string]*Invite
+	pkb      pkBoard // bảng điểm 3D ở Sân tỷ thí (pk_scoreboard.go)
 	pidSeq   int
 
 	actors      map[string]*Actor // NPC di động: xe buýt, xe ôm, xe trên đường, cameo
@@ -316,6 +317,7 @@ func (r *Room) sendWelcome(p *Player, now time.Time) {
 	if r.show != nil {
 		p.sess.Send(r.show.msg(now)) // vào giữa trận biểu diễn: xem tiếp từ đúng giây đang diễn
 	}
+	r.sendPKBoard(p)
 }
 
 // markGone giữ con gà trong phòng khi mất kết nối; hết ReconnectGrace thì mới rời phòng.
@@ -633,6 +635,7 @@ func (r *Room) step(now time.Time, dt float64) {
 		}
 	}
 	r.stepPK(now)
+	r.stepPKBoard(now)
 	r.stepV11(now)
 	r.stepActors(now, dt)
 	if r.tick%TickRate == 0 {

@@ -2,7 +2,7 @@
 
 ## Rà soát logic và sửa lỗi (05/11/2026)
 
-Chi tiết: [plans/reports/code-reviewer-261105-1412-game-logic-review.md](plans/reports/code-reviewer-261105-1412-game-logic-review.md). Hiện có 134 test, chạy `go test -count=1 -timeout 25m ./...` (~12 phút); máy Windows hiện chưa có cgo nên chưa chạy `-race`.
+Chi tiết: [plans/reports/code-reviewer-261105-1412-game-logic-review.md](plans/reports/code-reviewer-261105-1412-game-logic-review.md). Hiện có 136 test, chạy `go test -count=1 -timeout 25m ./...` (~12 phút); máy Windows hiện chưa có cgo nên chưa chạy `-race`.
 
 - **Lỗi nghiêm trọng C1–C5, H1–H5:** chặn ID tài khoản đi vòng đường dẫn, bán giun lạ làm sập server, đổi kênh né hồi đất, recover panic trong phòng, hai phiên một tài khoản, gà "ma" khi chuyển phòng, giới hạn tốc độ message, trần câu cá 60/ngày, giới hạn báo cáo.
 - **Lỗi chặn tính năng R1, B1–B3, D1:** "Bán hết" một lệnh, giao dịch và xe ôm không còn tự huỷ, nút xuống xe/mời xuống, Úp ngửa có hạn chọn 10 giây.
@@ -12,6 +12,7 @@ Chi tiết: [plans/reports/code-reviewer-261105-1412-game-logic-review.md](plans
 - **Giới hạn người trong khu (06/11/2026):** đi tới cổng khu đã đủ người thì đứng vào hàng chờ, người tới trước vào trước, còn đứng gần cổng là còn giữ chỗ (đi xa, mất mạng, lên xe thì mất), tới lượt được báo và có 30 giây để vào; người giữ vé luôn vào được bến xe; xuống xe (xe người chơi, xe buýt, xe ôm) hoặc đổi kênh ngay trong khu đã đầy thì được đặt ra ngoài cổng khu, kèm thông báo lý do.
 - **Hàng chờ kênh (06/11/2026):** chuồng công cộng đầy thì xếp hàng, được báo thứ tự; có chỗ là tự chuyển sang; người vào game hay đổi chuồng sau không chen trước; tới lượt mà đang PK/trên xe vẫn đứng đầu hàng; mất mạng ngắn vẫn giữ chỗ; huỷ chờ trong bảng Đổi chuồng; mất chỗ khi hết giờ giữ phiên, rời vùng, vào nhà hoặc chờ quá 10 phút.
 - **Cổng khu đầy hiển thị đúng (06/11/2026):** bị chặn ở cổng khu đầy thì client không còn tự cho gà bước lấn vào trong khu (server gửi `area_full`), thanh tên khu không còn đổi sang khu đang chặn.
+- **Bảng điểm và KO ở Sân tỷ thí (06/11/2026):** bảng gỗ 3D trên tường sau sân hiện tên, tỉ số, đồng hồ/lượt của trận đang đấu cho cả khán giả (trận mới nhất lên bảng, tỉ số cập nhật tối đa 5 lần/giây, giữ kết quả 5 giây rồi về trống; người vào sau thấy ngay); không có trận thật thì hiện tỉ số trận biểu diễn của NPC. Gà thua ngã nghiêng có sao vàng xoay quanh đầu 2 giây, gà thắng dang cánh nhún nhảy, bảng hiện "KO!" (thắng vì đối thủ bỏ trận thì ghi "đối thủ bỏ trận").
 - **Đã chốt (06/11/2026):** luống rau nhà theo lô 2/4/6/8; câu cá tối đa 30 con/ngày, riêng 120 lượt đào; thân thiết từ bạn bè tối đa 60/ngày, tặng hoa +5; PK xếp hạng chỉ Mổ nhanh giữa người thật, bỏ trận chỉ tính đã chơi, thắng cùng đối thủ quá 5 trận/tuần không tính; kho 200 gồm nông sản và cá, quà đầy kho vào hàng chờ; khách nghỉ ổ trong nhà người khác như chủ; cấp tối đa 20. Đã làm: tưới giúp, lô trưng bày Xóm, đèn pha xe ban đêm, câu cá, cấp 11–20.
 
 ## Logic game v2 (02/11/2026, theo [PLAN_LOGIC_GAME.md](PLAN_LOGIC_GAME.md))
@@ -36,7 +37,7 @@ Chi tiết: [plans/reports/code-reviewer-261105-1412-game-logic-review.md](plans
 Đủ 11 cảnh đã dựng lại theo bố cục ảnh trong `assets/illustrations/bo-2` (mái rơm có mặt trong, vách lưới, lối ván, quầy/NPC đúng chỗ, ánh sáng ấm, HUD gỗ–kem). Mức hoàn thành: **dựng đủ bố cục và vật chủ đạo**; chưa đạt độ chi tiết của ảnh render. Bảng từng cảnh và phần còn thiếu: mục “Trạng thái triển khai” trong plan. Ảnh đối chiếu: [docs/visual-qa/bo-2/](docs/visual-qa/bo-2/).
 
 - Server: dời Lợn Ủn (vườn), Chó Mực, Vịt Bông, Chim Chíp, Dê Thợ Máy, Bò Mộc và biển xóm tới vị trí trong ảnh; vật cản mới cho lán vườn, quầy thợ, nhà chờ + xe buýt (cả bến Ven Suối), khung nhà Bò Mộc, chuồng Ven Suối; khu “park” đổi tên thành “Ao và vườn”. Thêm cờ `-devwarp` (tắt mặc định) chỉ để chụp ảnh đối chiếu.
-- Chưa làm: bảng điểm 3D và hiệu ứng KO ở sân PK; đo FPS trên máy thật.
+- Chưa làm: đo FPS trên máy thật.
 
 ## Làm lại thế giới 3D (01/11/2026, theo [PLAN_THE_GIOI_3D.md](PLAN_THE_GIOI_3D.md))
 
